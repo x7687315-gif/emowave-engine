@@ -1,0 +1,253 @@
+======================================================================
+心潮 EmoWave 性能剖析报告
+生成时间: 2026-07-15 10:46:52
+======================================================================
+
+## 第一部分：单函数计时结果
+
+---------------------------------------------------------------------------------------------------
+函数名                                                 最小       最大       均值      中位数      P95      P99
+---------------------------------------------------------------------------------------------------
+KF.update()                                      189.8   1767.6    239.9    227.7    286.2    475.6
+KF.update_with_control()                         197.8    852.7    246.4    241.1    291.6    324.2
+KF.extrapolate(60s)                             3221.3  22886.5   5611.1   6680.4   7885.5  13799.8
+Prediction.predict()                           32930.8  57683.5  34277.2  33910.5  36009.0  40602.0
+Bandit.recommend()                               191.5    401.6    202.5    197.0    221.9    350.1
+Bandit.update()                                    9.6     58.3     10.3      9.9     12.7     18.6
+Engine.process_event()                         30012.2  58593.6  30773.2  30419.4  31872.1  36807.3
+detect_physio_peaks()                          14606.7  26548.1  15002.7  14746.4  16150.4  17147.0
+detect_dangerous_rise_segments()               12337.5  23877.7  12683.5  12435.8  13832.0  14936.3
+BaselineManager.detect_shift()                    14.5     63.6     15.1     14.7     15.3     23.4
+---------------------------------------------------------------------------------------------------
+(所有数值单位：微秒 μs，每函数运行 1000 次)
+
+## 第二部分：cProfile 全系统剖析结果
+
+         7488680 function calls (7387630 primitive calls) in 13.147 seconds
+
+   Ordered by: cumulative time
+   List reduced from 372 to 50 due to restriction <50>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000   13.299   13.299 /workspace/emowave-engine/run_simulation.py:401(run)
+        7    0.001    0.000   13.088    1.870 /workspace/emowave-engine/run_simulation.py:441(_run_day)
+        4    0.048    0.012   12.996    3.249 /workspace/emowave-engine/run_simulation.py:520(_process_emotion_event)
+      278    0.009    0.000   12.180    0.044 /workspace/emowave-engine/predictor.py:135(predict)
+      278    0.286    0.001   12.032    0.043 /workspace/emowave-engine/kalman_filter.py:469(extrapolate)
+   166864    2.549    0.000    6.453    0.000 /workspace/emowave-engine/kalman_filter.py:289(_predict)
+   168527    1.833    0.000    5.335    0.000 /workspace/emowave-engine/kalman_filter.py:506(_to_state)
+  1207510    2.341    0.000    2.341    0.000 {built-in method builtins.round}
+   339430    0.501    0.000    2.340    0.000 /usr/local/lib/python3.10/dist-packages/numpy/_core/fromnumeric.py:2241(clip)
+   339430    0.286    0.000    1.838    0.000 /usr/local/lib/python3.10/dist-packages/numpy/_core/fromnumeric.py:51(_wrapfunc)
+   339380    0.407    0.000    1.479    0.000 {method 'clip' of 'numpy.generic' objects}
+   339430    1.072    0.000    1.072    0.000 /usr/local/lib/python3.10/dist-packages/numpy/_core/_methods.py:99(_clip)
+   343877    1.038    0.000    1.038    0.000 {built-in method numpy.array}
+   168527    0.223    0.000    0.976    0.000 /usr/local/lib/python3.10/dist-packages/numpy/_core/fromnumeric.py:1831(trace)
+   168523    0.517    0.000    0.943    0.000 /workspace/emowave-engine/kalman_filter.py:97(Q_matrix)
+   168527    0.680    0.000    0.680    0.000 {method 'trace' of 'numpy.ndarray' objects}
+        4    0.000    0.000    0.388    0.097 /workspace/emowave-engine/engine.py:91(process_event)
+        4    0.000    0.000    0.388    0.097 /workspace/emowave-engine/annotator.py:343(annotate_event)
+     1381    0.104    0.000    0.304    0.000 /workspace/emowave-engine/kalman_filter.py:379(update_with_control)
+        1    0.000    0.000    0.208    0.208 /workspace/emowave-engine/dashboard_data.py:150(save)
+        1    0.036    0.036    0.208    0.208 /usr/lib/python3.10/json/__init__.py:120(dump)
+        4    0.143    0.036    0.201    0.050 /workspace/emowave-engine/annotator.py:107(detect_physio_peaks)
+        4    0.142    0.036    0.186    0.046 /workspace/emowave-engine/annotator.py:244(detect_dangerous_rise_segments)
+    99358    0.031    0.000    0.160    0.000 /usr/lib/python3.10/json/encoder.py:413(_iterencode)
+200347/99358    0.071    0.000    0.129    0.000 /usr/lib/python3.10/json/encoder.py:333(_iterencode_dict)
+    15725    0.057    0.000    0.107    0.000 {built-in method builtins.max}
+    98884    0.032    0.000    0.098    0.000 /usr/lib/python3.10/json/encoder.py:277(_iterencode_list)
+   176037    0.091    0.000    0.091    0.000 {built-in method builtins.min}
+        7    0.002    0.000    0.090    0.013 /workspace/emowave-engine/run_simulation.py:250(generate_emotion_event)
+   339430    0.088    0.000    0.088    0.000 /usr/local/lib/python3.10/dist-packages/numpy/_core/fromnumeric.py:2236(_clip_dispatcher)
+  1111264    0.077    0.000    0.077    0.000 {built-in method builtins.abs}
+   341052    0.073    0.000    0.073    0.000 {built-in method builtins.getattr}
+        4    0.015    0.004    0.059    0.015 /workspace/emowave-engine/simulator.py:49(generate_emotion_trajectory)
+     1445    0.008    0.000    0.055    0.000 /workspace/emowave-engine/dashboard_data.py:75(add_frame)
+     1495    0.023    0.000    0.050    0.000 /usr/local/lib/python3.10/dist-packages/numpy/linalg/_linalg.py:496(inv)
+   257539    0.049    0.000    0.049    0.000 {built-in method builtins.isinstance}
+   168527    0.043    0.000    0.043    0.000 /usr/local/lib/python3.10/dist-packages/numpy/_core/fromnumeric.py:1826(_trace_dispatcher)
+   180605    0.034    0.000    0.034    0.000 {method 'append' of 'list' objects}
+   168531    0.032    0.000    0.032    0.000 {built-in method numpy.asanyarray}
+        4    0.007    0.002    0.028    0.007 /workspace/emowave-engine/simulator.py:168(generate_physio_signals)
+   167078    0.025    0.000    0.025    0.000 /workspace/emowave-engine/predictor.py:191(<genexpr>)
+   166800    0.024    0.000    0.024    0.000 /workspace/emowave-engine/predictor.py:192(<lambda>)
+     1456    0.011    0.000    0.014    0.000 /usr/local/lib/python3.10/dist-packages/numpy/lib/_twodim_base_impl.py:163(eye)
+      278    0.014    0.000    0.014    0.000 /workspace/emowave-engine/predictor.py:252(_find_danger_entry_time)
+       64    0.003    0.000    0.014    0.000 /workspace/emowave-engine/kalman_filter.py:328(update)
+      556    0.013    0.000    0.013    0.000 /workspace/emowave-engine/predictor.py:275(_find_intensity_crossing_time)
+    99357    0.012    0.000    0.012    0.000 {method 'write' of '_io.TextIOWrapper' objects}
+     3270    0.011    0.000    0.012    0.000 {built-in method builtins.sum}
+     7033    0.008    0.000    0.012    0.000 /usr/lib/python3.10/random.py:591(gauss)
+    15863    0.011    0.000    0.011    0.000 /usr/lib/python3.10/json/encoder.py:223(floatstr)
+
+
+
+
+=== 按自身耗时排序（不含子调用） ===
+
+         7488680 function calls (7387630 primitive calls) in 13.147 seconds
+
+   Ordered by: internal time
+   List reduced from 372 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+   166864    2.549    0.000    6.453    0.000 /workspace/emowave-engine/kalman_filter.py:289(_predict)
+  1207510    2.341    0.000    2.341    0.000 {built-in method builtins.round}
+   168527    1.833    0.000    5.335    0.000 /workspace/emowave-engine/kalman_filter.py:506(_to_state)
+   339430    1.072    0.000    1.072    0.000 /usr/local/lib/python3.10/dist-packages/numpy/_core/_methods.py:99(_clip)
+   343877    1.038    0.000    1.038    0.000 {built-in method numpy.array}
+   168527    0.680    0.000    0.680    0.000 {method 'trace' of 'numpy.ndarray' objects}
+   168523    0.517    0.000    0.943    0.000 /workspace/emowave-engine/kalman_filter.py:97(Q_matrix)
+   339430    0.501    0.000    2.340    0.000 /usr/local/lib/python3.10/dist-packages/numpy/_core/fromnumeric.py:2241(clip)
+   339380    0.407    0.000    1.479    0.000 {method 'clip' of 'numpy.generic' objects}
+      278    0.286    0.001   12.032    0.043 /workspace/emowave-engine/kalman_filter.py:469(extrapolate)
+   339430    0.286    0.000    1.838    0.000 /usr/local/lib/python3.10/dist-packages/numpy/_core/fromnumeric.py:51(_wrapfunc)
+   168527    0.223    0.000    0.976    0.000 /usr/local/lib/python3.10/dist-packages/numpy/_core/fromnumeric.py:1831(trace)
+        4    0.143    0.036    0.201    0.050 /workspace/emowave-engine/annotator.py:107(detect_physio_peaks)
+        4    0.142    0.036    0.186    0.046 /workspace/emowave-engine/annotator.py:244(detect_dangerous_rise_segments)
+     1381    0.104    0.000    0.304    0.000 /workspace/emowave-engine/kalman_filter.py:379(update_with_control)
+   176037    0.091    0.000    0.091    0.000 {built-in method builtins.min}
+   339430    0.088    0.000    0.088    0.000 /usr/local/lib/python3.10/dist-packages/numpy/_core/fromnumeric.py:2236(_clip_dispatcher)
+  1111264    0.077    0.000    0.077    0.000 {built-in method builtins.abs}
+   341052    0.073    0.000    0.073    0.000 {built-in method builtins.getattr}
+200347/99358    0.071    0.000    0.129    0.000 /usr/lib/python3.10/json/encoder.py:333(_iterencode_dict)
+    15725    0.057    0.000    0.107    0.000 {built-in method builtins.max}
+   257539    0.049    0.000    0.049    0.000 {built-in method builtins.isinstance}
+        4    0.048    0.012   12.996    3.249 /workspace/emowave-engine/run_simulation.py:520(_process_emotion_event)
+   168527    0.043    0.000    0.043    0.000 /usr/local/lib/python3.10/dist-packages/numpy/_core/fromnumeric.py:1826(_trace_dispatcher)
+        1    0.036    0.036    0.208    0.208 /usr/lib/python3.10/json/__init__.py:120(dump)
+   180605    0.034    0.000    0.034    0.000 {method 'append' of 'list' objects}
+   168531    0.032    0.000    0.032    0.000 {built-in method numpy.asanyarray}
+    98884    0.032    0.000    0.098    0.000 /usr/lib/python3.10/json/encoder.py:277(_iterencode_list)
+    99358    0.031    0.000    0.160    0.000 /usr/lib/python3.10/json/encoder.py:413(_iterencode)
+   167078    0.025    0.000    0.025    0.000 /workspace/emowave-engine/predictor.py:191(<genexpr>)
+
+
+
+
+## 第三部分：算法优化分析
+
+======================================================================
+心潮 EmoWave 算法优化分析
+分析时间: 2026-07-15 10:46:02
+======================================================================
+
+--- 优化项汇总表 ---
+
+编号         严重性      预估加速                      工作量             位置
+------------------------------------------------------------------------------------------
+OPT-001    高        3-5x（针对 Kalman 增益计算步骤）    低（约 0.5 天）      kalman_filter.py:357, 449
+OPT-002    高        2-3x（减少矩阵分配和内存拷贝）         低（约 0.5 天）      kalman_filter.py:305-310, 429-434
+OPT-003    中        5-10x（HRV 计算部分）           中（约 1 天）        annotator.py:156-165, 286-294
+OPT-004    中        2-5x（取决于 n/window 比值）     低（约 0.5 天）      annotator.py:38-52
+OPT-005    低        1.2-1.5x（对 process_event 整体） 极低（约 0.25 天）    annotator.py:92-100, 225, 393
+OPT-006    高        约 2x（消除重复的 O(n*m) 计算）     低（约 0.5 天）      annotator.py: detect_physio_peaks + detect_dangerous_rise_segments
+OPT-007    中        5x（外推步骤）                  中（约 1 天，解析解方案约 2 天） predictor.py:163-166, 191-193
+OPT-008    低        2-3x（recommend 整体）        中（约 1 天）        recommender.py:195-215
+
+
+======================================================================
+详细优化分析
+======================================================================
+
+────────────────────────────────────────────────────────────
+[OPT-001] 严重性: 高
+  位置: kalman_filter.py:357, 449
+  问题: 使用 np.linalg.inv() 计算卡尔曼增益
+  详情: 当前代码在 update() 和 update_with_control() 中使用 np.linalg.inv(S) 计算卡尔曼增益，其中 S 是 2x2 矩阵。np.linalg.inv() 是通用的 LU 分解求逆，对 2x2 矩阵来说过于昂贵。
+  建议: 使用解析 2x2 矩阵求逆公式：
+  对于 S = [[a, b], [c, d]]:
+  det = a*d - b*c
+  inv(S) = [[d, -b], [-c, a]] / det
+  这消除了函数调用开销和通用分解逻辑。
+  预估加速: 3-5x（针对 Kalman 增益计算步骤）
+  工作量: 低（约 0.5 天）
+  影响: 单次 KF update 从 ~100μs 降至 ~30μs
+
+────────────────────────────────────────────────────────────
+[OPT-002] 严重性: 高
+  位置: kalman_filter.py:305-310, 429-434
+  问题: 每次 update 都重新构建 F、H、B 矩阵
+  详情: 状态转移矩阵 F、观测矩阵 H、控制矩阵 B 在参数不变时是常量矩阵，但当前代码在每次 update() 和 update_with_control() 调用时都重新创建。对于 dt=1.0 的标准调用场景，这些矩阵是固定的。
+  建议: 在 __init__() 中预计算并缓存 F、H、B 矩阵：
+  self._F = np.array([[1,0,1,0],[0,1,0,1],[0,0,1,0],[0,0,0,1]])
+  self._H = np.array([[1,0,0,0],[0,1,0,0]])
+  self._B = np.array([[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,1]])
+仅在 dt 变化时（外推场景）才重新计算 F。
+  预估加速: 2-3x（减少矩阵分配和内存拷贝）
+  工作量: 低（约 0.5 天）
+  影响: 消除每次 update 的 3 次 numpy 数组分配
+
+────────────────────────────────────────────────────────────
+[OPT-003] 严重性: 中
+  位置: annotator.py:156-165, 286-294
+  问题: HRV 局部最大值查找为 O(n*m) 嵌套循环
+  详情: 在 detect_physio_peaks() 和 detect_dangerous_rise_segments() 中，HRV 局部窗口最大值查找使用了双重循环：对每个有效 HRV 点，遍历所有其他 HRV 点检查时间距离。当 n=300 个采样点中有 ~285 个有效 HRV 点时，复杂度为 O(285^2) ≈ 81000 次比较。此外，这两个函数中的 HRV 下降计算逻辑完全重复。
+  建议: 1. 将 HRV 下降百分比提取为公共函数，避免重复计算
+2. 使用滑动窗口最大值算法（双端队列/单调队列），将 O(n*m) 降为 O(n)
+   对于窗口大小固定（HRV_DROP_WINDOW_SECONDS/2）的场景特别有效
+  预估加速: 5-10x（HRV 计算部分）
+  工作量: 中（约 1 天）
+  影响: process_event 的 HRV 部分从 ~500μs 降至 ~50μs
+
+────────────────────────────────────────────────────────────
+[OPT-004] 严重性: 中
+  位置: annotator.py:38-52
+  问题: 移动平均使用朴素 O(n*window) 算法
+  详情: _moving_average() 函数对每个点都重新计算窗口内所有值的总和，复杂度为 O(n*window)。对于 n=300, window=10 的场景，执行 3000 次加法，而前缀和方案只需 600 次。
+  建议: 使用前缀和（prefix sum / cumulative sum）实现 O(n) 移动平均：
+  prefix = [0]
+  for v in values:
+      prefix.append(prefix[-1] + v)
+  result[i] = (prefix[i+1] - prefix[max(0, i-window+1)]) / window_len
+  预估加速: 2-5x（取决于 n/window 比值）
+  工作量: 低（约 0.5 天）
+  影响: 对心率去噪步骤有显著改善
+
+────────────────────────────────────────────────────────────
+[OPT-005] 严重性: 低
+  位置: annotator.py:92-100, 225, 393
+  问题: 重复调用 _has_physio_data()
+  详情: 在 detect_physio_peaks() 和 annotate_event() 中，_has_physio_data() 被多次调用。该函数遍历整个样本列表，虽然 O(n) 不大，但同一个事件处理流程中可能调用 2-3 次，产生不必要的重复遍历。
+  建议: 在 annotate_event() 入口处计算一次，将结果作为参数传递给detect_physio_peaks() 和 detect_dangerous_rise_segments()。
+  预估加速: 1.2-1.5x（对 process_event 整体）
+  工作量: 极低（约 0.25 天）
+  影响: 消除重复遍历，微优化
+
+────────────────────────────────────────────────────────────
+[OPT-006] 严重性: 高
+  位置: annotator.py: detect_physio_peaks + detect_dangerous_rise_segments
+  问题: HRV 下降百分比计算在两个函数中完全重复
+  详情: detect_physio_peaks() 和 detect_dangerous_rise_segments() 都独立地：
+  1. 提取 hrv_values 列表
+  2. 查找 hrv_indices
+  3. 双重循环计算局部最大值和下降百分比
+这导致 process_event 中 HRV 计算被执行了两次。
+  建议: 提取公共函数 compute_hrv_drop_percentages(samples) -> List[float]，
+在 annotate_event() 中只调用一次，结果传给两个检测函数。
+  预估加速: 约 2x（消除重复的 O(n*m) 计算）
+  工作量: 低（约 0.5 天）
+  影响: process_event 总耗时减少约 30-40%
+
+────────────────────────────────────────────────────────────
+[OPT-007] 严重性: 中
+  位置: predictor.py:163-166, 191-193
+  问题: extrapolate() 生成 600 个 EmotionState 对象用于搜索
+  详情: PredictionEngine.predict() 调用 kf.extrapolate() 生成 600 个状态点，然后线性搜索危险区进入时间。外推步长 dt=1s，horizon=600s。可以增大步长到 dt=5s，仅需 120 个点即可覆盖相同的时间窗口。
+  建议: 1. 将外推步长从 1s 增大到 5s，点数从 600 减到 120
+2. 在找到第一个危险点后立即返回，不需要完整轨迹
+3. 考虑解析解：给定匀速运动模型，可以直接计算到达阈值的时间
+  预估加速: 5x（外推步骤）
+  工作量: 中（约 1 天，解析解方案约 2 天）
+  影响: predict() 从 ~2ms 降至 ~0.4ms
+
+────────────────────────────────────────────────────────────
+[OPT-008] 严重性: 低
+  位置: recommender.py:195-215
+  问题: Bandit.get_ucb() 每次调用都执行 np.linalg.inv(A)
+  详情: LinUCBArm.get_ucb() 在每次推荐时对 10x10 矩阵求逆。虽然 10x10 求逆相对较快，但在推荐 10 个臂时执行 10 次。
+  建议: 使用 Cholesky 分解维护 A 的上三角矩阵 L，仅在 update() 时增量更新分解，避免每次推荐时重新求逆。
+或者缓存 A_inv，仅在 update() 后重新计算。
+  预估加速: 2-3x（recommend 整体）
+  工作量: 中（约 1 天）
+  影响: recommend() 从 ~200μs 降至 ~70μs

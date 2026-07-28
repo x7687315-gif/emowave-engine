@@ -1,0 +1,88 @@
+======================================================================
+心潮 EmoWave 内存审计报告
+生成时间: 2026-07-15 10:46:02
+======================================================================
+
+--- tracemalloc 快照 ---
+
+[快照 1] 模拟运行前（空引擎）: 总计 0.4 KB
+[快照 2] SimulationRunner 创建后（含 VirtualUser）: 总计 27.8 KB
+[快照 3] 处理第 1 天后: 总计 975.9 KB
+[快照 4] 完整 7 天模拟后: 总计 2609.2 KB
+
+--- 快照差异分析 ---
+
+[快照 1→2] SimulationRunner 初始化引入的内存增量:
+  /workspace/emowave-engine/recommender.py:191: size=9016 B (+9016 B), count=21 (+21), average=429 B
+  /workspace/emowave-engine/run_simulation.py:203: size=3376 B (+3376 B), count=14 (+14), average=241 B
+  /workspace/emowave-engine/run_simulation.py:204: size=2600 B (+2600 B), count=2 (+2), average=1300 B
+  /workspace/emowave-engine/recommender.py:192: size=1840 B (+1840 B), count=25 (+25), average=74 B
+  /workspace/emowave-engine/recommender.py:281: size=1112 B (+1112 B), count=13 (+13), average=86 B
+  /workspace/emowave-engine/recommender.py:189: size=1040 B (+1040 B), count=20 (+20), average=52 B
+  /usr/lib/python3.10/tracemalloc.py:505: size=992 B (+992 B), count=3 (+3), average=331 B
+  <string>:3: size=608 B (+608 B), count=6 (+6), average=101 B
+  /workspace/emowave-engine/performance_profiler.py:440: size=578 B (+578 B), count=2 (+2), average=289 B
+  /usr/lib/python3.10/tracemalloc.py:423: size=568 B (+568 B), count=4 (+4), average=142 B
+  增量总计: 27.4 KB
+
+[快照 3→4] 第 2-7 天处理的内存增量:
+  /workspace/emowave-engine/dashboard_data.py:115: size=916 KiB (+593 KiB), count=2891 (+1870), average=324 B
+  <string>:3: size=500 KiB (+321 KiB), count=8701 (+5591), average=59 B
+  /workspace/emowave-engine/simulator.py:135: size=79.6 KiB (+51.5 KiB), count=1450 (+938), average=56 B
+  /workspace/emowave-engine/run_simulation.py:309: size=79.5 KiB (+51.5 KiB), count=1449 (+938), average=56 B
+  /workspace/emowave-engine/simulator.py:208: size=76.5 KiB (+49.6 KiB), count=1385 (+897), average=57 B
+  /workspace/emowave-engine/dashboard_data.py:126: size=34.0 KiB (+22.0 KiB), count=1447 (+936), average=24 B
+  /workspace/emowave-engine/dashboard_data.py:122: size=33.9 KiB (+21.9 KiB), count=1445 (+935), average=24 B
+  /workspace/emowave-engine/dashboard_data.py:125: size=33.9 KiB (+21.9 KiB), count=1446 (+935), average=24 B
+  /workspace/emowave-engine/simulator.py:86: size=33.9 KiB (+21.9 KiB), count=1445 (+935), average=24 B
+  /workspace/emowave-engine/run_simulation.py:310: size=33.9 KiB (+21.9 KiB), count=1445 (+935), average=24 B
+  增量总计: 1633.3 KB
+  平均每日增量: 272.2 KB
+
+--- 每日增长趋势 ---
+
+  基础内存: 0.1 KB
+  Runner 创建: 23.8 KB
+  第 1 天结束: 965.9 KB
+  第 2 天结束: 1384.9 KB
+  第 3 天结束: 1389.0 KB
+  第 4 天结束: 1393.0 KB
+  第 5 天结束: 1720.9 KB
+  第 6 天结束: 2541.2 KB
+  第 7 天结束: 2558.1 KB
+
+  平均每日增长: 265.4 KB
+  ~ 每日增长中等（265.4 KB/天），需关注长期趋势
+
+
+======================================================================
+手动内存估算（单数据结构）
+======================================================================
+
+  TrajectoryPoint (每个轨迹点)                  ~100 字节      dataclass: 6 个 float64 + 1 个 float (t) + __dict__ 开销
+  TimeSeriesSample (每个时序采样)                ~80 字节       dataclass: 2 个 float + 2 个 Optional[float] + timestamp
+  KalmanFilter 状态 (4x4 数组组)                ~200 字节      _x(4 floats) + _P(16 floats) + 对象开销
+  KalmanConfig 对象                          ~500 字节      多个 float 字段 + Q_matrix/R_base 缓存属性
+  Bandit 每臂状态 (10x10 矩阵)                   ~2 KB        A(10x10 float64=800B) + b(10 float64=80B) + 开销
+  Bandit 全部 10 臂                           ~20 KB       10 臂 × ~2 KB/臂 + 全局统计
+  EventProfile (单事件标注结果)                   ~500 字节      含 List[PhysiologicalPeak] + List[DangerousRiseSegment]
+  EngineState (完整引擎状态)                     ~50 KB       500 个历史事件 × ~100 字节 + 基线历史 + 阈值
+  BaselineVector (单个)                      ~200 字节      7 个 float 字段 + date 字符串
+  7 天模拟数据总量 (估计)                           ~5 MB        约 7 个事件 × 300 采样/事件 × ~80 字节 + 引擎状态 + Bandit
+
+--- 7 天运行时内存分解 ---
+
+  组件                     估计内存
+  -------------------------------------------------------
+  SimulationRunner 基础对象                   ~50 KB
+  VirtualUser 历史数据                       ~200 KB
+  EmoCalibrationEngine 状态                ~100 KB
+  EventProfile 列表 (7个)                   ~3.5 KB
+  KalmanFilter 实例                        ~0.7 KB
+  ContextualBandit (10 臂)                 ~20 KB
+  PredictionEngine                       ~0.5 KB
+  FrameRecorder 仪表盘数据                    ~500 KB
+  TrajectoryPoint 缓存                     ~2.1 MB
+  PhysioInput 缓存                         ~1.4 MB
+  SliderObservation 缓存                   ~2.1 MB
+  Python 运行时 + numpy                      ~15 MB

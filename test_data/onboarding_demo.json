@@ -1,0 +1,84 @@
+{
+  "completed": true,
+  "completed_at": "2026-07-09T08:54:44.309340",
+  "flourishing": {
+    "raw_scores": {
+      "1": 5,
+      "2": 5,
+      "3": 3,
+      "4": 5,
+      "5": 5,
+      "6": 4,
+      "7": 5,
+      "8": 4
+    },
+    "total_score": 36,
+    "average_score": 4.5,
+    "social_score": 4.75,
+    "psychological_score": 4.0,
+    "purpose_score": 4.5,
+    "flourishing_level": "中等"
+  },
+  "first_ema": {
+    "timestamp": 1783587284.3092933,
+    "valence": 0.55,
+    "arousal": 0.3,
+    "touch_velocity": 0.42,
+    "stillness_sec": 3.5,
+    "understood_instructions": true
+  },
+  "profile_guess": {
+    "archetype": "探索成长型",
+    "confidence": 0.5,
+    "description": "你的整体状态看起来还不错，同时似乎也正处于某种探索或过渡的阶段。生活中总有些时期是在寻找方向的，这很自然。心潮可以成为你这段旅程中一个小小的陪伴。",
+    "suggestions": [
+      "尝试每天或每隔几天记录一次情绪，看看一周后是否能看到一些模式",
+      "如果某个维度（社会关系、心理、目标感）得分偏低，可以在日常中多留意相关的感受"
+    ],
+    "initial_baseline_valence": 0.55,
+    "initial_baseline_arousal": 0.3,
+    "initial_stress_sensitivity": 0.39
+  },
+  "feedback": [
+    {
+      "step": "welcome",
+      "message": "很高兴你选择了心潮，让我们一起开始这段自我了解的旅程吧。",
+      "tone": "warm"
+    },
+    {
+      "step": "privacy",
+      "message": "你的信任对我们很重要。我们会好好守护你的数据。",
+      "tone": "warm"
+    },
+    {
+      "step": "flourishing_scale",
+      "message": "谢谢你的坦诚分享。你的生活里既有让你满足的部分，也有可能让你觉得还可以更好的地方——这很正常，大多数人都是这样的。",
+      "tone": "warm"
+    },
+    {
+      "step": "first_ema_tutorial",
+      "message": "滑条的使用方式已经了解啦。记住，没有标准答案，跟着感觉走就好。",
+      "tone": "encouraging"
+    },
+    {
+      "step": "profile_preview",
+      "message": "这是你的第一条情绪记录，也是一个全新的开始。随着时间推移，这些小小的记录会汇聚成一幅属于你自己的情绪画像。",
+      "tone": "encouraging"
+    },
+    {
+      "step": "profile_preview",
+      "message": "根据你刚才的回答，心潮对你的初步印象是「探索成长型」。不过别太在意这个标签——它只是基于有限的回答做的一个粗略判断，远远不能定义你。随着你使用心潮越来越久，它会更了解真实的你。",
+      "tone": "informative"
+    },
+    {
+      "step": "profile_preview",
+      "message": "一个小建议：尝试每天或每隔几天记录一次情绪，看看一周后是否能看到一些模式",
+      "tone": "informative"
+    },
+    {
+      "step": "complete",
+      "message": "你已经迈出了了解自己的第一步。心潮会一直在你身边，安静地陪伴你。",
+      "tone": "warm"
+    }
+  ]
+}

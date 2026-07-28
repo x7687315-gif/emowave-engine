@@ -1,0 +1,415 @@
+{
+  "logs": [
+    {
+      "msg": "🌙 睡眠: 7.8小时, 质量 7.0/10",
+      "level": "info",
+      "time": "2026-07-09T06:31:18.199243"
+    },
+    {
+      "msg": "🌅 早晨 EMA: valence=0.61, arousal=0.38",
+      "level": "info",
+      "time": "2026-07-09T06:31:18.199291"
+    },
+    {
+      "msg": "🔥 情绪事件触发: [任务截止] 预计持续 510秒",
+      "level": "warn",
+      "time": "2026-07-09T06:31:18.238384"
+    },
+    {
+      "msg": "  🚨 CRITICAL 预警触发! 提前量=15s, 理由: 预计 4 秒后强度达到临界值 0.78",
+      "level": "alert",
+      "time": "2026-07-09T06:31:18.258155"
+    },
+    {
+      "msg": "  📋 P1 事件标注: peak_arousal=0.73, recovery=432s, threshold_source=population, confidence=0.25",
+      "level": "info",
+      "time": "2026-07-09T06:31:20.113880"
+    },
+    {
+      "msg": "  💡 P3 策略推荐: 「深呼吸练习」 (预测评分 0.0, UCB=1.89)",
+      "level": "info",
+      "time": "2026-07-09T06:31:20.114444"
+    },
+    {
+      "msg": "  ⭐ 用户评分: 3/5 (真实效果 3.1)",
+      "level": "info",
+      "time": "2026-07-09T06:31:20.114544"
+    },
+    {
+      "msg": "🌙 晚间 EMA: valence=0.54, arousal=0.41",
+      "level": "info",
+      "time": "2026-07-09T06:31:20.114625"
+    },
+    {
+      "msg": "📊 日终更新完成，事件数=1, 引擎事件总数=1",
+      "level": "info",
+      "time": "2026-07-09T06:31:20.114682"
+    },
+    {
+      "msg": "🌙 睡眠: 7.9小时, 质量 8.4/10",
+      "level": "info",
+      "time": "2026-07-09T06:31:20.114724"
+    },
+    {
+      "msg": "🌅 早晨 EMA: valence=0.46, arousal=0.33",
+      "level": "info",
+      "time": "2026-07-09T06:31:20.114743"
+    },
+    {
+      "msg": "🔥 情绪事件触发: [工作会议] 预计持续 234秒",
+      "level": "warn",
+      "time": "2026-07-09T06:31:20.121789"
+    },
+    {
+      "msg": "  🚨 CRITICAL 预警触发! 提前量=15s, 理由: 预计 2 秒后强度达到临界值 0.78",
+      "level": "alert",
+      "time": "2026-07-09T06:31:20.150860"
+    },
+    {
+      "msg": "  📋 P1 事件标注: peak_arousal=0.98, recovery=126s, threshold_source=population, confidence=0.27",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.143035"
+    },
+    {
+      "msg": "  💡 P3 策略推荐: 「深呼吸练习」 (预测评分 2.8, UCB=3.52)",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.143987"
+    },
+    {
+      "msg": "  ⭐ 用户评分: 3/5 (真实效果 3.3)",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144115"
+    },
+    {
+      "msg": "🌙 晚间 EMA: valence=0.51, arousal=0.47",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144265"
+    },
+    {
+      "msg": "📊 日终更新完成，事件数=1, 引擎事件总数=2",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144341"
+    },
+    {
+      "msg": "🌙 睡眠: 7.1小时, 质量 5.9/10",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144406"
+    },
+    {
+      "msg": "🌅 早晨 EMA: valence=0.49, arousal=0.29",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144426"
+    },
+    {
+      "msg": "✓ 今日无情绪事件",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144445"
+    },
+    {
+      "msg": "🌙 晚间 EMA: valence=0.56, arousal=0.31",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144462"
+    },
+    {
+      "msg": "📊 日终更新完成，事件数=0, 引擎事件总数=2",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144478"
+    },
+    {
+      "msg": "🌙 睡眠: 7.6小时, 质量 5.3/10",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144504"
+    },
+    {
+      "msg": "🌅 早晨 EMA: valence=0.45, arousal=0.31",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144521"
+    },
+    {
+      "msg": "✓ 今日无情绪事件",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144527"
+    },
+    {
+      "msg": "🌙 晚间 EMA: valence=0.50, arousal=0.46",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144541"
+    },
+    {
+      "msg": "📊 日终更新完成，事件数=0, 引擎事件总数=2",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144555"
+    },
+    {
+      "msg": "🌙 睡眠: 6.8小时, 质量 4.8/10",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144575"
+    },
+    {
+      "msg": "🌅 早晨 EMA: valence=0.57, arousal=0.27",
+      "level": "info",
+      "time": "2026-07-09T06:31:21.144589"
+    },
+    {
+      "msg": "🔥 情绪事件触发: [工作会议] 预计持续 194秒",
+      "level": "warn",
+      "time": "2026-07-09T06:31:21.190122"
+    },
+    {
+      "msg": "  🚨 CRITICAL 预警触发! 提前量=15s, 理由: 预计 5 秒后强度达到临界值 0.78",
+      "level": "alert",
+      "time": "2026-07-09T06:31:21.232522"
+    },
+    {
+      "msg": "  📋 P1 事件标注: peak_arousal=0.59, recovery=151s, threshold_source=population, confidence=0.30",
+      "level": "info",
+      "time": "2026-07-09T06:31:22.058217"
+    },
+    {
+      "msg": "  💡 P3 策略推荐: 「深呼吸练习」 (预测评分 2.1, UCB=2.21)",
+      "level": "info",
+      "time": "2026-07-09T06:31:22.058659"
+    },
+    {
+      "msg": "  ⭐ 用户评分: 4/5 (真实效果 3.7)",
+      "level": "info",
+      "time": "2026-07-09T06:31:22.058750"
+    },
+    {
+      "msg": "🌙 晚间 EMA: valence=0.52, arousal=0.46",
+      "level": "info",
+      "time": "2026-07-09T06:31:22.058813"
+    },
+    {
+      "msg": "📊 日终更新完成，事件数=1, 引擎事件总数=3",
+      "level": "info",
+      "time": "2026-07-09T06:31:22.058861"
+    },
+    {
+      "msg": "🌙 睡眠: 7.5小时, 质量 7.4/10",
+      "level": "info",
+      "time": "2026-07-09T06:31:22.058905"
+    },
+    {
+      "msg": "🌅 早晨 EMA: valence=0.57, arousal=0.27",
+      "level": "info",
+      "time": "2026-07-09T06:31:22.058925"
+    },
+    {
+      "msg": "🔥 情绪事件触发: [工作会议] 预计持续 507秒",
+      "level": "warn",
+      "time": "2026-07-09T06:31:22.079831"
+    },
+    {
+      "msg": "  🚨 CRITICAL 预警触发! 提前量=15s, 理由: 预计 5 秒后强度达到临界值 0.78",
+      "level": "alert",
+      "time": "2026-07-09T06:31:22.098248"
+    },
+    {
+      "msg": "  📋 P1 事件标注: peak_arousal=0.74, recovery=404s, threshold_source=population, confidence=0.32",
+      "level": "info",
+      "time": "2026-07-09T06:31:24.002863"
+    },
+    {
+      "msg": "  💡 P3 策略推荐: 「深呼吸练习」 (预测评分 2.8, UCB=4.24)",
+      "level": "info",
+      "time": "2026-07-09T06:31:24.003451"
+    },
+    {
+      "msg": "  ⭐ 用户评分: 3/5 (真实效果 3.1)",
+      "level": "info",
+      "time": "2026-07-09T06:31:24.003546"
+    },
+    {
+      "msg": "🌙 晚间 EMA: valence=0.60, arousal=0.42",
+      "level": "info",
+      "time": "2026-07-09T06:31:24.003655"
+    },
+    {
+      "msg": "📊 日终更新完成，事件数=1, 引擎事件总数=4",
+      "level": "info",
+      "time": "2026-07-09T06:31:24.003712"
+    },
+    {
+      "msg": "🌙 睡眠: 6.2小时, 质量 5.5/10",
+      "level": "info",
+      "time": "2026-07-09T06:31:24.003761"
+    },
+    {
+      "msg": "🌅 早晨 EMA: valence=0.60, arousal=0.34",
+      "level": "info",
+      "time": "2026-07-09T06:31:24.003779"
+    },
+    {
+      "msg": "✓ 今日无情绪事件",
+      "level": "info",
+      "time": "2026-07-09T06:31:24.003791"
+    },
+    {
+      "msg": "🌙 晚间 EMA: valence=0.48, arousal=0.51",
+      "level": "info",
+      "time": "2026-07-09T06:31:24.003805"
+    },
+    {
+      "msg": "📊 日终更新完成，事件数=0, 引擎事件总数=4",
+      "level": "info",
+      "time": "2026-07-09T06:31:24.003820"
+    }
+  ],
+  "event_count": 4,
+  "daily_summary_count": 7,
+  "baseline_shift_count": 0,
+  "warning_count": 4,
+  "warnings": [
+    {
+      "day": 0,
+      "trigger": "任务截止",
+      "level": "CRITICAL",
+      "lead_time_sec": 15.0,
+      "reason": "预计 4 秒后强度达到临界值 0.78"
+    },
+    {
+      "day": 1,
+      "trigger": "工作会议",
+      "level": "CRITICAL",
+      "lead_time_sec": 15.0,
+      "reason": "预计 2 秒后强度达到临界值 0.78"
+    },
+    {
+      "day": 4,
+      "trigger": "工作会议",
+      "level": "CRITICAL",
+      "lead_time_sec": 15.0,
+      "reason": "预计 5 秒后强度达到临界值 0.78"
+    },
+    {
+      "day": 5,
+      "trigger": "工作会议",
+      "level": "CRITICAL",
+      "lead_time_sec": 15.0,
+      "reason": "预计 5 秒后强度达到临界值 0.78"
+    }
+  ],
+  "strategy_stats": {
+    "deep_breathing": {
+      "name": "深呼吸练习",
+      "category": "breathing",
+      "n_samples": 4,
+      "avg_reward": 0.0,
+      "theta_norm": 2.054
+    },
+    "body_scan": {
+      "name": "身体扫描放松",
+      "category": "breathing",
+      "n_samples": 0,
+      "avg_reward": 3.25,
+      "theta_norm": 0.0
+    },
+    "short_walk": {
+      "name": "短暂散步",
+      "category": "physical",
+      "n_samples": 0,
+      "avg_reward": 3.25,
+      "theta_norm": 0.0
+    },
+    "stretching": {
+      "name": "拉伸运动",
+      "category": "physical",
+      "n_samples": 0,
+      "avg_reward": 3.25,
+      "theta_norm": 0.0
+    },
+    "listen_music": {
+      "name": "听音乐",
+      "category": "cognitive",
+      "n_samples": 0,
+      "avg_reward": 3.25,
+      "theta_norm": 0.0
+    },
+    "journaling": {
+      "name": "情绪日记书写",
+      "category": "cognitive",
+      "n_samples": 0,
+      "avg_reward": 3.25,
+      "theta_norm": 0.0
+    },
+    "cold_water": {
+      "name": "冷水洗脸",
+      "category": "sensory",
+      "n_samples": 0,
+      "avg_reward": 3.25,
+      "theta_norm": 0.0
+    },
+    "talk_friend": {
+      "name": "联系朋友聊天",
+      "category": "social",
+      "n_samples": 0,
+      "avg_reward": 3.25,
+      "theta_norm": 0.0
+    },
+    "progressive_relax": {
+      "name": "渐进式肌肉放松",
+      "category": "breathing",
+      "n_samples": 0,
+      "avg_reward": 3.25,
+      "theta_norm": 0.0
+    },
+    "grounding_543": {
+      "name": "5-4-3-2-1 接地练习",
+      "category": "cognitive",
+      "n_samples": 0,
+      "avg_reward": 3.25,
+      "theta_norm": 0.0
+    }
+  },
+  "engine_diagnostics": {
+    "user_id": "sim_user_001",
+    "total_events": 4,
+    "baseline_days": 7,
+    "model_confidence": 0.341,
+    "model_source": "population",
+    "thresholds": {
+      "high_risk_arousal": 0.85,
+      "high_risk_valence": 0.15,
+      "hrv_drop_percent": 0.3,
+      "hr_surge_zscore": 2.5
+    },
+    "baseline": {
+      "resting_hrv": 53.11,
+      "resting_hr": 70.98,
+      "sleep_score": 6.49
+    },
+    "baseline_stats": {
+      "resting_hrv": {
+        "mean": 53.11,
+        "std": 0.0,
+        "current": 53.11,
+        "n_days": 7
+      },
+      "resting_hr": {
+        "mean": 70.98,
+        "std": 0.0,
+        "current": 70.98,
+        "n_days": 7
+      },
+      "sleep_score": {
+        "mean": 6.49,
+        "std": 0.0,
+        "current": 6.49,
+        "n_days": 7
+      },
+      "morning_valence": {
+        "mean": 0.55,
+        "std": 0.0,
+        "current": 0.55,
+        "n_days": 7
+      },
+      "evening_valence": {
+        "mean": 0.5,
+        "std": 0.0,
+        "current": 0.5,
+        "n_days": 7
+      }
+    }
+  }
+}

@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EmoWave 情绪引擎监控面板</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <script src="/static/js/chart.min.js"></script>
+</head>
+<body class="day-mode">
+  <div class="page-bg"></div>
+  <a href="/mobile" class="mobile-link"><span class="dot"></span>移动端预览</a>
+  <header class="header">
+    <h1>心潮 <b>EmoWave</b> · 情绪引擎监控面板</h1>
+    <div class="controls">
+      <button id="playBtn" class="btn">▶ 播放</button>
+      <div class="slider-container">
+        <span id="sliderMin" class="time-display">0.0s</span>
+        <input id="timeSlider" type="range" min="0" max="0" value="0" step="1" />
+        <span id="sliderMax" class="time-display">0.0s</span>
+      </div>
+      <div id="currentTime" class="time-display">0.0s</div>
+      <div class="speed-group">
+        <button class="speed-btn" data-speed="0.5">0.5x</button>
+        <button class="speed-btn active" data-speed="1">1x</button>
+        <button class="speed-btn" data-speed="2">2x</button>
+        <button class="speed-btn" data-speed="5">5x</button>
+      </div>
+      <select id="eventSelect">
+        <option value="">全部事件</option>
+      </select>
+    </div>
+  </header>
+
+  <main class="dashboard">
+    <!-- Panel 1: 情绪状态实时面板 -->
+    <section class="card" id="scatterPanel">
+      <div class="card-title">情绪状态实时面板</div>
+      <div class="chart-container">
+        <canvas id="scatterChart"></canvas>
+      </div>
+      <!-- Intensity Zones Color Bar -->
+      <div class="intensity-zones-bar" id="intensityZonesBar">
+        <div class="intensity-zone" data-zone="0">平静</div>
+        <div class="intensity-zone" data-zone="1">轻度</div>
+        <div class="intensity-zone" data-zone="2">中度</div>
+        <div class="intensity-zone" data-zone="3">高强度</div>
+        <div class="intensity-zone" data-zone="4">极强度</div>
+      </div>
+      <div class="intensity-bar-wrapper">
+        <div class="intensity-bar-label">
+          <span>情绪强度</span>
+          <span id="intensityValue">0.00</span>
+        </div>
+        <div class="intensity-bar-track">
+          <div id="intensityFill" class="intensity-bar-fill low" style="width: 0%"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Panel 2: 生理与主观融合面板 -->
+    <section class="card">
+      <div class="card-title">生理与主观融合面板</div>
+      <div class="chart-container">
+        <canvas id="fusionChart"></canvas>
+      </div>
+      <!-- 躯体感受图 — 人形轮廓 + 症状光点（对齐原始设计） -->
+      <div class="body-figure-container" id="bodyFigureContainer">
+        <div class="body-label">躯体感受 · 实时状态</div>
+        <svg class="body-figure-svg" viewBox="0 0 90 150" xmlns="http://www.w3.org/2000/svg">
+          <!-- 人形轮廓（来自原始设计） -->
+          <path class="body-outline" d="M45,12 a9,9 0 1 1 0,0.01 M30,28 Q45,24 60,28 L58,52 Q56,70 52,90 L50,130 Q48,140 45,140 Q42,140 40,130 L38,90 Q34,70 32,52 Z M30,30 L18,48 L20,72 L24,72 L26,50 M60,30 L72,48 L70,72 L66,72 L64,50"/>
+          <!-- 症状光点：头部（紧绷） -->
+          <circle class="symptom-glow symptom-inactive" id="symptomHeadGlow" cx="45" cy="32" r="11" fill="#d97a40" opacity="0.2"/>
+          <circle class="symptom-dot symptom-inactive" id="symptomHead" cx="45" cy="32" r="5" fill="#d97a40"/>
+          <!-- 症状光点：胸口（压抑 — HR指示） -->
+          <circle class="symptom-glow symptom-inactive" id="symptomChestGlow" cx="45" cy="58" r="11" fill="#d97a40" opacity="0.2"/>
+          <circle class="symptom-dot symptom-inactive" id="symptomChest" cx="45" cy="58" r="5" fill="#d97a40"/>
+          <!-- 症状光点：胃部（不适 — HRV指示） -->
+          <circle class="symptom-glow symptom-inactive" id="symptomStomachGlow" cx="45" cy="78" r="11" fill="#d97a40" opacity="0.2"/>
+          <circle class="symptom-dot symptom-inactive" id="symptomStomach" cx="45" cy="78" r="5" fill="#d97a40"/>
+        </svg>
+        <div class="bm-labels">
+          <span class="bl-tag inactive" id="labelHead">头部紧绷</span>
+          <span class="bl-tag inactive" id="labelChest">胸口压抑</span>
+          <span class="bl-tag inactive" id="labelStomach">胃部不适</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Panel 3: 预警与决策面板 -->
+    <section class="card">
+      <div class="card-title">预警与决策面板</div>
+      <div id="alertLog" class="alert-log"></div>
+      <div class="chart-container-sm" style="margin-top: 12px;">
+        <canvas id="dailyAlertChart"></canvas>
+      </div>
+    </section>
+
+    <!-- Panel 4: 模型状态面板 -->
+    <section class="card">
+      <div class="card-title">模型状态面板</div>
+      <div id="modelInfo" class="info-grid"></div>
+      <div class="chart-container-sm" style="margin-top: 16px;">
+        <canvas id="strategyChart"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    /* ---------- State ---------- */
+    let rawData = null;
+    let frames = [];
+    let meta = {};
+    let currentIdx = 0;
+    let isPlaying = false;
+    let playbackSpeed = 1;
+    let playbackTimer = null;
+    let selectedEventId = '';
+    let isDayMode = false; // current day/night state
+
+    const BASE_INTERVAL = 200; // ms per frame at 1x
+
+    /* ---------- Chart Instances ---------- */
+    let scatterChart, fusionChart, dailyAlertChart, strategyChart;
+
+    /* ---------- Custom Plugin: Danger Zone Rectangle ---------- */
+    const dangerZonePlugin = {
+      id: 'dangerZone',
+      beforeDraw(chart) {
+        const { ctx, scales: { x, y } } = chart;
+        const ta = meta.thresholds?.high_risk_arousal ?? 0.85;
+        const tv = meta.thresholds?.high_risk_valence ?? 0.15;
+        const xLeft = x.getPixelForValue(0);
+        const xRight = x.getPixelForValue(tv);
+        const yBottom = y.getPixelForValue(ta);
+        const yTop = y.getPixelForValue(1);
+        const width = xRight - xLeft;
+        const height = yBottom - yTop;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(200,72,72,0.08)';
+        ctx.fillRect(xLeft, yTop, width, height);
+        ctx.strokeStyle = 'rgba(200,72,72,0.3)';
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(xLeft, yTop, width, height);
+        ctx.restore();
+      }
+    };
+
+    /* ---------- Init ---------- */
+    document.addEventListener('DOMContentLoaded', () => {
+      initControls();
+      fetchData();
+    });
+
+    function initControls() {
+      const playBtn = document.getElementById('playBtn');
+      playBtn.addEventListener('click', togglePlay);
+
+      const slider = document.getElementById('timeSlider');
+      slider.addEventListener('input', () => {
+        pause();
+        currentIdx = parseInt(slider.value, 10);
+        updateAll();
+      });
+
+      document.querySelectorAll('.speed-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          playbackSpeed = parseFloat(btn.dataset.speed);
+        });
+      });
+
+      const eventSelect = document.getElementById('eventSelect');
+      eventSelect.addEventListener('change', () => {
+        selectedEventId = eventSelect.value;
+        if (selectedEventId) {
+          const idx = frames.findIndex(f => f.event_id === selectedEventId);
+          if (idx >= 0) {
+            currentIdx = idx;
+            document.getElementById('timeSlider').value = currentIdx;
+            updateAll();
+          }
+        }
+        updateFusionChart(); // refresh chart scope
+      });
+    }
+
+    /* ---------- Data Loading ---------- */
+    async function fetchData() {
+      try {
+        const res = await fetch('/api/data');
+        if (!res.ok) {
+          const err = await res.json();
+          showError(err.error || '加载数据失败');
+          return;
+        }
+        rawData = await res.json();
+        if (rawData.error) {
+          showError(rawData.error);
+          return;
+        }
+        meta = rawData.meta || {};
+        frames = rawData.frames || [];
+        if (!frames.length) {
+          showError('数据文件中没有帧数据。');
+          return;
+        }
+        setupDashboard();
+      } catch (e) {
+        showError('网络错误或服务器未启动: ' + e.message);
+      }
+    }
+
+    function showError(msg) {
+      document.querySelector('.dashboard').innerHTML = `<div class="status-message error">${msg}</div>`;
+    }
+
+    function setupDashboard() {
+      // Slider
+      const slider = document.getElementById('timeSlider');
+      slider.max = frames.length - 1;
+      slider.value = 0;
+      document.getElementById('sliderMin').textContent = formatTime(frames[0]?.t ?? 0);
+      document.getElementById('sliderMax').textContent = formatTime(frames[frames.length - 1]?.t ?? 0);
+
+      // Event selector
+      const eventSelect = document.getElementById('eventSelect');
+      const eventIds = [...new Set(frames.map(f => f.event_id).filter(Boolean))];
+      eventIds.forEach(eid => {
+        const opt = document.createElement('option');
+        opt.value = eid;
+        opt.textContent = `事件 ${eid}`;
+        eventSelect.appendChild(opt);
+      });
+
+      initCharts();
+      renderModelInfo();
+      renderAlertLog();
+      updateAll();
+    }
+
+    /* ---------- Charts ---------- */
+    function initCharts() {
+      const commonOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: '#5a5550' } },
+          tooltip: {
+            backgroundColor: 'rgba(255,255,255,0.95)',
+            titleColor: '#2cb69a',
+            bodyColor: '#2d2a26',
+            borderColor: 'rgba(45,42,38,0.1)',
+            borderWidth: 1
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(45,42,38,0.05)' },
+            ticks: { color: '#9a958e' },
+            border: { color: 'rgba(45,42,38,0.1)' }
+          },
+          y: {
+            grid: { color: 'rgba(45,42,38,0.05)' },
+            ticks: { color: '#9a958e' },
+            border: { color: 'rgba(45,42,38,0.1)' }
+          }
+        }
+      };
+
+      // Panel 1: Scatter
+      const scatterCtx = document.getElementById('scatterChart').getContext('2d');
+      scatterChart = new Chart(scatterCtx, {
+        type: 'scatter',
+        data: {
+          datasets: [
+            {
+              label: '历史轨迹 (60帧)',
+              data: [],
+              backgroundColor: (ctx) => {
+                const point = ctx.dataset.data[ctx.dataIndex];
+                if (!point) return 'rgba(44,182,154,0.1)';
+                const i = ctx.dataIndex;
+                const total = ctx.dataset.data.length;
+                const alpha = total > 0 ? (i + 1) / total * 0.6 : 0;
+                const intensity = Math.sqrt(point.x * point.x + point.y * point.y) / Math.sqrt(2);
+                if (intensity > 0.65) return `rgba(200,72,72,${alpha})`;
+                if (intensity > 0.45) return `rgba(217,122,64,${alpha})`;
+                return `rgba(44,182,154,${alpha})`;
+              },
+              pointRadius: (ctx) => {
+                const i = ctx.dataIndex;
+                const total = ctx.dataset.data.length;
+                return 2 + (i / (total || 1)) * 4;
+              },
+              order: 2
+            },
+            {
+              label: '当前情绪',
+              data: [],
+              backgroundColor: '#c84848',
+              borderColor: '#ffffff',
+              borderWidth: 2,
+              pointRadius: 10,
+              pointHoverRadius: 12,
+              order: 1
+            }
+          ]
+        },
+        options: {
+          ...commonOptions,
+          plugins: {
+            ...commonOptions.plugins,
+            annotation: { annotations: {} }
+          },
+          scales: {
+            x: {
+              ...commonOptions.scales.x,
+              min: 0,
+              max: 1,
+              title: { display: true, text: 'Valence (效价)', color: '#9a958e' }
+            },
+            y: {
+              ...commonOptions.scales.y,
+              min: 0,
+              max: 1,
+              title: { display: true, text: 'Arousal (唤醒)', color: '#9a958e' }
+            }
+          }
+        },
+        plugins: [dangerZonePlugin]
+      });
+
+      // Panel 2: Fusion dual-axis line
+      const fusionCtx = document.getElementById('fusionChart').getContext('2d');
+      fusionChart = new Chart(fusionCtx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'Valence Raw',
+              data: [],
+              borderColor: 'rgba(90,159,200,0.5)',
+              backgroundColor: 'rgba(90,159,200,0.08)',
+              yAxisID: 'y',
+              tension: 0.3,
+              pointRadius: 0,
+              borderWidth: 1.5
+            },
+            {
+              label: 'Valence KF',
+              data: [],
+              borderColor: '#2cb69a',
+              backgroundColor: 'rgba(44,182,154,0.12)',
+              yAxisID: 'y',
+              tension: 0.3,
+              pointRadius: 0,
+              borderWidth: 2,
+              fill: true
+            },
+            {
+              label: 'Intensity',
+              data: [],
+              borderColor: '#d97a40',
+              backgroundColor: 'rgba(217,122,64,0.08)',
+              yAxisID: 'y',
+              tension: 0.3,
+              pointRadius: 0,
+              borderWidth: 2,
+              borderDash: [4, 4]
+            },
+            {
+              label: 'HR (BPM)',
+              data: [],
+              borderColor: '#c84848',
+              backgroundColor: 'rgba(200,72,72,0.08)',
+              yAxisID: 'y1',
+              tension: 0.3,
+              pointRadius: 0,
+              borderWidth: 1.5
+            },
+            {
+              label: 'HRV (ms)',
+              data: [],
+              borderColor: '#7a7ec8',
+              backgroundColor: 'rgba(122,126,200,0.08)',
+              yAxisID: 'y1',
+              tension: 0.3,
+              pointRadius: 0,
+              borderWidth: 1.5
+            }
+          ]
+        },
+        options: {
+          ...commonOptions,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: {
+              ...commonOptions.scales.x,
+              title: { display: true, text: '相对时间 (s)', color: '#9a958e' }
+            },
+            y: {
+              ...commonOptions.scales.y,
+              min: 0,
+              max: 1.05,
+              title: { display: true, text: 'Valence / Intensity', color: '#9a958e' }
+            },
+            y1: {
+              type: 'linear',
+              display: true,
+              position: 'right',
+              grid: { drawOnChartArea: false },
+              ticks: { color: '#9a958e' },
+              border: { color: 'rgba(45,42,38,0.1)' },
+              title: { display: true, text: 'HR / HRV', color: '#9a958e' }
+            }
+          }
+        }
+      });
+
+      // Panel 3: Daily alert bar chart
+      const dailyCtx = document.getElementById('dailyAlertChart').getContext('2d');
+      const dailyLabels = (meta.daily_summaries || []).map((d, i) => `Day ${d.day ?? i + 1}`);
+      const dailyCounts = (meta.daily_summaries || []).map(d => d.warning_count ?? d.alert_count ?? 0);
+      dailyAlertChart = new Chart(dailyCtx, {
+        type: 'bar',
+        data: {
+          labels: dailyLabels.length ? dailyLabels : ['N/A'],
+          datasets: [{
+            label: '每日预警数',
+            data: dailyCounts.length ? dailyCounts : [0],
+            backgroundColor: 'rgba(217,122,64,0.6)',
+            borderColor: '#d97a40',
+            borderWidth: 1,
+            borderRadius: 4
+          }]
+        },
+        options: {
+          ...commonOptions,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ...commonOptions.scales.x, grid: { display: false } },
+            y: {
+              ...commonOptions.scales.y,
+              beginAtZero: true,
+              ticks: { stepSize: 1, color: '#9a958e' }
+            }
+          }
+        }
+      });
+
+      // Panel 4: Strategy bar chart
+      const strategyCtx = document.getElementById('strategyChart').getContext('2d');
+      const strat = meta.strategy_stats || {};
+      const stratLabels = Object.keys(strat);
+      const stratValues = Object.values(strat);
+      strategyChart = new Chart(strategyCtx, {
+        type: 'bar',
+        data: {
+          labels: stratLabels.length ? stratLabels : ['暂无数据'],
+          datasets: [{
+            label: '策略使用次数',
+            data: stratValues.length ? stratValues : [0],
+            backgroundColor: 'rgba(44,182,154,0.6)',
+            borderColor: '#2cb69a',
+            borderWidth: 1,
+            borderRadius: 4
+          }]
+        },
+        options: {
+          ...commonOptions,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ...commonOptions.scales.x, grid: { display: false } },
+            y: { ...commonOptions.scales.y, beginAtZero: true, ticks: { stepSize: 1, color: '#9a958e' } }
+          }
+        }
+      });
+    }
+
+    /* ---------- Playback Logic ---------- */
+    function togglePlay() {
+      if (isPlaying) {
+        pause();
+      } else {
+        play();
+      }
+    }
+
+    function play() {
+      isPlaying = true;
+      document.getElementById('playBtn').textContent = '⏸ 暂停';
+      document.getElementById('playBtn').classList.add('active');
+      scheduleNext();
+    }
+
+    function pause() {
+      isPlaying = false;
+      document.getElementById('playBtn').textContent = '▶ 播放';
+      document.getElementById('playBtn').classList.remove('active');
+      if (playbackTimer) {
+        clearTimeout(playbackTimer);
+        playbackTimer = null;
+      }
+    }
+
+    function scheduleNext() {
+      if (!isPlaying) return;
+      const interval = Math.max(50, BASE_INTERVAL / playbackSpeed);
+      playbackTimer = setTimeout(() => {
+        if (currentIdx < frames.length - 1) {
+          currentIdx++;
+          updateAll();
+          scheduleNext();
+        } else {
+          pause();
+        }
+      }, interval);
+    }
+
+    /* ---------- Update All ---------- */
+    function updateAll() {
+      const frame = frames[currentIdx] || {};
+      document.getElementById('timeSlider').value = currentIdx;
+      document.getElementById('currentTime').textContent = formatTime(frame.t ?? 0);
+
+      updateScatter(frame);
+      updateIntensity(frame);
+      updateFusionChart();
+      updateBackground(frame);
+      updateBodyFigure(frame);
+      updateChartColors();
+    }
+
+    /* ---------- Panel 1: Scatter & Intensity ---------- */
+    function updateScatter(currentFrame) {
+      const trailLen = 60;
+      const start = Math.max(0, currentIdx - trailLen + 1);
+      const trail = frames.slice(start, currentIdx + 1);
+
+      const trailData = trail.map((f, i) => ({
+        x: f.valence_kf ?? f.valence_raw ?? 0,
+        y: f.arousal_kf ?? f.arousal_raw ?? 0
+      }));
+
+      scatterChart.data.datasets[0].data = trailData;
+      scatterChart.data.datasets[1].data = [{
+        x: currentFrame.valence_kf ?? currentFrame.valence_raw ?? 0,
+        y: currentFrame.arousal_kf ?? currentFrame.arousal_raw ?? 0
+      }];
+
+      // Pulse/glow effect for current point when in high intensity
+      const intensity = currentFrame.intensity ?? 0;
+      const scatterPanel = document.getElementById('scatterPanel');
+      if (intensity > 0.65) {
+        scatterPanel.classList.add('scatter-high-intensity');
+        scatterChart.data.datasets[1].pointRadius = 12;
+        scatterChart.data.datasets[1].borderWidth = 3;
+        scatterChart.data.datasets[1].backgroundColor = '#c84848';
+      } else {
+        scatterPanel.classList.remove('scatter-high-intensity');
+        scatterChart.data.datasets[1].pointRadius = 10;
+        scatterChart.data.datasets[1].borderWidth = 2;
+        scatterChart.data.datasets[1].backgroundColor = '#c84848';
+      }
+
+      scatterChart.update('none');
+    }
+
+    function updateIntensity(frame) {
+      const intensity = frame.intensity ?? 0;
+      const fill = document.getElementById('intensityFill');
+      const val = document.getElementById('intensityValue');
+      val.textContent = intensity.toFixed(2);
+      fill.style.width = `${Math.min(100, intensity * 100)}%`;
+      fill.className = 'intensity-bar-fill ' + (intensity > 0.65 ? 'high' : intensity > 0.45 ? 'medium' : 'low');
+
+      // Update intensity zones bar active state
+      const zones = document.querySelectorAll('.intensity-zone');
+      let activeZoneIdx;
+      if (intensity < 0.25) activeZoneIdx = 0;       // 平静
+      else if (intensity < 0.45) activeZoneIdx = 1;    // 轻度
+      else if (intensity < 0.65) activeZoneIdx = 2;    // 中度
+      else if (intensity < 0.85) activeZoneIdx = 3;    // 高强度
+      else activeZoneIdx = 4;                          // 极强度
+
+      zones.forEach((zone, idx) => {
+        if (idx === activeZoneIdx) {
+          zone.classList.add('active');
+        } else {
+          zone.classList.remove('active');
+        }
+      });
+    }
+
+    /* ---------- Dynamic Background Based on Time + Emotion ---------- */
+    function updateBackground(frame) {
+      const intensity = frame.intensity ?? 0;
+      const timeVal = frame.timestamp ?? null;
+      let hour = 12; // default to daytime
+
+      if (timeVal) {
+        // Try to extract hour from ISO timestamp string
+        if (typeof timeVal === 'string') {
+          const match = timeVal.match(/(\d{1,2}):(\d{2})/);
+          if (match) {
+            hour = parseInt(match[1], 10);
+          }
+        } else if (typeof timeVal === 'number') {
+          // Unix timestamp in seconds
+          const d = new Date(timeVal * 1000);
+          hour = d.getHours();
+        }
+      } else if (frame.t !== undefined && meta.session_date) {
+        // Use session_date + relative time to estimate hour
+        const match = meta.session_date.match(/(\d{1,2}):(\d{2})/);
+        if (match) {
+          const startHour = parseInt(match[1], 10);
+          const startMin = parseInt(match[2], 10);
+          const totalMinutes = startHour * 60 + startMin + Math.floor(frame.t);
+          hour = Math.floor((totalMinutes / 60) % 24);
+        }
+      }
+
+      const wasDayMode = isDayMode;
+      isDayMode = (hour >= 6 && hour < 18);
+
+      // Swap body class if mode changed
+      if (wasDayMode !== isDayMode) {
+        document.body.classList.remove('day-mode', 'night-mode');
+        document.body.classList.add(isDayMode ? 'day-mode' : 'night-mode');
+      }
+
+      // Determine gradient based on intensity + day/night
+      const gradients = isDayMode ? {
+        calm:    'linear-gradient(180deg, #f6f4f0 0%, #f2efea 40%, #ede9e2 100%)',
+        mild:    'linear-gradient(180deg, #f6f4f0 0%, #f5f0e8 40%, #f0e8dc 100%)',
+        medium:  'linear-gradient(180deg, #f5f0e8 0%, #f0e8dc 40%, #ebe0d0 100%)',
+        high:    'linear-gradient(180deg, #e8e4dc 0%, #ddd8ce 40%, #d5d0c8 100%)',
+        extreme: 'linear-gradient(180deg, #d5d0c8 0%, #c8c3bb 40%, #beb9b1 100%)'
+      } : {
+        calm:    'linear-gradient(180deg, #e8e4dc 0%, #ddd8ce 40%, #d5d0c8 100%)',
+        mild:    'linear-gradient(180deg, #ddd8ce 0%, #d0cbc3 40%, #c8c3bb 100%)',
+        medium:  'linear-gradient(180deg, #d0cbc3 0%, #c4beb6 40%, #beb9b1 100%)',
+        high:    'linear-gradient(180deg, #b8b3ab 0%, #aaa5a0 40%, #9a958e 100%)',
+        extreme: 'linear-gradient(180deg, #9a958e 0%, #8a8580 40%, #7a7570 100%)'
+      };
+
+      let gradient;
+      if (intensity < 0.25)      gradient = gradients.calm;
+      else if (intensity < 0.45)  gradient = gradients.mild;
+      else if (intensity < 0.65)  gradient = gradients.medium;
+      else if (intensity < 0.85)  gradient = gradients.high;
+      else                        gradient = gradients.extreme;
+
+      document.body.style.background = gradient;
+    }
+
+    /* ---------- Update Chart Colors for Day/Night ---------- */
+    function updateChartColors() {
+      const isDay = isDayMode;
+      const textColor = isDay ? '#2d2a26' : '#2d2a26';
+      const gridColor = isDay ? 'rgba(45,42,38,0.05)' : 'rgba(45,42,38,0.08)';
+      const tickColor = isDay ? '#9a958e' : '#5a5550';
+      const titleColor = isDay ? '#9a958e' : '#5a5550';
+      const borderClr = isDay ? 'rgba(45,42,38,0.1)' : 'rgba(45,42,38,0.15)';
+      const legendColor = isDay ? '#5a5550' : '#2d2a26';
+      const tooltipBg = isDay ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.9)';
+      const tooltipTitle = isDay ? '#2cb69a' : '#5a9fc8';
+      const tooltipBody = isDay ? '#2d2a26' : '#2d2a26';
+      const tooltipBorder = isDay ? 'rgba(45,42,38,0.1)' : 'rgba(45,42,38,0.15)';
+
+      // Helper to update chart scale and plugin colors
+      function applyColors(chart) {
+        if (!chart || !chart.options) return;
+        const opts = chart.options;
+        // Scales
+        if (opts.scales) {
+          Object.values(opts.scales).forEach(scale => {
+            if (scale.grid) scale.grid.color = gridColor;
+            if (scale.ticks) scale.ticks.color = tickColor;
+            if (scale.border) scale.border.color = borderClr;
+            if (scale.title) scale.title.color = titleColor;
+          });
+        }
+        // Legend
+        if (opts.plugins && opts.plugins.legend && opts.plugins.legend.labels) {
+          opts.plugins.legend.labels.color = legendColor;
+        }
+        // Tooltip
+        if (opts.plugins && opts.plugins.tooltip) {
+          opts.plugins.tooltip.backgroundColor = tooltipBg;
+          opts.plugins.tooltip.titleColor = tooltipTitle;
+          opts.plugins.tooltip.bodyColor = tooltipBody;
+          opts.plugins.tooltip.borderColor = tooltipBorder;
+        }
+      }
+
+      applyColors(scatterChart);
+      applyColors(fusionChart);
+      applyColors(dailyAlertChart);
+      applyColors(strategyChart);
+
+      // Force re-render
+      scatterChart.update('none');
+      fusionChart.update('none');
+      dailyAlertChart.update('none');
+      strategyChart.update('none');
+    }
+
+    /* ---------- Body / Somatic Figure Updates ---------- */
+    function updateBodyFigure(frame) {
+      const hr = frame.hr ?? null;
+      const hrv = frame.hrv ?? null;
+      const intensity = frame.intensity ?? 0;
+
+      // Head symptom: shown when intensity is high
+      const showHead = intensity > 0.5;
+      toggleSymptom('symptomHead', 'symptomHeadGlow', 'labelHead', showHead);
+
+      // Chest symptom: shown when HR is elevated
+      const showChest = hr !== null && hr > 0;
+      toggleSymptom('symptomChest', 'symptomChestGlow', 'labelChest', showChest);
+
+      // Stomach symptom: shown when HRV is present (low HRV = stress)
+      const showStomach = hrv !== null && hrv > 0;
+      toggleSymptom('symptomStomach', 'symptomStomachGlow', 'labelStomach', showStomach);
+
+      // Color shift based on intensity
+      const dotColor = intensity > 0.65 ? '#c84848' : intensity > 0.45 ? '#d97a40' : '#e8a838';
+      ['symptomHead', 'symptomChest', 'symptomStomach'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && !el.classList.contains('symptom-inactive')) el.setAttribute('fill', dotColor);
+      });
+      ['symptomHeadGlow', 'symptomChestGlow', 'symptomStomachGlow'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && !el.classList.contains('symptom-inactive')) el.setAttribute('fill', dotColor);
+      });
+    }
+
+    function toggleSymptom(dotId, glowId, labelId, active) {
+      const dot = document.getElementById(dotId);
+      const glow = document.getElementById(glowId);
+      const label = document.getElementById(labelId);
+      if (!dot || !glow) return;
+      if (active) {
+        dot.classList.remove('symptom-inactive');
+        glow.classList.remove('symptom-inactive');
+        if (label) label.classList.remove('inactive');
+      } else {
+        dot.classList.add('symptom-inactive');
+        glow.classList.add('symptom-inactive');
+        if (label) label.classList.add('inactive');
+      }
+    }
+
+    /* ---------- Panel 2: Fusion Chart ---------- */
+    function updateFusionChart() {
+      let scopeFrames = frames;
+      if (selectedEventId) {
+        scopeFrames = frames.filter(f => f.event_id === selectedEventId);
+      } else if (currentIdx < frames.length) {
+        const curEvent = frames[currentIdx].event_id;
+        scopeFrames = frames.filter(f => f.event_id === curEvent);
+      }
+
+      const labels = scopeFrames.map((f, i) => {
+        const t0 = scopeFrames[0]?.t ?? 0;
+        return ((f.t ?? 0) - t0).toFixed(1);
+      });
+
+      fusionChart.data.labels = labels;
+      fusionChart.data.datasets[0].data = scopeFrames.map(f => f.valence_raw ?? null);
+      fusionChart.data.datasets[1].data = scopeFrames.map(f => f.valence_kf ?? null);
+      fusionChart.data.datasets[2].data = scopeFrames.map(f => f.intensity ?? null);
+      fusionChart.data.datasets[3].data = scopeFrames.map(f => f.hr ?? null);
+      fusionChart.data.datasets[4].data = scopeFrames.map(f => f.hrv ?? null);
+      fusionChart.update('none');
+    }
+
+    /* ---------- Panel 3: Alert Log ---------- */
+    function renderAlertLog() {
+      const container = document.getElementById('alertLog');
+      const warnings = meta.warnings || [];
+      if (!warnings.length) {
+        container.innerHTML = '<div class="status-message">暂无预警记录</div>';
+        return;
+      }
+      container.innerHTML = warnings.map(w => {
+        const level = (w.level || w.warning_level || 'WATCH').toUpperCase();
+        const time = w.time || w.timestamp || '—';
+        const trigger = w.trigger || w.trigger_factor || w.event_type || '—';
+        const reason = w.reason || w.alert_reason || '—';
+        const strategy = w.strategy || w.recommended_strategy || '—';
+        const cls = ['CRITICAL', 'WARNING', 'WATCH'].includes(level) ? level : 'WATCH';
+        return `
+          <div class="alert-item ${cls}">
+            <div class="alert-time">${time}</div>
+            <div>
+              <span class="alert-level">[${level}]</span>
+              触发因素: ${trigger} | 预警理由: ${reason} | 推荐策略: ${strategy}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    /* ---------- Panel 4: Model Info ---------- */
+    function renderModelInfo() {
+      const container = document.getElementById('modelInfo');
+      const diag = meta.engine_diagnostics || {};
+      const thresholds = diag.thresholds || {};
+      const baseline = diag.baseline || {};
+      const confidence = diag.model_confidence ?? diag.confidence ?? 0;
+      const modelSource = diag.model_source || diag.threshold_source || 'POPULATION';
+
+      const items = [
+        { label: '模型可信度', value: (confidence * 100).toFixed(1) + '%', isProgress: true, progress: confidence },
+        { label: '阈值来源', value: modelSource },
+        { label: '高唤醒阈值', value: (thresholds.high_risk_arousal ?? 0.85).toFixed(2) },
+        { label: '低效价阈值', value: (thresholds.high_risk_valence ?? 0.15).toFixed(2) },
+        { label: '基线天数', value: (diag.baseline_days ?? baseline.days ?? '—') + ' 天' },
+        { label: '静息HRV', value: (baseline.resting_hrv_mean ?? baseline.resting_hrv ?? '—') + ' ms' },
+        { label: '静息HR', value: (baseline.resting_hr ?? '—') + ' BPM' },
+      ];
+
+      container.innerHTML = items.map(item => `
+        <div class="info-card">
+          <div class="info-label">${item.label}</div>
+          <div class="info-value">${item.value}</div>
+          ${item.isProgress ? `
+            <div class="progress-track">
+              <div class="progress-fill" style="width: ${(item.progress * 100).toFixed(1)}%"></div>
+            </div>
+          ` : ''}
+        </div>
+      `).join('');
+    }
+
+    /* ---------- Utilities ---------- */
+    function formatTime(t) {
+      if (typeof t !== 'number') return '0.0s';
+      return t.toFixed(1) + 's';
+    }
+  </script>
+</body>
+</html>

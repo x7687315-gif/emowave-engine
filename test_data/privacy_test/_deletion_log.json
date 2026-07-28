@@ -1,0 +1,16 @@
+[
+  {
+    "timestamp": "2026-07-09T08:55:18.347487",
+    "deleted_categories": [
+      "emotion_events",
+      "daily_summaries",
+      "physiological",
+      "slider_obs",
+      "ema_records",
+      "strategy_history",
+      "model_params",
+      "baseline_data"
+    ],
+    "reason": "用户请求一键删除所有数据"
+  }
+]

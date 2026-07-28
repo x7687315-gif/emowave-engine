@@ -1,0 +1,619 @@
+/* ============================================================
+   EmoWave Dashboard Styles — 浅暖色 · 几何简约版
+   对齐 emowave-ui-design.html 原始设计系统
+   ============================================================ */
+
+:root {
+  /* 背景层 */
+  --bg: #f6f4f0;
+  --bg-warm: #f0ece4;
+  --bg-deep: #e8e4dc;
+  --surface: rgba(255, 255, 255, 0.72);
+  --surface-solid: #ffffff;
+  --ink: #2d2a26;
+  --ink-soft: #5a5550;
+  --muted: #9a958e;
+  --muted-deep: #c0bab2;
+  --rule: rgba(45, 42, 38, 0.08);
+  --rule-strong: rgba(45, 42, 38, 0.14);
+  --shadow: 0 2px 16px rgba(45, 42, 38, 0.06);
+  --shadow-hover: 0 8px 32px rgba(45, 42, 38, 0.1);
+
+  /* 情绪色系 */
+  --calm: #2cb69a;
+  --calm-light: #e8f5f0;
+  --warm: #e8a838;
+  --warn: #e06060;
+  --warn-orange: #d97a40;
+  --danger: #c84848;
+  --ice: #5a9fc8;
+  --indigo: #7a7ec8;
+  --periwinkle: #9a9ec0;
+  --rose: #c87890;
+  --violet: #a078b8;
+
+  --glass-blur: 16px;
+  --radius: 18px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  font-family: "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  color: var(--ink);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  transition: background 2s ease-in-out, color 1s ease;
+}
+
+/* ============================================================
+   页面背景 · 浅暖色 + 几何网格 + 点阵漂浮
+   ============================================================ */
+.page-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 60% 40% at 20% 0%, rgba(92,188,156,0.08), transparent 70%),
+    radial-gradient(ellipse 50% 40% at 85% 20%, rgba(200,120,144,0.06), transparent 65%),
+    radial-gradient(ellipse 70% 50% at 50% 100%, rgba(122,126,200,0.06), transparent 60%),
+    linear-gradient(180deg, #f6f4f0 0%, #f2efea 40%, #ede9e2 100%);
+}
+.page-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--rule) 1px, transparent 1px);
+  background-size: 80px 80px;
+  opacity: 0.6;
+}
+.page-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(2px 2px at 15% 22%, rgba(200,200,200,0.4), transparent),
+    radial-gradient(1px 1px at 67% 15%, rgba(200,200,200,0.3), transparent),
+    radial-gradient(1.5px 1.5px at 88% 67%, rgba(200,200,200,0.35), transparent),
+    radial-gradient(1px 1px at 33% 78%, rgba(200,200,200,0.25), transparent);
+  background-size: 100% 100%;
+  animation: dotDrift 10s ease-in-out infinite alternate;
+}
+@keyframes dotDrift {
+  0% { opacity: 0.3; transform: translateY(0); }
+  100% { opacity: 0.7; transform: translateY(-8px); }
+}
+
+/* —— 移动端预览入口浮动按钮 —— */
+.mobile-link {
+  position: fixed;
+  top: 18px;
+  right: 24px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 18px;
+  border-radius: 100px;
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  backdrop-filter: blur(12px);
+  font-size: 12px;
+  color: var(--indigo);
+  letter-spacing: 1px;
+  text-decoration: none;
+  box-shadow: var(--shadow);
+  transition: all 0.2s ease;
+}
+.mobile-link:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-1px);
+}
+.mobile-link .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--calm);
+  box-shadow: 0 0 8px rgba(44,182,154,0.3);
+  animation: pulseDot 2s ease-in-out infinite;
+}
+@keyframes pulseDot {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ============================================================
+   Header / Playback Controls
+   ============================================================ */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(246, 244, 240, 0.82);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-bottom: 1px solid var(--rule);
+  padding: 14px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  transition: background 2s ease-in-out, border-color 2s ease-in-out;
+}
+
+.header h1 {
+  font-size: 1.15rem;
+  font-weight: 300;
+  letter-spacing: 2px;
+  margin-right: auto;
+  color: var(--ink);
+  transition: color 1s ease;
+}
+.header h1 b { font-weight: 600; }
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  background: rgba(44, 182, 154, 0.12);
+  border: 1px solid rgba(44, 182, 154, 0.25);
+  color: var(--calm);
+  padding: 8px 18px;
+  border-radius: 100px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+  transition: all 0.2s ease;
+}
+.btn:hover {
+  background: rgba(44, 182, 154, 0.22);
+}
+.btn.active {
+  background: var(--calm);
+  color: #fff;
+  border-color: var(--calm);
+}
+
+.time-display {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  min-width: 60px;
+  text-align: center;
+  transition: color 1s ease;
+}
+
+.slider-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 5px;
+  background: var(--rule);
+  border-radius: 3px;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--calm);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(44,182,154,0.4);
+}
+
+select {
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  color: var(--ink-soft);
+  padding: 8px 14px;
+  border-radius: 100px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+select option {
+  background: var(--surface-solid);
+  color: var(--ink);
+}
+
+/* ============================================================
+   Grid Layout
+   ============================================================ */
+.dashboard {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  padding: 24px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+@media (max-width: 1024px) {
+  .dashboard {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================
+   Glass Card — 磨砂玻璃表面
+   ============================================================ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 20px;
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--shadow);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 2s ease-in-out, border-color 2s ease-in-out;
+}
+.card:hover {
+  box-shadow: var(--shadow-hover);
+}
+
+.card-title {
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: color 1s ease;
+}
+.card-title::before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 16px;
+  background: var(--calm);
+  border-radius: 2px;
+}
+
+/* Chart Containers */
+.chart-container {
+  position: relative;
+  height: 300px;
+  width: 100%;
+}
+.chart-container-sm {
+  position: relative;
+  height: 180px;
+  width: 100%;
+}
+
+/* ============================================================
+   Intensity Bar
+   ============================================================ */
+.intensity-bar-wrapper {
+  margin-top: 12px;
+}
+.intensity-bar-label {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+}
+.intensity-bar-track {
+  width: 100%;
+  height: 12px;
+  background: var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.intensity-bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+.intensity-bar-fill.low    { background: var(--calm); }
+.intensity-bar-fill.medium { background: var(--warm); }
+.intensity-bar-fill.high   { background: var(--warn); }
+
+/* ============================================================
+   色彩光谱条 — 对齐原始设计 7 段渐变
+   ============================================================ */
+.intensity-zones-bar {
+  display: flex;
+  width: 100%;
+  height: 24px;
+  border-radius: 100px;
+  overflow: hidden;
+  margin-top: 10px;
+  border: 1px solid var(--rule);
+  box-shadow: 0 0 12px rgba(44,182,154,0.08);
+}
+.intensity-zone {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: rgba(45,42,38,0.5);
+  opacity: 0.5;
+  transition: opacity 0.3s ease, transform 0.3s ease, filter 0.3s ease;
+  position: relative;
+}
+.intensity-zone:nth-child(1) { background: #2cb69a; }
+.intensity-zone:nth-child(2) { background: #5ac89c; }
+.intensity-zone:nth-child(3) { background: #e8a838; }
+.intensity-zone:nth-child(4) { background: #d97a40; }
+.intensity-zone:nth-child(5) { background: #c84848; color: rgba(255,255,255,0.7); }
+.intensity-zone.active {
+  opacity: 1;
+  transform: scaleY(1.2);
+  filter: brightness(1.15);
+  z-index: 1;
+  box-shadow: 0 0 10px rgba(0,0,0,0.12);
+}
+
+/* ============================================================
+   Day / Night Mode — 情绪响应动态背景
+   ============================================================ */
+body.day-mode {
+  color: var(--ink);
+}
+body.day-mode .header {
+  background: rgba(246, 244, 240, 0.88);
+}
+
+/* Night mode */
+body.night-mode {
+  color: var(--ink);
+}
+body.night-mode .header {
+  background: rgba(232, 228, 220, 0.82);
+}
+body.night-mode .card {
+  background: rgba(255, 255, 255, 0.55);
+}
+body.night-mode .page-bg {
+  background:
+    radial-gradient(ellipse 60% 40% at 20% 0%, rgba(90,159,200,0.06), transparent 70%),
+    radial-gradient(ellipse 50% 40% at 85% 20%, rgba(122,126,200,0.05), transparent 65%),
+    linear-gradient(180deg, #e8e4dc 0%, #ddd8ce 40%, #d5d0c8 100%);
+}
+
+/* ============================================================
+   躯体感受图 — 对齐原始设计人形轮廓 + 症状光点
+   ============================================================ */
+.body-figure-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-top: 16px;
+  backdrop-filter: blur(12px);
+  transition: background 2s ease-in-out, border-color 2s ease-in-out;
+}
+.body-label {
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  margin-bottom: 10px;
+  letter-spacing: 1px;
+  font-weight: 500;
+  transition: color 1s ease;
+}
+.body-figure-svg {
+  width: 90px;
+  height: 150px;
+}
+.body-figure-svg .body-outline {
+  fill: rgba(45,42,38,0.04);
+  stroke: rgba(45,42,38,0.2);
+  stroke-width: 1;
+  transition: stroke 0.5s ease;
+}
+.body-figure-svg .symptom-dot {
+  animation: dotBreath 2.5s ease-in-out infinite;
+  transition: fill 0.5s ease;
+}
+@keyframes dotBreath {
+  0%,100% { opacity: 0.7; r: 5; }
+  50% { opacity: 1; r: 6.5; }
+}
+.body-figure-svg .symptom-glow {
+  animation: glowBreath 2.5s ease-in-out infinite;
+  transition: fill 0.5s ease;
+}
+@keyframes glowBreath {
+  0%,100% { opacity: 0.15; r: 11; }
+  50% { opacity: 0.4; r: 16; }
+}
+.body-figure-svg .symptom-inactive {
+  opacity: 0 !important;
+  animation: none !important;
+}
+
+/* Symptom labels */
+.bm-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 10px;
+}
+.bm-labels .bl-tag {
+  font-size: 0.65rem;
+  padding: 3px 9px;
+  border-radius: 100px;
+  background: rgba(217,122,64,0.1);
+  color: var(--warn-orange);
+  border: 1px solid rgba(217,122,64,0.2);
+  transition: opacity 0.3s ease;
+}
+.bm-labels .bl-tag.inactive {
+  opacity: 0.3;
+}
+
+/* Pulse glow for high intensity */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(200,72,72,0); }
+  50% { box-shadow: 0 0 20px 6px rgba(200,72,72,0.35); }
+}
+.scatter-high-intensity .chart-container {
+  animation: pulseGlow 1.2s ease-in-out infinite;
+  border-radius: var(--radius);
+}
+
+/* ============================================================
+   Alert Log
+   ============================================================ */
+.alert-log {
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.alert-log::-webkit-scrollbar {
+  width: 5px;
+}
+.alert-log::-webkit-scrollbar-track {
+  background: var(--rule);
+  border-radius: 3px;
+}
+.alert-log::-webkit-scrollbar-thumb {
+  background: var(--muted-deep);
+  border-radius: 3px;
+}
+
+.alert-item {
+  padding: 10px 14px;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  border-left: 3px solid transparent;
+  background: rgba(255,255,255,0.5);
+  transition: background 0.3s ease;
+}
+.alert-item.CRITICAL {
+  border-left-color: var(--danger);
+  background: rgba(200,72,72,0.06);
+}
+.alert-item.WARNING {
+  border-left-color: var(--warm);
+  background: rgba(232,168,56,0.06);
+}
+.alert-item.WATCH {
+  border-left-color: var(--calm);
+  background: rgba(44,182,154,0.06);
+}
+.alert-level {
+  font-weight: 700;
+  margin-right: 4px;
+}
+.alert-item.CRITICAL .alert-level { color: var(--danger); }
+.alert-item.WARNING .alert-level  { color: var(--warn-orange); }
+.alert-item.WATCH .alert-level    { color: var(--calm); }
+.alert-time {
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-bottom: 2px;
+}
+
+/* ============================================================
+   Model State Cards
+   ============================================================ */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.info-card {
+  background: rgba(255,255,255,0.5);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 12px;
+  transition: background 0.3s ease;
+}
+.info-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+.info-value {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Progress bar */
+.progress-track {
+  width: 100%;
+  height: 6px;
+  background: var(--rule);
+  border-radius: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--calm), #5ac89c);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* Loading / Error states */
+.status-message {
+  text-align: center;
+  padding: 40px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.status-message.error {
+  color: var(--danger);
+}
+
+/* Speed selector buttons */
+.speed-group {
+  display: flex;
+  gap: 4px;
+}
+.speed-btn {
+  background: rgba(255,255,255,0.5);
+  border: 1px solid var(--rule);
+  color: var(--ink-soft);
+  padding: 6px 12px;
+  border-radius: 100px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.2s ease;
+}
+.speed-btn:hover {
+  background: rgba(255,255,255,0.8);
+  color: var(--ink);
+}
+.speed-btn.active {
+  background: var(--calm);
+  color: #fff;
+  border-color: var(--calm);
+  font-weight: 600;
+}

@@ -1,0 +1,4 @@
+PyQt5==5.15.11
+numpy>=1.21
+pytest>=7.0
+pytest-qt>=4.2.0

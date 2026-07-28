@@ -1,0 +1,2 @@
+﻿event_id,onset_time,peak_time,calm_time,peak_valence,peak_arousal,subjective_peak,physio_peak_score,recovery_duration_sec,recovery_speed,sample_count,dangerous_rise_count
+evt_test_001,2025-07-01,2025-07-01,2025-07-01,0.12,0.9,,0.0,320.0,0.25,300,0

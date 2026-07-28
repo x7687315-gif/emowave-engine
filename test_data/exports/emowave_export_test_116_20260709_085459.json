@@ -1,0 +1,105 @@
+{
+  "user_id_safe": "test_1160",
+  "exported_at": "2026-07-09 08:54:59",
+  "export_version": "1.0.0",
+  "emotion_events": [
+    {
+      "event_id_safe": "evt_test****",
+      "onset_time": "2025-W27",
+      "peak_time": "2025-W27",
+      "calm_time": "2025-W27",
+      "peak_valence": 0.12,
+      "peak_arousal": 0.9,
+      "subjective_peak": null,
+      "physiological_peak_score": 0.0,
+      "physiological_peak_confidence": 0.0,
+      "recovery_duration_sec": 320.0,
+      "recovery_speed": 0.25,
+      "sample_count": 300,
+      "dangerous_rise_segments": [],
+      "dangerous_rise_count": 0
+    }
+  ],
+  "emotion_events_count": 1,
+  "daily_summaries": [
+    {
+      "date": "2026-07-01",
+      "avg_resting_hrv": 46.0,
+      "avg_resting_hr": 74.0,
+      "sleep_score": 6.5,
+      "morning_valence_avg": 0.5,
+      "evening_valence_avg": 0.45,
+      "event_count": 2,
+      "peak_arousal_max": 0.88
+    }
+  ],
+  "daily_summaries_count": 1,
+  "thresholds": {
+    "high_risk_arousal": 0.85,
+    "high_risk_valence": 0.15,
+    "hrv_drop_percent": 0.3,
+    "hr_surge_zscore": 2.5,
+    "dangerous_rise_slope": 0.012,
+    "model_confidence": 0.75,
+    "model_source": "population",
+    "event_count": 0,
+    "last_updated": ""
+  },
+  "baseline": {
+    "resting_hrv_mean": 48.0,
+    "resting_hr": 72.0,
+    "sleep_score": 7.5,
+    "typical_valence_8am": 0.55,
+    "typical_valence_6pm": 0.5,
+    "date": "2026-07-01"
+  },
+  "data_inventory": {
+    "emotion_events": [
+      "event_id",
+      "onset_time",
+      "peak_time",
+      "calm_time",
+      "peak_valence",
+      "peak_arousal",
+      "subjective_peak",
+      "physiological_peak_score",
+      "recovery_duration",
+      "dangerous_rise_segments"
+    ],
+    "daily_summaries": [
+      "date",
+      "avg_resting_hrv",
+      "avg_resting_hr",
+      "sleep_score",
+      "morning_valence_avg",
+      "evening_valence_avg",
+      "event_count",
+      "peak_arousal_max"
+    ],
+    "thresholds": [
+      "high_risk_arousal",
+      "high_risk_valence",
+      "hrv_drop_percent",
+      "hr_surge_zscore",
+      "dangerous_rise_slope",
+      "model_confidence",
+      "model_source",
+      "event_count",
+      "last_updated"
+    ],
+    "baseline": [
+      "resting_hrv_mean",
+      "resting_hr",
+      "sleep_score",
+      "typical_valence_8am",
+      "typical_valence_6pm",
+      "date"
+    ],
+    "model_params": [
+      "model_confidence",
+      "model_source",
+      "total_events_processed"
+    ]
+  },
+  "data_guide": "\n================================================================================\n              心潮 EmoWave — 数据解读指南\n================================================================================\n\n本文档帮助您（或您的咨询师）理解导出数据中各字段的含义。\n所有数据均来自本地设备，不会上传至云端。\n\n============================================================================\n一、文件结构\n============================================================================\n\n导出文件通常包含以下几个部分：\n\n  1. emotion_events（情绪事件）— 核心数据\n     每次您在使用过程中经历了情绪波动并记录下来，系统都会生成一条事件记录。\n\n  2. daily_summaries（每日摘要）\n     每日自动汇总的生理与情绪概况，用于追踪长期趋势。\n\n  3. thresholds（个性化阈值）\n     系统根据您的历史数据计算出的预警阈值。数值越\"个人化\"，说明系统对您的\n     了解越深。\n\n  4. baseline（基线向量）\n     您当前的\"平静状态\"基准线。所有偏离都以此为参照。\n\n  5. engine_state（引擎状态）\n     系统的总体运行状态，包括处理的事件总数和模型置信度。\n\n  6. data_guide（本指南）\n     就是您正在阅读的这份说明。\n\n============================================================================\n二、核心概念解释\n============================================================================\n\n【Valence — 效价】\n  范围：0.0 ~ 1.0\n  含义：您的主观舒适度。\n    - 0.0 = 极度不舒服（非常痛苦、焦虑或愤怒）\n    - 0.5 = 中性（无明显正面或负面感受）\n    - 1.0 = 极度舒服（非常愉悦、放松）\n\n【Arousal — 唤醒度】\n  范围：0.0 ~ 1.0\n  含义：您的生理激活水平。\n    - 0.0 = 极度平静（困倦、倦怠）\n    - 0.5 = 中等激活（日常状态）\n    - 1.0 = 极度激活（心跳加速、高度紧张或极度兴奋）\n\n  注意：高唤醒度本身不一定是坏事。它需要结合效价来判断：\n    - 高唤醒 + 低效价 = 可能处于焦虑或恐慌状态\n    - 高唤醒 + 高效价 = 可能处于兴奋或愉快状态\n    - 低唤醒 + 低效价 = 可能处于抑郁或疲倦状态\n\n【生理信号】\n  HR（心率）: 每分钟心跳次数，单位 BPM\n  HRV（心率变异性）: 心跳间隔的变化幅度，单位 ms（毫秒）\n    - HRV 越高通常表示身心状态越好、应对压力的能力越强\n    - HRV 降低可能预示压力增大或情绪恶化\n\n============================================================================\n三、情绪事件字段详解\n============================================================================\n\n  event_id_safe        — 事件编号（脱敏处理，不包含完整原始ID）\n  onset_time           — 情绪波动开始的时间\n  peak_time            — 情绪达到最强烈的时间点\n  calm_time            — 情绪恢复平静的时间\n  peak_valence         — 最强烈时刻的效价值（0=极度不适, 1=极度舒适）\n  peak_arousal         — 最强烈时刻的唤醒度（0=极度平静, 1=极度激活）\n  subjective_peak      — 您自己对这次事件强度的评分（0-10分）\n  physio_peak_score    — 生理信号检测到的综合压力得分（0-1）\n  physiological_peak_confidence — 生理极点检测的可信度（0-1）\n  recovery_duration_sec — 从峰值到恢复平静所用的秒数\n  recovery_speed       — 恢复速度，数值越大表示恢复越快\n  sample_count         — 该事件中采集的数据点总数\n  dangerous_rise_segments — 是否存在\"危险上升段\"（情绪急速恶化）\n  dangerous_rise_count — 危险上升段的数量\n\n============================================================================\n四、强度指标的计算方式\n============================================================================\n\n【主观峰值 (subjective_peak)】\n  这是您自己的评估。在每次事件结束后，系统会请您为这次事件的强度打分。\n  范围：0（完全无感）~ 10（有史以来最强烈）\n\n【生理极点得分 (physiological_peak_score)】\n  这是系统通过分析心率和HRV计算出来的客观指标。\n  计算逻辑：\n    1. 检测心率的突然升高（z-score > 阈值）\n    2. 检测HRV的突然下降\n    3. 结合唤醒度变化速率\n    4. 将多个信号融合为一个0~1的得分\n  得分越高，表示生理反应越强烈。\n\n【危险上升段 (dangerous_rise_segment)】\n  当系统检测到以下模式时会标记为\"危险上升段\"：\n    - 唤醒度持续快速上升\n    - 伴随心率激增\n    - 伴随HRV显著下降\n  这通常意味着情绪正在急剧恶化，是早期干预的关键窗口。\n\n============================================================================\n五、预警阈值的意义\n============================================================================\n\n系统维护着一套个性化的预警阈值：\n\n  high_risk_arousal   — 唤醒度超过此值时标记为\"高风险\"\n  high_risk_valence   — 效价低于此值时标记为\"高风险\"\n  hrv_drop_percent    — HRV下降超过此百分比时发出警报\n  hr_surge_zscore     — 心率偏离基线的z-score超过此值时发出警报\n  dangerous_rise_slope — 唤醒度上升斜率超过此值时标记为\"危险上升\"\n\n阈值来源（model_source）：\n  - \"population\" — 使用群体通用值（冷启动阶段，数据不足）\n  - \"hybrid\" — 群体值与个人值的混合（过渡阶段）\n  - \"personal\" — 完全基于您的历史数据（最精准）\n\nmodel_confidence 值越接近 1.0，说明阈值越可靠。\n\n============================================================================\n六、每日摘要字段详解\n============================================================================\n\n  date                 — 日期（YYYY-MM-DD格式）\n  avg_resting_hrv      — 当日静息HRV平均值（毫秒）\n  avg_resting_hr       — 当日静息心率平均值（BPM）\n  sleep_score          — 前一晚的睡眠质量评分（0-10）\n  morning_valence_avg  — 早上（6:00-10:00）的平均效价\n  evening_valence_avg  — 傍晚（17:00-21:00）的平均效价\n  event_count          — 当日记录的情绪事件次数\n  peak_arousal_max     — 当日的最高唤醒度值\n\n============================================================================\n七、推荐给咨询师的阅读建议\n============================================================================\n\n如果您是一位心理咨询师或治疗师，正在查看来访者的导出数据，以下建议\n可能对您有帮助：\n\n  1. 【先看趋势，再看单次】\n     每日摘要和基线变化比单个事件更有参考价值。关注HRV的长期趋势、\n     效价的日内规律，这些往往比单次事件更能反映整体状态。\n\n  2. 【注意恢复时长】\n     恢复时长（recovery_duration_sec）是一个重要指标。如果恢复时长\n     在逐渐延长，可能意味着来访者的情绪调节能力在下降，值得讨论。\n\n  3. 【危险上升段是预警信号】\n     dangerous_rise_segments 的出现频率和严重程度可以用来评估情绪\n     失控的风险。如果这类事件越来越频繁，建议在治疗中加强应对策略\n     的练习。\n\n  4. 【主客观差异有临床意义】\n     比较 subjective_peak（主观评分）和 physio_peak_score（客观得分）。\n     如果两者差异很大，可能意味着来访者的身体反应与自我认知之间存在\n     不一致，这本身就是一个值得探索的治疗话题。\n\n  5. 【基线漂移提示长期变化】\n     如果 baseline 数据显示静息HRV持续降低、心率持续升高，这可能\n     提示慢性压力累积或身体健康的需要关注。\n\n  6. 【数据仅作参考，不作诊断】\n     本系统的数据来源于可穿戴设备和主观自评，存在测量误差。请将数据\n     作为辅助信息，结合临床访谈和您的专业判断来使用。\n\n============================================================================\n八、隐私与安全\n============================================================================\n\n  - 所有数据均存储在您的本地设备上\n  - 导出时可选择加密（设置密码后文件将使用加密格式）\n  - 时间戳可以模糊化处理（精确到天、周或月）\n  - 您可以随时删除全部或部分数据\n  - 数据收集可以按类别开关，最小化信息收集\n\n如有任何疑问，请联系心潮 EmoWave 团队。\n\n================================================================================\n                    — 本指南结束 —\n================================================================================\n"
+}

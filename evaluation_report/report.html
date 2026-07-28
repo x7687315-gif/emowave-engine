@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>EmoWave 离线评估报告</title>
+<style>
+  body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h1 { color: #38bdf8; border-bottom: 2px solid #38bdf8; padding-bottom: 10px; }
+  h2 { color: #7dd3fc; margin-top: 30px; }
+  .summary-card { background: rgba(30, 41, 59, 0.8); border-radius: 12px; padding: 20px; margin: 15px 0; backdrop-filter: blur(10px); border: 1px solid rgba(56, 189, 248, 0.2); }
+  .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 15px 0; }
+  .metric-box { background: rgba(15, 23, 42, 0.6); border-radius: 8px; padding: 15px; text-align: center; border-left: 4px solid #38bdf8; }
+  .metric-value { font-size: 28px; font-weight: bold; color: #38bdf8; }
+  .metric-label { font-size: 12px; color: #94a3b8; margin-top: 5px; }
+  table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 13px; }
+  th { background: rgba(56, 189, 248, 0.15); padding: 10px; text-align: left; border-bottom: 2px solid #38bdf8; }
+  td { padding: 8px 10px; border-bottom: 1px solid rgba(148, 163, 184, 0.2); }
+  tr:hover { background: rgba(56, 189, 248, 0.05); }
+  .highlight { background: rgba(46, 204, 113, 0.15); }
+  .weakness { background: rgba(231, 76, 60, 0.1); border-left: 4px solid #e74c3c; padding: 12px 15px; margin: 10px 0; border-radius: 6px; }
+  .chart-container { text-align: center; margin: 20px 0; }
+  .chart-container img { max-width: 100%; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.2); }
+  .best-params { background: rgba(46, 204, 113, 0.1); border: 1px solid rgba(46, 204, 113, 0.3); border-radius: 10px; padding: 20px; margin: 15px 0; }
+  .best-params h3 { color: #2ecc71; margin-top: 0; }
+  .param-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .timestamp { color: #64748b; font-size: 12px; text-align: right; margin-top: 30px; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>心潮 EmoWave — 离线评估与参数敏感性分析报告</h1>
+<div class="timestamp">生成时间：2026-07-09 08:12:12</div>
+
+<div class="summary-card">
+  <h2>总体概览</h2>
+  <div class="metric-grid">
+    <div class="metric-box">
+      <div class="metric-value">64</div>
+      <div class="metric-label">参数组合数</div>
+    </div>
+    <div class="metric-box">
+      <div class="metric-value">4</div>
+      <div class="metric-label">用户原型</div>
+    </div>
+    <div class="metric-box">
+      <div class="metric-value">100.0%</div>
+      <div class="metric-label">平均预警召回率</div>
+    </div>
+    <div class="metric-box">
+      <div class="metric-value">0.0609</div>
+      <div class="metric-label">平均强度 RMSE</div>
+    </div>
+    <div class="metric-box">
+      <div class="metric-value">159s</div>
+      <div class="metric-label">平均预警提前量</div>
+    </div>
+    <div class="metric-box">
+      <div class="metric-value">0%</div>
+      <div class="metric-label">漏报率</div>
+    </div>
+  </div>
+</div>
+
+<div class="best-params">
+  <h3>推荐最优参数组合</h3>
+  <div class="param-row"><span>KF 过程噪声 (q_position_std)</span><span><b>0.05</b></span></div>
+  <div class="param-row"><span>KF 观测噪声 (r_base_std)</span><span><b>0.05</b></span></div>
+  <div class="param-row"><span>预警外推窗口 (秒)</span><span><b>120.0</b></span></div>
+  <div class="param-row"><span>UCB 探索系数 (alpha)</span><span><b>0.5</b></span></div>
+</div>
+
+<div class="summary-card">
+  <h2>弱点识别</h2>
+  <div class="weakness">预警精确率偏低 (0.0%)，存在误报，建议增加前置条件过滤</div>
+
+</div>
+
+<div class="summary-card">
+  <h2>参数敏感性趋势</h2>
+  <div class="chart-container">
+    <img src="param_sensitivity.png" alt="参数敏感性分析">
+  </div>
+</div>
+
+<div class="summary-card">
+  <h2>用户原型对比</h2>
+  <div class="chart-container">
+    <img src="archetype_comparison.png" alt="用户原型对比">
+  </div>
+</div>
+
+<div class="summary-card">
+  <h2>KF 轨迹拟合示例</h2>
+  <div class="chart-container">
+    <img src="kf_trajectory_fit.png" alt="KF 轨迹拟合对比">
+  </div>
+</div>
+
+<div class="summary-card">
+  <h2>Top 10 参数组合排名</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>排名</th>
+        <th>参数标签</th>
+        <th>原型</th>
+        <th>综合评分</th>
+        <th>召回率</th>
+        <th>精确率</th>
+        <th>RMSE(强度)</th>
+        <th>提前量(s)</th>
+        <th>漏报</th>
+        <th>误报</th>
+      </tr>
+    </thead>
+    <tbody>
+
+      <tr class="highlight">
+        <td>1</td>
+        <td>q0.05_r0.05_w120_a0.5</td>
+        <td>焦虑型</td>
+        <td>0.745</td>
+        <td>1.00</td>
+        <td>0.00</td>
+        <td>0.0462</td>
+        <td>128</td>
+        <td>0</td>
+        <td>0</td>
+      </tr>
+
+      <tr class="">
+        <td>2</td>
+        <td>q0.05_r0.05_w60_a0.5</td>
+        <td>焦虑型</td>
+        <td>0.743</td>
+        <td>1.00</td>
+        <td>0.00</td>
+        <td>0.0475</td>
+        <td>120</td>
+        <td>0</td>
+        <td>0</td>
+      </tr>
+
+      <tr class="">
+        <td>3</td>
+        <td>q0.01_r0.05_w60_a0.5</td>
+        <td>易怒型</td>
+        <td>0.742</td>
+        <td>1.00</td>
+        <td>0.00</td>
+        <td>0.0489</td>
+        <td>165</td>
+        <td>0</td>
+        <td>0</td>
+      </tr>
+
+      <tr class="">
+        <td>4</td>
+        <td>q0.01_r0.05_w120_a2.0</td>
+        <td>焦虑型</td>
+        <td>0.741</td>
+        <td>1.00</td>
+        <td>0.00</td>
+        <td>0.0490</td>
+        <td>120</td>
+        <td>0</td>
+        <td>0</td>
+      </tr>
+
+      <tr class="">
+        <td>5</td>
+        <td>q0.05_r0.05_w60_a2.0</td>
+        <td>焦虑型</td>
+        <td>0.740</td>
+        <td>1.00</td>
+        <td>0.00</td>
+        <td>0.0498</td>
+        <td>118</td>
+        <td>0</td>
+        <td>0</td>
+      </tr>
+
+      <tr class="">
+        <td>6</td>
+        <td>q0.01_r0.05_w60_a0.5</td>
+        <td>焦虑型</td>
+        <td>0.739</td>
+        <td>1.00</td>
+        <td>0.00</td>
+        <td>0.0504</td>
+        <td>140</td>
+        <td>0</td>
+        <td>0</td>
+      </tr>
+
+      <tr class="">
+        <td>7</td>
+        <td>q0.01_r0.05_w60_a2.0</td>
+        <td>易怒型</td>
+        <td>0.739</td>
+        <td>1.00</td>
+        <td>0.00</td>
+        <td>0.0504</td>
+        <td>162</td>
+        <td>0</td>
+        <td>0</td>
+      </tr>
+
+      <tr class="">
+        <td>8</td>
+        <td>q0.05_r0.05_w120_a2.0</td>
+        <td>焦虑型</td>
+        <td>0.739</td>
+        <td>1.00</td>
+        <td>0.00</td>
+        <td>0.0511</td>
+        <td>138</td>
+        <td>0</td>
+        <td>0</td>
+      </tr>
+
+      <tr class="">
+        <td>9</td>
+        <td>q0.05_r0.05_w120_a2.0</td>
+        <td>躯体化型</td>
+        <td>0.737</td>
+        <td>1.00</td>
+        <td>0.00</td>
+        <td>0.0520</td>
+        <td>165</td>
+        <td>0</td>
+        <td>0</td>
+      </tr>
+
+      <tr class="">
+        <td>10</td>
+        <td>q0.01_r0.05_w120_a2.0</td>
+        <td>易怒型</td>
+        <td>0.737</td>
+        <td>1.00</td>
+        <td>0.00</td>
+        <td>0.0525</td>
+        <td>165</td>
+        <td>0</td>
+        <td>0</td>
+      </tr>
+
+    </tbody>
+  </table>
+</div>
+
+<div class="summary-card">
+  <h2>指标说明</h2>
+  <p><b>预警召回率</b>：真实危险事件中被成功预警的比例。越高表示漏报越少。</p>
+  <p><b>预警精确率</b>：所有发出的预警中，真正对应危险事件的比例。越高表示误报越少。</p>
+  <p><b>强度 RMSE</b>：卡尔曼滤波器输出强度与真实强度之间的均方根误差。越低表示拟合越好。</p>
+  <p><b>综合评分</b>：拟合(40%) + 预警(40%) + 推荐(20%) 的加权总分。用于排序最优参数。</p>
+  <p><b>提前预警时间</b>：从预警触发到情绪峰值的时间差。理想范围 30-120 秒。</p>
+</div>
+
+<div class="timestamp">报告由 evaluation.py 自动生成</div>
+</div>
+</body>
+</html>

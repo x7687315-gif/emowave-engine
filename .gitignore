@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.env
+*.db
+simulation_output.json
+benchmark_results/
+evaluation_report/
+profiling_output/
+test_data/

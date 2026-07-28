@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>心潮 EmoWave · 移动端预览</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <style>
+    /* ============================================================
+       移动端预览 · 仅本页专用样式（手机外壳 / 屏幕 / 动画）
+       设计令牌复用 style.css 的 :root，原始设计对齐 emowave-ui-design.html
+       ============================================================ */
+    :root {
+      --phone-w: 360px;
+      --phone-h: 760px;
+    }
+
+    body { background: var(--bg); }
+
+    /* —— 顶部导航条 —— */
+    .m-topbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 24px;
+      background: rgba(246, 244, 240, 0.86);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--rule);
+    }
+    .back-dash {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 18px;
+      border-radius: 100px;
+      background: var(--surface);
+      border: 1px solid var(--rule-strong);
+      font-size: 13px;
+      color: var(--indigo);
+      letter-spacing: 1px;
+      text-decoration: none;
+      box-shadow: var(--shadow);
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .back-dash:hover { box-shadow: var(--shadow-hover); transform: translateY(-1px); }
+    .m-topbar h1 {
+      font-size: 1.05rem;
+      font-weight: 300;
+      letter-spacing: 2px;
+      color: var(--ink);
+      margin-right: auto;
+    }
+    .m-topbar h1 b { font-weight: 600; }
+    .live-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 14px;
+      border-radius: 100px;
+      background: rgba(44, 182, 154, 0.1);
+      border: 1px solid rgba(44, 182, 154, 0.22);
+      font-size: 11px;
+      color: var(--calm);
+      letter-spacing: 1px;
+    }
+    .live-pill .ldot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--calm);
+      box-shadow: 0 0 8px rgba(44,182,154,0.4);
+      animation: pulseDot 2s ease-in-out infinite;
+    }
+
+    /* —— 播放控制条（位于手机框上方） —— */
+    .player-bar {
+      position: sticky;
+      top: 57px;
+      z-index: 90;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 12px 24px;
+      background: rgba(246, 244, 240, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--rule);
+    }
+    .player-bar .slider-container { flex: 1; min-width: 220px; }
+    .player-bar .frame-meta {
+      font-family: var(--font-num);
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+      min-width: 96px;
+      text-align: right;
+    }
+    #eventSelectMobile {
+      background: var(--surface);
+      border: 1px solid var(--rule-strong);
+      color: var(--ink-soft);
+      padding: 7px 14px;
+      border-radius: 100px;
+      font-size: 12px;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+    }
+
+    /* —— 手机舞台（居中） —— */
+    .phone-stage {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      justify-content: center;
+      padding: 44px 16px 80px;
+    }
+
+    /* —— 手机外壳 —— */
+    .phone {
+      position: relative;
+      width: var(--phone-w);
+      height: var(--phone-h);
+      border-radius: 46px;
+      background: linear-gradient(150deg, #e8e4dc 0%, #ddd8ce 50%, #e2ddd4 100%);
+      padding: 11px;
+      box-shadow:
+        0 30px 60px rgba(45,42,38,0.14),
+        0 0 0 1px rgba(45,42,38,0.06),
+        inset 0 1px 2px rgba(255,255,255,0.8);
+      flex-shrink: 0;
+    }
+    .notch {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 108px;
+      height: 26px;
+      background: #d5d0c8;
+      border-radius: 100px;
+      z-index: 60;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding-right: 15px;
+    }
+    .notch::before {
+      content: '';
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #aaa59e;
+      box-shadow: inset 0 0 0 1.5px rgba(90,159,200,0.3);
+    }
+    .screen {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      border-radius: 38px;
+      overflow: hidden;
+      background: linear-gradient(175deg, #faf8f4 0%, #f5f3ee 50%, #f0ece4 100%);
+    }
+
+    /* —— 手机屏幕背景：几何网格 + 点阵漂浮（原始设计） —— */
+    .screen-bg {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+    .screen-bg::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--rule) 1px, transparent 1px),
+        linear-gradient(90deg, var(--rule) 1px, transparent 1px);
+      background-size: 42px 42px;
+      opacity: 0.55;
+    }
+    .screen-bg::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        radial-gradient(2px 2px at 20% 25%, rgba(200,200,200,0.4), transparent),
+        radial-gradient(1px 1px at 70% 15%, rgba(200,200,200,0.3), transparent),
+        radial-gradient(1.5px 1.5px at 85% 70%, rgba(200,200,200,0.35), transparent),
+        radial-gradient(1px 1px at 35% 80%, rgba(200,200,200,0.25), transparent);
+      background-size: 100% 100%;
+      animation: dotDrift 10s ease-in-out infinite alternate;
+    }
+
+    /* —— 状态栏 —— */
+    .statusbar {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 46px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 0 26px 7px;
+      font-size: 12px;
+      font-family: var(--font-num);
+      font-weight: 600;
+      z-index: 50;
+      color: var(--ink);
+    }
+    .statusbar .sb-icons { display: flex; align-items: center; gap: 5px; }
+    .sb-bar { display: inline-block; width: 3px; border-radius: 2px; background: var(--ink); }
+    .sb-b1 { height: 5px; opacity: 0.3; }
+    .sb-b2 { height: 7px; opacity: 0.45; }
+    .sb-b3 { height: 9px; opacity: 0.65; }
+    .sb-b4 { height: 11px; }
+    .sb-batt {
+      width: 22px; height: 11px;
+      border: 1.2px solid var(--ink);
+      border-radius: 3px;
+      position: relative;
+      opacity: 0.7;
+    }
+    .sb-batt::after {
+      content: ''; position: absolute; right: -3px; top: 3px;
+      width: 2px; height: 5px; background: var(--ink); border-radius: 0 2px 2px 0;
+    }
+    .sb-batt::before {
+      content: ''; position: absolute; inset: 1.5px; width: 70%;
+      background: var(--calm); border-radius: 1.5px;
+    }
+
+    /* —— 屏幕容器（一次只显示一个） —— */
+    .screen-wrap {
+      position: absolute;
+      top: 46px;
+      bottom: 66px;
+      left: 0; right: 0;
+      z-index: 10;
+      display: none;
+      flex-direction: column;
+      padding: 10px 18px 12px;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+    .screen-wrap::-webkit-scrollbar { display: none; }
+    .screen-wrap.active { display: flex; animation: screenIn 0.4s ease; }
+    @keyframes screenIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* —— 底部 Tab 栏（手机内） —— */
+    .tabbar {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 66px;
+      z-index: 55;
+      display: flex;
+      background: rgba(255,255,255,0.78);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-top: 1px solid var(--rule);
+      padding-bottom: 8px;
+    }
+    .tab {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 10px;
+      letter-spacing: 1px;
+      font-family: var(--font-cn);
+      transition: color 0.2s ease;
+      position: relative;
+    }
+    .tab svg { width: 21px; height: 21px; }
+    .tab.active { color: var(--calm); }
+    .tab.active::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      width: 26px; height: 3px;
+      border-radius: 0 0 3px 3px;
+      background: var(--calm);
+    }
+    .tab .badge {
+      position: absolute;
+      top: 9px; right: calc(50% - 20px);
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--danger);
+      border: 1.5px solid rgba(255,255,255,0.9);
+      display: none;
+      animation: pulseDot 1.2s ease-in-out infinite;
+    }
+    .tab .badge.show { display: block; }
+
+    /* ============================================================
+       屏幕 1 · 今日情绪仪表板
+       ============================================================ */
+    .s1-hello { margin-bottom: 14px; }
+    .s1-hello .greet { font-size: 21px; font-weight: 300; letter-spacing: 1px; color: var(--ink); }
+    .s1-hello .greet b { font-weight: 600; }
+    .s1-hello .date { font-size: 11.5px; color: var(--muted); margin-top: 3px; letter-spacing: 1px; }
+
+    .weather-card {
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-radius: 22px;
+      padding: 18px 16px;
+      backdrop-filter: blur(20px);
+      margin-bottom: 12px;
+      box-shadow: var(--shadow);
+    }
+    .wc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .wc-head .label { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-soft); letter-spacing: 1px; }
+    .wc-head .label svg { width: 15px; height: 15px; }
+    .wc-head .tag {
+      font-size: 10px; padding: 3px 10px; border-radius: 100px;
+      background: rgba(232,168,56,0.12); color: var(--warn-orange);
+      border: 1px solid rgba(232,168,56,0.25); letter-spacing: 1px;
+    }
+    .wc-body { display: flex; align-items: center; gap: 16px; }
+    .ring-wrap { position: relative; width: 86px; height: 86px; flex-shrink: 0; }
+    .ring-wrap svg { transform: rotate(-90deg); }
+    .ring-bg { stroke: rgba(45,42,38,0.08); }
+    .ring-fg { stroke-linecap: round; transition: stroke-dashoffset 0.4s ease, stroke 0.4s ease; }
+    .ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .ring-center .lvl { font-size: 13px; font-weight: 600; letter-spacing: 1px; }
+    .ring-center .pct { font-size: 10px; color: var(--muted); margin-top: 2px; font-family: var(--font-num); }
+    .wc-info { flex: 1; }
+    .wc-info .risk-line { font-size: 12.5px; color: var(--ink-soft); line-height: 1.6; margin-bottom: 8px; }
+    .wc-info .risk-line .risk-val { font-weight: 600; }
+    .wc-info .intensity { display: flex; align-items: baseline; gap: 6px; }
+    .wc-info .intensity .num { font-family: var(--font-num); font-size: 30px; font-weight: 700; line-height: 1; }
+    .wc-info .intensity .unit { font-size: 11px; color: var(--muted); }
+
+    .dual-cards { display: flex; gap: 11px; margin-bottom: 12px; }
+    .mini-card {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-radius: 18px;
+      padding: 14px 13px;
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow);
+    }
+    .mc-head { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; }
+    .mc-icon { width: 26px; height: 26px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+    .mc-icon.sleep { background: var(--calm-light); }
+    .mc-icon.stress { background: rgba(224,96,96,0.08); }
+    .mc-head .name { font-size: 10.5px; color: var(--muted); letter-spacing: 0.5px; }
+    .mc-value { display: flex; align-items: baseline; gap: 4px; margin-bottom: 9px; }
+    .mc-value .v { font-family: var(--font-num); font-size: 21px; font-weight: 700; color: var(--ink); }
+    .mc-value .u { font-size: 10px; color: var(--muted); }
+    .mini-bars { display: flex; align-items: flex-end; gap: 3px; height: 32px; }
+    .mini-bars .bar { flex: 1; border-radius: 3px 3px 1px 1px; transition: height 0.4s ease; min-height: 3px; }
+    .mini-bars .bar.b-sleep { background: var(--calm); opacity: 0.75; }
+    .mini-bars .bar.b-stress { background: var(--warn); opacity: 0.65; }
+
+    .baseline-hint {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 14px;
+      padding: 10px 14px;
+      border-radius: 14px;
+      background: rgba(44,182,154,0.06);
+      border: 1px solid rgba(44,182,154,0.12);
+    }
+    .baseline-hint .bl-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--calm); animation: pulseDot 2.5s ease-in-out infinite; }
+    .baseline-hint span { font-size: 11px; color: var(--ink-soft); }
+
+    .record-btn-wrap { display: flex; flex-direction: column; align-items: center; margin-top: auto; padding-top: 8px; }
+    .record-btn {
+      position: relative;
+      width: 118px; height: 118px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, rgba(44,182,154,0.15), rgba(122,126,200,0.15));
+      border: 1.5px solid rgba(44,182,154,0.25);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      cursor: pointer;
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow);
+    }
+    .record-btn::before, .record-btn::after {
+      content: ''; position: absolute; inset: 0; border-radius: 50%;
+      border: 1.5px solid rgba(44,182,154,0.25);
+      animation: ripple 2.8s ease-out infinite;
+    }
+    .record-btn::after { animation-delay: 1.4s; }
+    @keyframes ripple { 0% { transform: scale(1); opacity: 0.5; } 100% { transform: scale(1.7); opacity: 0; } }
+    .record-btn .rb-text { font-size: 13px; font-weight: 500; letter-spacing: 2px; color: var(--ink); z-index: 2; }
+    .record-btn .rb-sub { font-size: 10px; color: var(--calm); margin-top: 4px; z-index: 2; letter-spacing: 1px; }
+    .rb-glow { position: absolute; inset: 8px; border-radius: 50%; background: radial-gradient(circle, rgba(44,182,154,0.2), transparent 70%); animation: breathe 3s ease-in-out infinite; }
+    @keyframes breathe { 0%,100% { transform: scale(0.9); opacity: 0.5; } 50% { transform: scale(1.05); opacity: 0.9; } }
+
+    /* ============================================================
+       屏幕 2 · 情绪冲浪
+       ============================================================ */
+    .s2-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .s2-topbar .back, .s4-topbar .back {
+      width: 32px; height: 32px; border-radius: 10px;
+      background: var(--surface); border: 1px solid var(--rule);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--ink-soft); font-size: 16px; cursor: pointer; box-shadow: var(--shadow);
+    }
+    .s2-topbar .title, .s4-topbar .title { font-size: 14px; font-weight: 500; letter-spacing: 2px; color: var(--ink); }
+    .s2-topbar .hr-icon {
+      display: flex; align-items: center; gap: 5px;
+      padding: 6px 12px; border-radius: 100px;
+      background: rgba(224,96,96,0.08); border: 1px solid rgba(224,96,96,0.15);
+    }
+    .s2-topbar .hr-icon .hr-pulse { width: 14px; height: 14px; animation: hrPulse 1s ease-in-out infinite; }
+    @keyframes hrPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.25); } }
+    .s2-topbar .hr-icon span { font-family: var(--font-num); font-size: 11px; color: var(--warn); font-weight: 600; }
+
+    .intensity-display { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; padding: 0 2px; }
+    .intensity-display .lbl { font-size: 12px; color: var(--muted); letter-spacing: 1px; }
+    .intensity-display .val { font-family: var(--font-num); font-size: 36px; font-weight: 700; line-height: 1; transition: color 0.3s ease; }
+
+    .emotion-plane {
+      flex: 1; min-height: 300px;
+      position: relative;
+      border-radius: 18px;
+      overflow: hidden;
+      margin-bottom: 12px;
+      background: rgba(255,255,255,0.5);
+      border: 1px solid var(--rule);
+    }
+    .emotion-plane svg { width: 100%; height: 100%; display: block; }
+    .quad { opacity: 0.08; }
+    .danger-zone { fill: rgba(200,72,72,0.06); animation: dangerPulse 2.5s ease-in-out infinite; }
+    @keyframes dangerPulse { 0%,100% { fill: rgba(200,72,72,0.04); } 50% { fill: rgba(200,72,72,0.14); } }
+    .trail-path { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .axis-label { font-size: 9px; fill: var(--muted); font-family: var(--font-num); letter-spacing: 0.5px; }
+    .cp-glow { animation: cpGlow 2.5s ease-in-out infinite; }
+    @keyframes cpGlow { 0%,100% { opacity: 0.3; } 50% { opacity: 0.6; } }
+
+    .s2-bottom { display: flex; gap: 8px; }
+    .s2-chip {
+      flex: 1; display: flex; align-items: center; gap: 6px;
+      padding: 9px 10px; border-radius: 12px;
+      background: var(--surface); border: 1px solid var(--rule);
+      backdrop-filter: blur(10px); font-size: 10.5px; color: var(--ink-soft);
+      box-shadow: var(--shadow); white-space: nowrap;
+    }
+    .s2-chip .chip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .s2-chip .cv { font-family: var(--font-num); font-weight: 600; color: var(--ink); }
+
+    /* ============================================================
+       屏幕 3 · 极点预警
+       ============================================================ */
+    .s3-content { display: flex; flex-direction: column; align-items: center; position: relative; width: 100%; }
+    .concentric {
+      position: absolute; top: 40%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 300px; height: 300px; pointer-events: none; z-index: 1;
+    }
+    .concentric .ring-c {
+      position: absolute; top: 50%; left: 50%; border-radius: 50%;
+      border: 1.5px solid rgba(90,159,200,0.3);
+      width: 80px; height: 80px;
+      transform: translate(-50%, -50%);
+    }
+    .concentric .ring-c:nth-child(1) { animation: concentric 4s ease-out infinite; }
+    .concentric .ring-c:nth-child(2) { animation: concentric 4s ease-out infinite 1s; }
+    .concentric .ring-c:nth-child(3) { animation: concentric 4s ease-out infinite 2s; }
+    .concentric .ring-c:nth-child(4) { animation: concentric 4s ease-out infinite 3s; }
+    @keyframes concentric {
+      0% { transform: translate(-50%,-50%) scale(0.4); opacity: 0.8; border-color: rgba(90,159,200,0.4); }
+      100% { transform: translate(-50%,-50%) scale(3.6); opacity: 0; border-color: rgba(122,126,200,0.1); }
+    }
+    .breath-core {
+      position: absolute; top: 40%; left: 50%;
+      width: 120px; height: 120px; border-radius: 50%;
+      transform: translate(-50%, -50%);
+      background: radial-gradient(circle, rgba(90,159,200,0.18), rgba(122,126,200,0.06) 50%, transparent 70%);
+      animation: breathCore 5s ease-in-out infinite;
+      filter: blur(2px); z-index: 1;
+    }
+    @keyframes breathCore {
+      0%,100% { transform: translate(-50%,-50%) scale(0.85); opacity: 0.5; }
+      50% { transform: translate(-50%,-50%) scale(1.15); opacity: 0.9; }
+    }
+    .s3-alert-tag {
+      display: flex; align-items: center; gap: 7px;
+      padding: 6px 16px; border-radius: 100px;
+      background: rgba(90,159,200,0.1); border: 1px solid rgba(90,159,200,0.2);
+      font-size: 11px; color: var(--ice); letter-spacing: 2px; z-index: 5;
+    }
+    .s3-alert-tag .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ice); box-shadow: 0 0 8px rgba(90,159,200,0.3); animation: pulseDot 1.5s ease-in-out infinite; }
+    .s3-spacer { flex: 0.7; }
+    .s3-phrase { text-align: center; z-index: 5; margin-bottom: 8px; }
+    .s3-phrase .big { font-size: 28px; font-weight: 200; letter-spacing: 4px; color: var(--ink); }
+    .s3-phrase .big2 { font-size: 22px; margin-top: 4px; }
+    .s3-phrase .sub { font-size: 13px; color: var(--muted); margin-top: 10px; letter-spacing: 2px; font-weight: 300; }
+    .s3-vitals { display: flex; gap: 9px; width: 100%; margin-bottom: 16px; z-index: 5; }
+    .vital-pill {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+      padding: 10px 6px; border-radius: 14px;
+      background: var(--surface); border: 1px solid var(--rule);
+      backdrop-filter: blur(12px); box-shadow: var(--shadow);
+    }
+    .vital-pill .vp-val { font-family: var(--font-num); font-size: 16px; font-weight: 700; color: var(--ink); }
+    .vital-pill .vp-lbl { font-size: 9.5px; color: var(--muted); letter-spacing: 0.5px; }
+    .s3-actions { width: 100%; display: flex; flex-direction: column; gap: 10px; z-index: 5; }
+    .btn-primary, .btn-secondary {
+      width: 100%; padding: 14px; border-radius: 16px; cursor: pointer;
+      font-size: 13px; font-weight: 500; letter-spacing: 2px; font-family: var(--font-cn);
+      display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: var(--shadow);
+    }
+    .btn-primary {
+      border: 1px solid rgba(90,159,200,0.3);
+      background: linear-gradient(135deg, rgba(90,159,200,0.2), rgba(122,126,200,0.2));
+      color: var(--ink);
+    }
+    .btn-secondary {
+      background: rgba(224,96,96,0.08); border: 1px solid rgba(224,96,96,0.2); color: var(--warn);
+    }
+    /* 平稳态 */
+    .s3-calm { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; text-align: center; z-index: 5; }
+    .calm-orb {
+      width: 130px; height: 130px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(44,182,154,0.18), rgba(44,182,154,0.04) 60%, transparent 75%);
+      display: flex; align-items: center; justify-content: center;
+      animation: breathCore 5s ease-in-out infinite; margin-bottom: 22px;
+    }
+    .calm-orb svg { width: 46px; height: 46px; }
+    .s3-calm .ctitle { font-size: 20px; font-weight: 300; letter-spacing: 3px; color: var(--ink); margin-bottom: 8px; }
+    .s3-calm .csub { font-size: 12px; color: var(--muted); letter-spacing: 1px; line-height: 1.8; max-width: 220px; }
+    .s3-calm .cvitals { display: flex; gap: 16px; margin-top: 20px; font-family: var(--font-num); font-size: 12px; color: var(--ink-soft); }
+    .s3-calm .cvitals b { color: var(--calm); font-weight: 600; }
+
+    /* ============================================================
+       屏幕 4 · 事件总结
+       ============================================================ */
+    .s4-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .s4-topbar .time { font-size: 11px; color: var(--muted); font-family: var(--font-num); }
+    .summary-card {
+      background: var(--surface); border: 1px solid var(--rule);
+      border-radius: 20px; padding: 16px; backdrop-filter: blur(20px);
+      margin-bottom: 12px; box-shadow: var(--shadow);
+    }
+    .sc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .sc-head .label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); letter-spacing: 1px; }
+    .sc-head .peak { font-family: var(--font-num); font-size: 12px; color: var(--warn-orange); font-weight: 600; }
+    .wave-chart { width: 100%; height: 84px; }
+    .wave-chart svg { width: 100%; height: 100%; }
+    .wave-fill { opacity: 0.4; }
+    .wave-line { fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .wave-peak-dot { animation: hrPulse 1.8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+    .wave-axis { font-size: 8px; fill: var(--muted); font-family: var(--font-num); }
+
+    .body-map {
+      background: var(--surface); border: 1px solid var(--rule);
+      border-radius: 18px; padding: 14px; backdrop-filter: blur(16px);
+      margin-bottom: 12px; box-shadow: var(--shadow);
+    }
+    .bm-head { font-size: 11.5px; color: var(--ink-soft); letter-spacing: 1px; margin-bottom: 10px; }
+    .body-svg-wrap { display: flex; justify-content: center; }
+    .body-svg-wrap svg { width: 90px; height: 150px; }
+    .body-outline { fill: rgba(45,42,38,0.04); stroke: rgba(45,42,38,0.2); stroke-width: 1; }
+    .symptom-dot { animation: dotBreath 2.5s ease-in-out infinite; transition: fill 0.4s ease; }
+    .symptom-glow { animation: glowBreath 2.5s ease-in-out infinite; transition: fill 0.4s ease; }
+    .symptom-inactive { opacity: 0 !important; animation: none !important; }
+    .bm-labels { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 8px; }
+    .bm-labels .bl-tag {
+      font-size: 10px; padding: 3px 9px; border-radius: 100px;
+      background: rgba(217,122,64,0.1); color: var(--warn-orange);
+      border: 1px solid rgba(217,122,64,0.2); transition: opacity 0.3s ease;
+    }
+    .bm-labels .bl-tag.inactive { opacity: 0.3; }
+
+    .tag-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tc-tag { display: flex; align-items: center; gap: 5px; padding: 8px 12px; border-radius: 13px; font-size: 11px; backdrop-filter: blur(10px); box-shadow: var(--shadow); }
+    .tc-tag .tc-k { color: var(--muted); }
+    .tc-tag .tc-v { color: var(--ink); font-weight: 500; }
+    .tc-trigger { background: rgba(200,120,144,0.08); border: 1px solid rgba(200,120,144,0.18); }
+    .tc-trigger .tc-v { color: var(--rose); }
+    .tc-coping { background: rgba(44,182,154,0.08); border: 1px solid rgba(44,182,154,0.18); }
+    .tc-coping .tc-v { color: var(--calm); }
+    .tc-stars { color: var(--warm); font-size: 10px; letter-spacing: 1px; }
+    .tc-stars .dim { color: rgba(232,168,56,0.3); }
+
+    /* —— 加载 / 错误 —— */
+    .m-status { text-align: center; padding: 60px 20px; color: var(--muted); font-size: 14px; }
+    .m-status.error { color: var(--danger); }
+
+    /* —— 响应式：窄屏缩放手机 —— */
+    @media (max-width: 440px) {
+      .phone-stage { padding: 24px 0 60px; }
+      .phone { transform: scale(0.92); transform-origin: top center; }
+    }
+  </style>
+</head>
+<body class="day-mode">
+  <div class="page-bg"></div>
+
+  <!-- 顶部导航 -->
+  <div class="m-topbar">
+    <a href="/" class="back-dash">‹ 返回 Dashboard</a>
+    <h1>心潮 <b>EmoWave</b> · 移动端预览</h1>
+    <div class="live-pill"><span class="ldot"></span>实时模拟回放</div>
+  </div>
+
+  <!-- 播放控制条（手机框上方） -->
+  <div class="player-bar">
+    <button id="playBtn" class="btn active">▶ 播放</button>
+    <div class="slider-container">
+      <span id="sliderMin" class="time-display">0.0s</span>
+      <input id="timeSlider" type="range" min="0" max="0" value="0" step="1" />
+      <span id="sliderMax" class="time-display">0.0s</span>
+    </div>
+    <div id="currentTime" class="time-display">0.0s</div>
+    <div class="speed-group">
+      <button class="speed-btn" data-speed="0.5">0.5x</button>
+      <button class="speed-btn active" data-speed="1">1x</button>
+      <button class="speed-btn" data-speed="2">2x</button>
+      <button class="speed-btn" data-speed="5">5x</button>
+    </div>
+    <select id="eventSelectMobile"><option value="">全部事件</option></select>
+    <div class="frame-meta"><span id="frameMeta">— / —</span></div>
+  </div>
+
+  <!-- 手机舞台 -->
+  <div class="phone-stage">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="screen">
+        <div class="screen-bg"></div>
+
+        <!-- 状态栏 -->
+        <div class="statusbar">
+          <span id="sbTime">9:41</span>
+          <div class="sb-icons">
+            <span class="sb-bar sb-b1"></span><span class="sb-bar sb-b2"></span>
+            <span class="sb-bar sb-b3"></span><span class="sb-bar sb-b4"></span>
+            <span class="sb-batt"></span>
+          </div>
+        </div>
+
+        <!-- ============ 屏幕 1 · 今日情绪仪表板 ============ -->
+        <div class="screen-wrap active" id="screen1">
+          <div class="s1-hello">
+            <div class="greet"><span id="greetWord">早安</span>，<b>林溪</b></div>
+            <div class="date" id="dateText">— · —</div>
+          </div>
+
+          <div class="weather-card">
+            <div class="wc-head">
+              <div class="label">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#d97a40" stroke-width="2"><path d="M3 15t4-4 4 4 4-8 4 6 2-2"/><circle cx="20" cy="7" r="2" fill="#d97a40"/></svg>
+                情绪天气预报
+              </div>
+              <div class="tag">实时监测</div>
+            </div>
+            <div class="wc-body">
+              <div class="ring-wrap">
+                <svg width="86" height="86">
+                  <defs>
+                    <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stop-color="#2cb69a"/>
+                      <stop offset="100%" stop-color="#d97a40"/>
+                    </linearGradient>
+                  </defs>
+                  <circle class="ring-bg" cx="43" cy="43" r="36" fill="none" stroke-width="6"/>
+                  <circle class="ring-fg" id="ringFg" cx="43" cy="43" r="36" fill="none" stroke="url(#ringGrad)" stroke-width="6" stroke-dasharray="226" stroke-dashoffset="226"/>
+                </svg>
+                <div class="ring-center">
+                  <div class="lvl" id="ringLvl">低</div>
+                  <div class="pct" id="ringPct">0%</div>
+                </div>
+              </div>
+              <div class="wc-info">
+                <div class="risk-line">当前情绪风险：<span class="risk-val" id="riskVal">低</span></div>
+                <div class="intensity">
+                  <span class="num" id="intensityNum" style="color:var(--calm)">0.0</span>
+                  <span class="unit">情绪强度 /10</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dual-cards">
+            <div class="mini-card">
+              <div class="mc-head">
+                <div class="mc-icon sleep">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ice)" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                </div>
+                <div class="name">睡眠质量</div>
+              </div>
+              <div class="mc-value"><span class="v" id="sleepVal">—</span><span class="u">分</span></div>
+              <div class="mini-bars" id="sleepBars"></div>
+            </div>
+            <div class="mini-card">
+              <div class="mc-head">
+                <div class="mc-icon stress">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                </div>
+                <div class="name">今日压力</div>
+              </div>
+              <div class="mc-value"><span class="v" id="stressVal">—</span><span class="u">/10</span></div>
+              <div class="mini-bars" id="stressBars"></div>
+            </div>
+          </div>
+
+          <div class="baseline-hint">
+            <span class="bl-dot"></span>
+            <span id="baselineText">情绪基线平稳 · 连续记录 — 天</span>
+          </div>
+
+          <div class="record-btn-wrap">
+            <div class="record-btn">
+              <div class="rb-glow"></div>
+              <div class="rb-text">我在感受…</div>
+              <div class="rb-sub">开始记录情绪</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ 屏幕 2 · 情绪冲浪 ============ -->
+        <div class="screen-wrap" id="screen2">
+          <div class="s2-topbar">
+            <div class="back" data-goto="1">‹</div>
+            <div class="title">情绪冲浪</div>
+            <div class="hr-icon">
+              <svg class="hr-pulse" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2.5"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>
+              <span id="s2HR">— BPM</span>
+            </div>
+          </div>
+
+          <div class="intensity-display">
+            <span class="lbl">当前强度</span>
+            <span class="val" id="s2Intensity" style="color:var(--calm)">0.0</span>
+            <span class="lbl" id="s2Trend">→</span>
+          </div>
+
+          <div class="emotion-plane">
+            <svg viewBox="0 0 280 360" preserveAspectRatio="xMidYMid meet">
+              <defs>
+                <linearGradient id="quadTL" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#c87890"/><stop offset="100%" stop-color="#a078b8"/></linearGradient>
+                <linearGradient id="quadTR" x1="1" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#e8a838"/><stop offset="100%" stop-color="#d97a40"/></linearGradient>
+                <linearGradient id="quadBL" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stop-color="#5a9fc8"/><stop offset="100%" stop-color="#7a7ec8"/></linearGradient>
+                <linearGradient id="quadBR" x1="1" y1="1" x2="0" y2="0"><stop offset="0%" stop-color="#2cb69a"/><stop offset="100%" stop-color="#5ac89c"/></linearGradient>
+                <linearGradient id="trailGrad" x1="0" y1="1" x2="1" y2="0">
+                  <stop offset="0%" stop-color="#2cb69a" stop-opacity="0.4"/>
+                  <stop offset="35%" stop-color="#5a9fc8"/>
+                  <stop offset="65%" stop-color="#a078b8"/>
+                  <stop offset="100%" stop-color="#e06060"/>
+                </linearGradient>
+                <radialGradient id="cpGrad">
+                  <stop offset="0%" stop-color="#fff" stop-opacity="0.9"/>
+                  <stop offset="50%" stop-color="#a078b8" stop-opacity="0.5"/>
+                  <stop offset="100%" stop-color="#a078b8" stop-opacity="0"/>
+                </radialGradient>
+              </defs>
+
+              <!-- 四象限 -->
+              <rect class="quad" x="0" y="0" width="140" height="160" fill="url(#quadTL)"/>
+              <rect class="quad" x="140" y="0" width="140" height="160" fill="url(#quadTR)"/>
+              <rect class="quad" x="0" y="160" width="140" height="160" fill="url(#quadBL)"/>
+              <rect class="quad" x="140" y="160" width="140" height="160" fill="url(#quadBR)"/>
+
+              <!-- 高危区（左上，阈值驱动） -->
+              <circle class="danger-zone" id="dangerZone" cx="42" cy="48" r="55"/>
+              <circle id="dangerGlow" cx="42" cy="48" r="38" fill="none" stroke="#c84848" stroke-width="1.5" opacity="0.3"/>
+
+              <!-- 网格线 -->
+              <line x1="140" y1="0" x2="140" y2="320" stroke="rgba(45,42,38,0.1)" stroke-dasharray="3,4"/>
+              <line x1="0" y1="160" x2="280" y2="160" stroke="rgba(45,42,38,0.1)" stroke-dasharray="3,4"/>
+
+              <!-- 轴标签 -->
+              <text class="axis-label" x="250" y="335" text-anchor="middle">舒服</text>
+              <text class="axis-label" x="30" y="335" text-anchor="middle">不舒服</text>
+              <text class="axis-label" x="148" y="12" text-anchor="start">兴奋</text>
+              <text class="axis-label" x="148" y="318" text-anchor="start">困倦</text>
+              <text class="axis-label" x="70" y="80" text-anchor="middle" fill="#c87890" opacity="0.6">焦虑</text>
+              <text class="axis-label" x="210" y="80" text-anchor="middle" fill="#e8a838" opacity="0.6">亢奋</text>
+              <text class="axis-label" x="70" y="245" text-anchor="middle" fill="#5a9fc8" opacity="0.6">低落</text>
+              <text class="axis-label" x="210" y="245" text-anchor="middle" fill="#2cb69a" opacity="0.6">平静</text>
+              <text class="axis-label" x="42" y="42" text-anchor="middle" fill="#c84848" opacity="0.45">情绪极点</text>
+
+              <!-- 轨迹 -->
+              <path class="trail-path" id="trailPath" stroke="url(#trailGrad)" d=""/>
+              <g id="trailDots"></g>
+
+              <!-- 当前控制点 -->
+              <g id="controlPoint">
+                <circle class="cp-glow" id="cpGlow" cx="140" cy="160" r="22" fill="url(#cpGrad)"/>
+                <circle id="cpRing" cx="140" cy="160" r="11" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.7)" stroke-width="1"/>
+                <circle id="cpCore" cx="140" cy="160" r="5" fill="#fff" opacity="0.95"/>
+              </g>
+            </svg>
+          </div>
+
+          <div class="s2-bottom">
+            <div class="s2-chip"><span class="chip-dot" style="background:var(--violet)"></span>效价 <span class="cv" id="s2Valence">0.0</span></div>
+            <div class="s2-chip"><span class="chip-dot" style="background:var(--warn-orange)"></span>唤醒 <span class="cv" id="s2Arousal">0.0</span></div>
+            <div class="s2-chip"><span class="chip-dot" id="s2RiskDot" style="background:var(--calm)"></span><span id="s2Risk">平稳</span></div>
+          </div>
+        </div>
+
+        <!-- ============ 屏幕 3 · 极点预警 ============ -->
+        <div class="screen-wrap" id="screen3">
+          <!-- 预警态 -->
+          <div class="s3-content" id="s3Warning" style="display:none; width:100%; flex:1;">
+            <div class="breath-core"></div>
+            <div class="concentric">
+              <div class="ring-c"></div><div class="ring-c"></div><div class="ring-c"></div><div class="ring-c"></div>
+            </div>
+            <div class="s3-alert-tag" style="margin-top:4px"><span class="dot"></span>情绪极点检测中</div>
+            <div class="s3-spacer"></div>
+            <div class="s3-phrase">
+              <div class="big">暂停6秒</div>
+              <div class="big big2">深呼吸</div>
+              <div class="sub">你正经历一次情绪浪潮</div>
+            </div>
+            <div class="s3-spacer" style="flex:0.4"></div>
+            <div class="s3-vitals">
+              <div class="vital-pill"><div class="vp-val" id="s3HR">—</div><div class="vp-lbl">心率 BPM</div></div>
+              <div class="vital-pill"><div class="vp-val" id="s3Breath">—</div><div class="vp-lbl">呼吸 /min</div></div>
+              <div class="vital-pill"><div class="vp-val" id="s3EDA">—</div><div class="vp-lbl">皮电 μS</div></div>
+            </div>
+            <div class="s3-actions">
+              <button class="btn-primary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                开始呼吸练习
+              </button>
+              <button class="btn-secondary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.7 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.27a2 2 0 0 1 2.11-.45c.74.34 1.53.57 2.34.7A2 2 0 0 1 22 16.92z"/></svg>
+                我需要帮助
+              </button>
+            </div>
+          </div>
+
+          <!-- 平稳态 -->
+          <div class="s3-calm" id="s3Calm" style="display:none;">
+            <div class="calm-orb">
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--calm)" stroke-width="1.6"><path d="M2 12c2-4 4-4 6 0s4 4 6 0 4-4 6 0 2 0 2 0"/></svg>
+            </div>
+            <div class="ctitle">当前状态平稳</div>
+            <div class="csub">情绪浪潮尚未到来<br/>保持觉察，留意身体信号</div>
+            <div class="cvitals">心率 <b id="s3CalmHR">—</b> · HRV <b id="s3CalmHRV">—</b></div>
+          </div>
+        </div>
+
+        <!-- ============ 屏幕 4 · 事件总结 ============ -->
+        <div class="screen-wrap" id="screen4">
+          <div class="s4-topbar">
+            <div class="back" data-goto="1">‹</div>
+            <div class="title">情绪事件复盘</div>
+            <div class="time" id="s4TimeRange">— —</div>
+          </div>
+
+          <div class="summary-card">
+            <div class="sc-head">
+              <div class="label">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--calm)" stroke-width="2"><path d="M2 12c2-4 4-4 6 0s4 4 6 0 4-4 6 0 2 0 2 0"/></svg>
+                本次情绪浪潮
+              </div>
+              <div class="peak">峰值 <span id="s4Peak">—</span></div>
+            </div>
+            <div class="wave-chart">
+              <svg viewBox="0 0 280 90" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="waveFillGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#d97a40" stop-opacity="0.25"/><stop offset="100%" stop-color="#d97a40" stop-opacity="0"/></linearGradient>
+                  <linearGradient id="waveLineGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2cb69a"/><stop offset="50%" stop-color="#d97a40"/><stop offset="100%" stop-color="#5a9fc8"/></linearGradient>
+                </defs>
+                <path class="wave-fill" id="waveFill" fill="url(#waveFillGrad)" d=""/>
+                <path class="wave-line" id="waveLine" stroke="url(#waveLineGrad)" d=""/>
+                <circle class="wave-peak-dot" id="wavePeakGlow" cx="0" cy="0" r="8" fill="none" stroke="#d97a40" stroke-width="1" opacity="0.2"/>
+                <circle class="wave-peak-dot" id="wavePeak" cx="0" cy="0" r="3.5" fill="#d97a40"/>
+                <text class="wave-axis" x="2" y="86">起</text>
+                <text class="wave-axis" x="262" y="86">终</text>
+                <text class="wave-axis" id="wavePeakLabel" x="0" y="9" text-anchor="middle" fill="#d97a40">峰值</text>
+              </svg>
+            </div>
+          </div>
+
+          <div class="body-map">
+            <div class="bm-head">躯体感受 · 实时状态</div>
+            <div class="body-svg-wrap">
+              <svg viewBox="0 0 90 150">
+                <path class="body-outline" d="M45,12 a9,9 0 1 1 0,0.01 M30,28 Q45,24 60,28 L58,52 Q56,70 52,90 L50,130 Q48,140 45,140 Q42,140 40,130 L38,90 Q34,70 32,52 Z M30,30 L18,48 L20,72 L24,72 L26,50 M60,30 L72,48 L70,72 L66,72 L64,50"/>
+                <circle class="symptom-glow symptom-inactive" id="bodyGlowHead" cx="45" cy="32" r="11" fill="#d97a40" opacity="0.2"/>
+                <circle class="symptom-dot symptom-inactive" id="bodyDotHead" cx="45" cy="32" r="5" fill="#d97a40"/>
+                <circle class="symptom-glow symptom-inactive" id="bodyGlowChest" cx="45" cy="58" r="11" fill="#d97a40" opacity="0.2"/>
+                <circle class="symptom-dot symptom-inactive" id="bodyDotChest" cx="45" cy="58" r="5" fill="#d97a40"/>
+                <circle class="symptom-glow symptom-inactive" id="bodyGlowStomach" cx="45" cy="78" r="11" fill="#d97a40" opacity="0.2"/>
+                <circle class="symptom-dot symptom-inactive" id="bodyDotStomach" cx="45" cy="78" r="5" fill="#d97a40"/>
+              </svg>
+            </div>
+            <div class="bm-labels">
+              <span class="bl-tag inactive" id="labelHead">头部紧绷</span>
+              <span class="bl-tag inactive" id="labelChest">胸口压抑</span>
+              <span class="bl-tag inactive" id="labelStomach">胃部不适</span>
+            </div>
+          </div>
+
+          <div class="tag-cloud" id="tagCloud"></div>
+        </div>
+
+        <!-- 底部 Tab 栏 -->
+        <div class="tabbar">
+          <button class="tab active" data-screen="1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+            仪表板
+          </button>
+          <button class="tab" data-screen="2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 14c2-3 3-3 5 0s3 3 5 0 3-3 5 0 3 3 5 0"/><path d="M2 9c2-3 3-3 5 0s3 3 5 0 3-3 5 0 3 3 5 0" opacity="0.5"/></svg>
+            冲浪
+          </button>
+          <button class="tab" data-screen="3">
+            <span class="badge" id="tab3Badge"></span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+            预警
+          </button>
+          <button class="tab" data-screen="4">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M15 4v5h5"/><path d="M7 13h7M7 17h5"/></svg>
+            复盘
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ============================================================
+       状态
+       ============================================================ */
+    let rawData = null;
+    let frames = [];
+    let meta = {};
+    let eventMap = {};
+    let currentIdx = 0;
+    let isPlaying = false;
+    let playbackSpeed = 1;
+    let playbackTimer = null;
+    let selectedEventId = '';
+    let activeScreen = 1;
+
+    const BASE_INTERVAL = 200;       // 每帧 200ms @ 1x
+    const WARNING_INTENSITY = 0.6;   // 极点预警触发阈值
+    const TRAIL_LEN = 60;            // 轨迹长度
+
+    /* ============================================================
+       初始化
+       ============================================================ */
+    document.addEventListener('DOMContentLoaded', () => {
+      initControls();
+      fetchData();
+    });
+
+    function initControls() {
+      document.getElementById('playBtn').addEventListener('click', togglePlay);
+
+      const slider = document.getElementById('timeSlider');
+      slider.addEventListener('input', () => {
+        pause();
+        currentIdx = parseInt(slider.value, 10);
+        updateAll();
+      });
+
+      document.querySelectorAll('.speed-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          playbackSpeed = parseFloat(btn.dataset.speed);
+        });
+      });
+
+      document.getElementById('eventSelectMobile').addEventListener('change', (e) => {
+        selectedEventId = e.target.value;
+        if (selectedEventId) {
+          const idx = frames.findIndex(f => f.event_id === selectedEventId);
+          if (idx >= 0) { currentIdx = idx; document.getElementById('timeSlider').value = currentIdx; updateAll(); }
+        }
+      });
+
+      // Tab 切换
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => switchScreen(parseInt(tab.dataset.screen, 10)));
+      });
+      // 屏内返回按钮
+      document.querySelectorAll('[data-goto]').forEach(el => {
+        el.addEventListener('click', () => switchScreen(parseInt(el.dataset.goto, 10)));
+      });
+    }
+
+    /* ============================================================
+       数据加载
+       ============================================================ */
+    async function fetchData() {
+      try {
+        const res = await fetch('/api/data');
+        if (!res.ok) { const err = await res.json(); showError(err.error || '加载数据失败'); return; }
+        rawData = await res.json();
+        if (rawData.error) { showError(rawData.error); return; }
+        meta = rawData.meta || {};
+        frames = rawData.frames || [];
+        if (!frames.length) { showError('数据文件中没有帧数据。'); return; }
+        setupMobile();
+      } catch (e) {
+        showError('网络错误或服务器未启动: ' + e.message);
+      }
+    }
+
+    function showError(msg) {
+      document.querySelector('.phone-stage').innerHTML =
+        '<div class="phone" style="display:flex;align-items:center;justify-content:center;"><div class="m-status error">' + msg + '</div></div>';
+    }
+
+    function setupMobile() {
+      // 事件映射
+      (meta.events || []).forEach(e => { eventMap[e.event_id] = e; });
+
+      const slider = document.getElementById('timeSlider');
+      slider.max = frames.length - 1;
+      slider.value = 0;
+      document.getElementById('sliderMin').textContent = formatTime(frames[0]?.t ?? 0);
+      document.getElementById('sliderMax').textContent = formatTime(frames[frames.length - 1]?.t ?? 0);
+
+      // 事件下拉
+      const sel = document.getElementById('eventSelectMobile');
+      const ids = [...new Set(frames.map(f => f.event_id).filter(Boolean))];
+      ids.forEach(eid => {
+        const ev = eventMap[eid] || {};
+        const opt = document.createElement('option');
+        opt.value = eid;
+        opt.textContent = '事件 · ' + (ev.trigger || eid.slice(-6));
+        sel.appendChild(opt);
+      });
+
+      updateAll();
+    }
+
+    /* ============================================================
+       播放控制（与 Dashboard 同逻辑）
+       ============================================================ */
+    function togglePlay() { isPlaying ? pause() : play(); }
+
+    function play() {
+      isPlaying = true;
+      const b = document.getElementById('playBtn');
+      b.textContent = '⏸ 暂停'; b.classList.add('active');
+      scheduleNext();
+    }
+    function pause() {
+      isPlaying = false;
+      const b = document.getElementById('playBtn');
+      b.textContent = '▶ 播放'; b.classList.remove('active');
+      if (playbackTimer) { clearTimeout(playbackTimer); playbackTimer = null; }
+    }
+    function scheduleNext() {
+      if (!isPlaying) return;
+      const interval = Math.max(50, BASE_INTERVAL / playbackSpeed);
+      playbackTimer = setTimeout(() => {
+        if (currentIdx < frames.length - 1) { currentIdx++; updateAll(); scheduleNext(); }
+        else { pause(); }
+      }, interval);
+    }
+
+    /* ============================================================
+       屏幕切换
+       ============================================================ */
+    function switchScreen(n) {
+      activeScreen = n;
+      document.querySelectorAll('.screen-wrap').forEach(w => w.classList.remove('active'));
+      const el = document.getElementById('screen' + n);
+      if (el) el.classList.add('active');
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', parseInt(t.dataset.screen, 10) === n));
+    }
+
+    /* ============================================================
+       主更新
+       ============================================================ */
+    function updateAll() {
+      const frame = frames[currentIdx] || {};
+      document.getElementById('timeSlider').value = currentIdx;
+      document.getElementById('currentTime').textContent = formatTime(frame.t ?? 0);
+      document.getElementById('frameMeta').textContent = (currentIdx + 1) + ' / ' + frames.length;
+
+      updateStatusbar(frame);
+      updateScreen1(frame);
+      updateScreen2(frame);
+      updateScreen3(frame);
+      updateScreen4(frame);
+    }
+
+    /* ============================================================
+       状态栏
+       ============================================================ */
+    function updateStatusbar(frame) {
+      document.getElementById('sbTime').textContent = clockStr(frame);
+    }
+
+    /* ============================================================
+       屏幕 1 · 今日情绪仪表板
+       ============================================================ */
+    function updateScreen1(frame) {
+      // 问候 + 日期
+      const hour = clockHour(frame);
+      let greet = '早安';
+      if (hour >= 11 && hour < 13) greet = '午安';
+      else if (hour >= 13 && hour < 18) greet = '下午好';
+      else if (hour >= 18 && hour < 23) greet = '晚上好';
+      else if (hour >= 23 || hour < 5) greet = '夜深了';
+      document.getElementById('greetWord').textContent = greet;
+      document.getElementById('dateText').textContent = dateStr(frame);
+
+      // 情绪天气预报
+      const intensity = frame.intensity ?? 0;
+      const pct = Math.round(intensity * 100);
+      const circ = 226; // 2πr (r=36)
+      document.getElementById('ringFg').setAttribute('stroke-dashoffset', (circ * (1 - intensity)).toFixed(1));
+      document.getElementById('ringPct').textContent = pct + '%';
+
+      const { lvl, color, risk } = intensityInfo(intensity);
+      const ringLvl = document.getElementById('ringLvl');
+      ringLvl.textContent = lvl; ringLvl.style.color = color;
+      const riskVal = document.getElementById('riskVal');
+      riskVal.textContent = risk; riskVal.style.color = color;
+      const numEl = document.getElementById('intensityNum');
+      numEl.textContent = (intensity * 10).toFixed(1);
+      numEl.style.color = color;
+
+      // 双卡片：睡眠（HRV 趋势）+ 压力（HR 趋势）
+      const day = frame.day ?? 0;
+      const ds = (meta.daily_summaries || [])[day] || {};
+      const sleepScore = ds.sleep_score ?? meta.engine_diagnostics?.baseline?.sleep_score ?? 0;
+      document.getElementById('sleepVal').textContent = sleepScore.toFixed(1);
+      renderBars('sleepBars', 'b-sleep', recentSeries('hrv'), true);
+
+      const hr = getHR(frame);
+      const stressScore = clamp(((hr - 60) / (115 - 60)) * 10, 0, 10);
+      document.getElementById('stressVal').textContent = stressScore.toFixed(1);
+      renderBars('stressBars', 'b-stress', recentSeries('hr'), false);
+
+      // 基线提示
+      const baseDays = meta.engine_diagnostics?.baseline_days ?? meta.engine_diagnostics?.baseline?.days ?? 0;
+      const stable = intensity < WARNING_INTENSITY;
+      const bh = document.getElementById('baselineText');
+      bh.textContent = (stable ? '情绪基线平稳' : '基线波动 · 建议觉察') + ' · 连续记录 ' + baseDays + ' 天';
+      document.querySelector('.baseline-hint').style.background = stable ? 'rgba(44,182,154,0.06)' : 'rgba(232,168,56,0.08)';
+      document.querySelector('.baseline-hint').style.borderColor = stable ? 'rgba(44,182,154,0.12)' : 'rgba(232,168,56,0.2)';
+      document.querySelector('.baseline-hint .bl-dot').style.background = stable ? 'var(--calm)' : 'var(--warm)';
+    }
+
+    /* ============================================================
+       屏幕 2 · 情绪冲浪
+       ============================================================ */
+    function updateScreen2(frame) {
+      // HR 指示
+      document.getElementById('s2HR').textContent = Math.round(getHR(frame)) + ' BPM';
+
+      // 强度
+      const intensity = frame.intensity ?? 0;
+      const valEl = document.getElementById('s2Intensity');
+      valEl.textContent = (intensity * 10).toFixed(1);
+      valEl.style.color = intensityInfo(intensity).color;
+
+      // 趋势箭头
+      const prev = frames[currentIdx - 1];
+      let trend = '→';
+      if (prev) {
+        const d = intensity - (prev.intensity ?? 0);
+        trend = d > 0.005 ? '↑' : d < -0.005 ? '↓' : '→';
+      }
+      document.getElementById('s2Trend').textContent = trend;
+      document.getElementById('s2Trend').style.color = intensityInfo(intensity).color;
+
+      // 高危区位置（阈值驱动）
+      const tv = frame.threshold_valence ?? meta.engine_diagnostics?.thresholds?.high_risk_valence ?? 0.15;
+      const ta = frame.threshold_arousal ?? meta.engine_diagnostics?.thresholds?.high_risk_arousal ?? 0.85;
+      const dzx = (tv * 280).toFixed(1);
+      const dzy = ((1 - ta) * 320).toFixed(1);
+      document.getElementById('dangerZone').setAttribute('cx', dzx);
+      document.getElementById('dangerZone').setAttribute('cy', dzy);
+      document.getElementById('dangerGlow').setAttribute('cx', dzx);
+      document.getElementById('dangerGlow').setAttribute('cy', dzy);
+
+      // 轨迹（最近 60 帧的 valence_kf/arousal_kf）
+      const start = Math.max(0, currentIdx - TRAIL_LEN + 1);
+      const trail = frames.slice(start, currentIdx + 1);
+      let d = '';
+      const pts = [];
+      trail.forEach((f, i) => {
+        const v = f.valence_kf ?? f.valence_raw ?? 0.5;
+        const a = f.arousal_kf ?? f.arousal_raw ?? 0.5;
+        const x = (v * 280).toFixed(1);
+        const y = ((1 - a) * 320).toFixed(1);
+        d += (i === 0 ? 'M' : 'L') + x + ',' + y + ' ';
+        pts.push([+x, +y]);
+      });
+      document.getElementById('trailPath').setAttribute('d', d.trim());
+
+      // 轨迹光点（采样 3 个）
+      const dotsG = document.getElementById('trailDots');
+      const samples = [Math.floor(pts.length * 0.25), Math.floor(pts.length * 0.6), pts.length - 1];
+      const colors = ['#5a9fc8', '#a078b8', '#e06060'];
+      let dotsHtml = '';
+      samples.forEach((si, k) => {
+        if (pts[si]) dotsHtml += '<circle cx="' + pts[si][0] + '" cy="' + pts[si][1] + '" r="2.5" fill="' + colors[k] + '" opacity="0.6"/>';
+      });
+      dotsG.innerHTML = dotsHtml;
+
+      // 当前控制点
+      const cv = frame.valence_kf ?? frame.valence_raw ?? 0.5;
+      const ca = frame.arousal_kf ?? frame.arousal_raw ?? 0.5;
+      const cx = (cv * 280).toFixed(1);
+      const cy = ((1 - ca) * 320).toFixed(1);
+      ['cpGlow', 'cpRing', 'cpCore'].forEach(id => {
+        const el = document.getElementById(id);
+        el.setAttribute('cx', cx); el.setAttribute('cy', cy);
+      });
+
+      // 底部 chips
+      document.getElementById('s2Valence').textContent = signed((cv - 0.5) * 2);
+      document.getElementById('s2Arousal').textContent = signed((ca - 0.5) * 2);
+      const inDanger = intensity >= WARNING_INTENSITY;
+      const riskEl = document.getElementById('s2Risk');
+      const riskDot = document.getElementById('s2RiskDot');
+      if (inDanger) { riskEl.textContent = '极点临近'; riskDot.style.background = 'var(--danger)'; }
+      else if (intensity > 0.45) { riskEl.textContent = '波动上升'; riskDot.style.background = 'var(--warn-orange)'; }
+      else { riskEl.textContent = '状态平稳'; riskDot.style.background = 'var(--calm)'; }
+    }
+
+    /* ============================================================
+       屏幕 3 · 极点预警
+       ============================================================ */
+    function updateScreen3(frame) {
+      const intensity = frame.intensity ?? 0;
+      const warning = intensity >= WARNING_INTENSITY;
+      const badge = document.getElementById('tab3Badge');
+      badge.classList.toggle('show', warning);
+
+      const wEl = document.getElementById('s3Warning');
+      const cEl = document.getElementById('s3Calm');
+      if (warning) {
+        wEl.style.display = 'flex';
+        cEl.style.display = 'none';
+        document.getElementById('s3HR').textContent = Math.round(getHR(frame));
+        document.getElementById('s3Breath').textContent = estimateBreathing(frame);
+        document.getElementById('s3EDA').textContent = estimateEDA(frame);
+      } else {
+        wEl.style.display = 'none';
+        cEl.style.display = 'flex';
+        document.getElementById('s3CalmHR').textContent = Math.round(getHR(frame)) + ' BPM';
+        document.getElementById('s3CalmHRV').textContent = (getHRV(frame)).toFixed(0) + ' ms';
+      }
+    }
+
+    /* ============================================================
+       屏幕 4 · 事件总结
+       ============================================================ */
+    function updateScreen4(frame) {
+      const eid = frame.event_id;
+      const ev = eventMap[eid] || {};
+      const evFrames = frames.filter(f => f.event_id === eid);
+
+      // 时间范围
+      const startT = ev.start_time != null ? ev.start_time : null;
+      const dur = ev.duration_sec ?? (evFrames.length ? evFrames[evFrames.length - 1].t : 0);
+      let range = '— —';
+      if (startT != null) {
+        const s = new Date(startT * 1000);
+        const e = new Date((startT + dur) * 1000);
+        range = fmtHM(s) + ' - ' + fmtHM(e);
+      }
+      document.getElementById('s4TimeRange').textContent = range;
+
+      // 浪潮图
+      const wave = buildWave(evFrames);
+      document.getElementById('waveLine').setAttribute('d', wave.line);
+      document.getElementById('waveFill').setAttribute('d', wave.fill);
+      document.getElementById('wavePeak').setAttribute('cx', wave.peakX);
+      document.getElementById('wavePeak').setAttribute('cy', wave.peakY);
+      document.getElementById('wavePeakGlow').setAttribute('cx', wave.peakX);
+      document.getElementById('wavePeakGlow').setAttribute('cy', wave.peakY);
+      const pl = document.getElementById('wavePeakLabel');
+      pl.setAttribute('x', wave.peakX);
+      pl.textContent = '峰值 ' + (wave.peakI * 10).toFixed(1);
+      document.getElementById('s4Peak').textContent = (wave.peakI * 10).toFixed(1);
+
+      // 躯体症状图
+      updateBodyFigure(frame);
+
+      // 标签云
+      const trigger = ev.trigger || '—';
+      const coping = ev.strategy_name || '深呼吸练习';
+      const rating = ev.user_rating || 0;
+      const durMin = Math.max(1, Math.round(dur / 60));
+      const peakFrame = evFrames.reduce((p, c) => ((c.intensity ?? 0) > (p?.intensity ?? 0) ? c : p), evFrames[0] || frame);
+      const emo = emotionLabel(peakFrame?.valence_kf ?? frame.valence_kf, peakFrame?.arousal_kf ?? frame.arousal_kf);
+      const curEmo = emotionLabel(frame.valence_kf, frame.arousal_kf);
+      const emoText = emo === curEmo ? emo : (emo + ' → ' + curEmo);
+
+      const stars = '★'.repeat(rating) + '<span class="dim">' + '★'.repeat(5 - rating) + '</span>';
+      document.getElementById('tagCloud').innerHTML =
+        tag('tc-trigger', '诱因', trigger) +
+        tag('tc-coping', '应对', coping) +
+        '<div class="tc-tag tc-coping"><span class="tc-stars">' + stars + '</span></div>' +
+        '<div class="tc-tag" style="background:rgba(90,159,200,0.08);border:1px solid rgba(90,159,200,0.15)"><span class="tc-k">持续</span><span class="tc-v" style="color:var(--ice)">' + durMin + ' 分钟</span></div>' +
+        '<div class="tc-tag" style="background:rgba(160,120,184,0.08);border:1px solid rgba(160,120,184,0.15)"><span class="tc-k">情绪</span><span class="tc-v" style="color:var(--violet)">' + emoText + '</span></div>';
+    }
+
+    function updateBodyFigure(frame) {
+      const hr = getHR(frame);
+      const hrv = getHRV(frame);
+      const intensity = frame.intensity ?? 0;
+      const showHead = intensity > 0.5;
+      const showChest = hr > 0 && hr >= 85;
+      const showStomach = hrv > 0 && hrv <= 40;
+      const dotColor = intensity > 0.65 ? '#c84848' : intensity > 0.45 ? '#d97a40' : '#e8a838';
+      toggleSymptom('bodyDotHead', 'bodyGlowHead', 'labelHead', showHead, dotColor);
+      toggleSymptom('bodyDotChest', 'bodyGlowChest', 'labelChest', showChest, dotColor);
+      toggleSymptom('bodyDotStomach', 'bodyGlowStomach', 'labelStomach', showStomach, dotColor);
+    }
+
+    function toggleSymptom(dotId, glowId, labelId, active, color) {
+      const dot = document.getElementById(dotId);
+      const glow = document.getElementById(glowId);
+      const label = document.getElementById(labelId);
+      if (!dot || !glow) return;
+      dot.classList.toggle('symptom-inactive', !active);
+      glow.classList.toggle('symptom-inactive', !active);
+      if (label) label.classList.toggle('inactive', !active);
+      if (active) { dot.setAttribute('fill', color); glow.setAttribute('fill', color); }
+    }
+
+    /* ============================================================
+       工具函数
+       ============================================================ */
+    function formatTime(t) {
+      if (typeof t !== 'number') return '0.0s';
+      return t.toFixed(1) + 's';
+    }
+
+    // 当前帧挂钟时间（事件 start_time + frame.t）
+    function frameDate(frame) {
+      const ev = eventMap[frame.event_id];
+      const base = ev && ev.start_time != null ? ev.start_time : null;
+      if (base != null) return new Date((base + (frame.t ?? 0)) * 1000);
+      // 回退：start_timestamp + day
+      const st = meta.start_timestamp ? new Date(meta.start_timestamp).getTime() : Date.now();
+      return new Date(st + (frame.day ?? 0) * 86400000 + (frame.t ?? 0) * 1000);
+    }
+    function clockHour(frame) { return frameDate(frame).getHours(); }
+    function fmtHM(d) {
+      const p = n => String(n).padStart(2, '0');
+      return p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+    function clockStr(frame) { return fmtHM(frameDate(frame)); }
+
+    function dateStr(frame) {
+      const d = frameDate(frame);
+      const wk = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()];
+      return (d.getMonth() + 1) + '月' + d.getDate() + '日 · ' + wk + ' · EmoWave 记录中';
+    }
+
+    function getHR(frame) {
+      if (frame.hr != null) return frame.hr;
+      return meta.engine_diagnostics?.baseline?.resting_hr ?? 72;
+    }
+    function getHRV(frame) {
+      if (frame.hrv != null) return frame.hrv;
+      return meta.engine_diagnostics?.baseline?.resting_hrv ?? 49;
+    }
+
+    // 最近 7 帧的某字段序列（跳过 null，回退基线）
+    function recentSeries(field) {
+      const arr = [];
+      for (let i = Math.max(0, currentIdx - 6); i <= currentIdx; i++) {
+        const f = frames[i] || {};
+        arr.push(f[field] != null ? f[field] : (field === 'hr' ? getHR(f) : getHRV(f)));
+      }
+      return arr;
+    }
+
+    function renderBars(containerId, cls, values, higherIsBetter) {
+      const c = document.getElementById(containerId);
+      if (!values.length) { c.innerHTML = ''; return; }
+      const min = Math.min(...values), max = Math.max(...values);
+      const span = (max - min) || 1;
+      c.innerHTML = values.map(v => {
+        let pct = ((v - min) / span) * 80 + 20; // 20~100%
+        pct = clamp(pct, 15, 100);
+        return '<div class="bar ' + cls + '" style="height:' + pct.toFixed(0) + '%"></div>';
+      }).join('');
+    }
+
+    function intensityInfo(i) {
+      if (i < 0.25) return { lvl: '低', color: 'var(--calm)', risk: '低' };
+      if (i < 0.45) return { lvl: '轻', color: '#5ac89c', risk: '低' };
+      if (i < 0.6)  return { lvl: '中', color: 'var(--warm)', risk: '中等' };
+      if (i < 0.7)  return { lvl: '高', color: 'var(--warn-orange)', risk: '较高' };
+      return { lvl: '极', color: 'var(--danger)', risk: '高' };
+    }
+
+    function signed(v) { return (v >= 0 ? '+' : '') + v.toFixed(2); }
+
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+    // 呼吸频率估算（由唤醒度驱动，12~24 /min）
+    function estimateBreathing(frame) {
+      const a = frame.arousal_kf ?? 0.5;
+      return Math.round(clamp(12 + a * 12, 10, 26));
+    }
+    // 皮电估算（由强度驱动，2~7 μS）
+    function estimateEDA(frame) {
+      const i = frame.intensity ?? 0;
+      return (2 + i * 5).toFixed(1);
+    }
+
+    // 浪潮图路径
+    function buildWave(evFrames) {
+      const W = 280, top = 6, H = 80;
+      const n = evFrames.length;
+      if (!n) return { line: '', fill: '', peakX: 0, peakY: 0, peakI: 0 };
+      let line = '', peakI = -1, peakIdx = 0;
+      evFrames.forEach((f, i) => {
+        const x = n > 1 ? (i / (n - 1)) * W : W / 2;
+        const it = f.intensity ?? 0;
+        if (it > peakI) { peakI = it; peakIdx = i; }
+        const y = top + (1 - it) * (H - top);
+        line += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+      });
+      const fill = line + 'L' + W + ',' + (H + top) + ' L0,' + (H + top) + ' Z';
+      const peakX = n > 1 ? (peakIdx / (n - 1)) * W : W / 2;
+      const peakY = top + (1 - peakI) * (H - top);
+      return { line: line.trim(), fill, peakX: peakX.toFixed(1), peakY: peakY.toFixed(1), peakI };
+    }
+
+    function emotionLabel(v, a) {
+      const neg = v < 0.4, pos = v > 0.6;
+      const hi = a > 0.6, lo = a < 0.4;
+      if (neg && hi) return '焦虑';
+      if (pos && hi) return '亢奋';
+      if (neg && lo) return '低落';
+      if (pos && lo) return '平静';
+      if (hi) return '紧张';
+      if (lo) return '疲惫';
+      return '中性';
+    }
+
+    function tag(cls, k, v) {
+      return '<div class="tc-tag ' + cls + '"><span class="tc-k">' + k + '</span><span class="tc-v">' + v + '</span></div>';
+    }
+  </script>
+</body>
+</html>
