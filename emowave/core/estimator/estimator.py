@@ -117,6 +117,22 @@ def compute_observation_noise(
         观测噪声标准差 σ_R（> 0）
     """
     meta: Dict = obs.meta or {}
+
+    # 0. 用户编辑伪观察：精度提升（part1 §4.2 峰终加权 + §3.2 实时变形的工程落地）
+    #    两个目标的平衡：
+    #      - UX（§3.2）：用户拖动后曲线必须"实时变形"、可见，否则交互像坏了。
+    #        因此即使 reliability_weight=0 的编辑也要比原始观察明显更精确（≥8×）。
+    #      - 学习（§4.2）：权重越高采纳越强（峰值/结尾/近期 → 100×），
+    #        权重越低采纳越弱（平淡中段/久远 → 8×），保留"温和 vs 强烈"的单调区分。
+    #    reliability_weight 同时被完整保存在 CurveEdit 中，供 Phase 4 个人模型
+    #    学习按权重加权——显示层的可见性与学习层的影响度是两个独立的关注点。
+    #    edit_factor → 精度比（方差）：0.10→100×，0.225→~20×，0.35→~8×
+    if meta.get("is_user_edit"):
+        weight = max(0.0, min(1.0, obs.confidence))
+        edit_factor = 0.35 - 0.25 * weight
+        sigma_edit = params.sigma_noise * edit_factor
+        return max(sigma_edit, 1e-4)
+
     touch_velocity = float(meta.get("touch_velocity", 0.0))
     stillness = float(meta.get("seconds_since_last_touch", 0.0))
 

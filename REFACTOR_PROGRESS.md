@@ -244,3 +244,73 @@ gap 区域的显著改善直接验证了 part1 §1.2 "记忆问题"的修复：�
 - 验证：平滑后曲线 RMSE 优于滤波（平滑利用未来信息必然更优），注入合成用户编辑确认模型不发散。
 
 ---
+
+### Phase 3 — 情绪曲线 / L2 回顾层（已完成 ✅）
+
+**目标**：实现可编辑情绪曲线——新版第一核心交互。完成标准（REFACTOR_PLAN.md §28 Phase 3）：**用户可以直接通过曲线修改当前情绪状态**。
+
+**做了什么**：
+
+```
+emowave/core/curve/
+├── __init__.py
+├── smoother.py     RTSSmoother + SmoothedTrajectory（O(N) 非因果全局平滑）
+└── curve.py        EmotionCurve + CurveEdit + CurveEditor + build_node_grid
+
+emowave/tests/
+├── test_curve_smoother.py   24 tests
+└── test_curve.py            30 tests
+```
+
+**怎么完成的（关键设计决策）**：
+
+1. **RTS 平滑器解决"因果 vs 非因果"架构冲突**（part1 §0 摘要的核心论断）：旧版 Kalman 是因果的（只从过去推断现在，不保存历史），做不到"拖动 10 分钟前的点，整条曲线平滑跟着变"。RTS（Rauch-Tung-Striebel）两遍算法——前向 Kalman 滤波保存每步 (x_pred,P_pred,x_filt,P_filt,F)，后向用 `G_k=P_filt_k·F_{k+1}ᵀ·P_pred_{k+1}⁻¹` 回传平滑——复杂度 O(N)（非朴素 GP 的 O(N³)），且数学上精确等价于状态空间高斯过程回归（Hartikainen & Särkkä 2010）。与 L1 的 StateEstimator 共用同一套 Matérn 参数化。
+
+2. **平滑优于滤波的验证**（part1 §8 阶段 2）：`test_smoothing_beats_filtering_rmse` 用与模型时间尺度匹配的慢变真值（周期 400s 正弦 + 漂移，ℓ=300s 可追踪）+ 白噪声，对照 RTS 平滑与因果滤波，平滑 RMSE 更低（用过去+未来平均掉噪声）；`test_smoothed_variance_le_filtered_variance` 验证平滑后验方差 ≤ 滤波后验方差。
+
+3. **三条曲线**（REFACTOR_PLAN.md §6.3）：EmotionCurve 同时携带 `raw_valence/raw_arousal`（原始观察，不可变）、`mean_valence/mean_arousal`（模型估计/用户修正后）、`var_valence/var_arousal`（置信带）。`confidence_band(i, channel, z)` 支持 ±1σ/±2σ 双层置信带渲染（part1 §6.2）。
+
+4. **节点网格降采样**（part2 §2.4）：`build_node_grid` 按时间等距抽取节点（二分查找最近采样索引），N=2000→300 使纯 Python RTS 从 172ms 降到 ~26ms。`test_smooth_2000_points_completes` 验证 N=2000 全分辨率平滑在 3s 内完成（纯 Python，无 numpy）。控制点从节点网格再稀疏抽取（约 1/3），用户拖动作用于稀疏控制点而非逐采样点。
+
+5. **CurveEdit append-only + 原始数据不可变**（part1 §3.2.1）：编辑独立记录，绝不覆盖原始观察。`test_edit_does_not_mutate_raw_observations` / `test_drag_edit_does_not_change_raw_curve` 验证编辑后 raw 曲线不变。CurveEdit 是 frozen dataclass，携带峰终加权全部上下文（edit_session_mood/edit_latency_sec/drag_velocity/salience/seconds_before_event_end）并自动计算 reliability_weight。
+
+6. **编辑作为加权伪观察 + 精度提升**（part1 §4.2 峰终加权的工程落地）：编辑经 `_merge_edits` 转为伪观察插入时间序列，与原始观察共同参与平滑。关键设计——`compute_observation_noise` 对 `is_user_edit` 伪观察施加精度提升 `edit_factor=0.35-0.25×weight`：weight=1→100× 精度（强烈采纳），weight=0→8× 精度（仍可见，温和采纳）。这平衡了两个目标：UX 上拖动必须"实时变形"可见（part1 §3.2），学习上权重保留"温和 vs 强烈"单调区分（part1 §4.2）；reliability_weight 完整保存在 CurveEdit 中供 Phase 4 学习按权重加权。
+
+7. **CurveEditor 控制器 + Undo/Redo**（REFACTOR_PLAN.md §28 Phase 3）：持有不可变 raw、append-only edit 日志、undo/redo 双栈。`drag_edit`（拖动）/`manual_edit`（手动输入，salience 先验更高）/`undo`/`redo`/`rebuild`（由 raw+edits+θ 完全重建，验证派生产物可重建性）。新编辑清空 redo 栈（标准分支语义）。
+
+8. **不发散保证**（part1 §8 阶段 3）：`test_extreme_edits_do_not_diverge`（交替拖到 0/1 边界 + 高权重）与 `test_biased_edits_stay_bounded`（系统性上拖）验证曲线始终在 [0,1]、无 NaN/Inf、有界不爆炸。
+
+**验证结果**：
+
+| 测试集 | 通过 | 失败 | 耗时 |
+|---|---:|---:|---:|
+| `emowave/tests/`（Phase 1+2+3 累计） | **311** | 0 | 1.15s |
+| 其中 Phase 3 新增（smoother+curve） | 54 | 0 | — |
+| 旧套件 `tests/`+`test_engine.py`（回归） | 30 | 0 | 0.67s |
+
+curve 模块零 numpy/scipy/PyQt5 依赖（LIGHTWEIGHT part2 §2 持续满足）。
+
+**过程中修正的 5 处问题**：
+- 编辑采纳不足（4 个测试）：单条编辑与原始观察同级（R 相同），在 30 条原始观察中无法产生可见形变 → 在 `compute_observation_noise` 增加 `is_user_edit` 精度提升分支（weight=1→100×，weight=0→8×）
+- RMSE 对照信号失配：原用周期 80s 正弦远快于 ℓ=300s，模型失配导致平滑/滤波都滞后、差异被淹没 → 改用周期 400s 慢信号（与模型同尺度）+ 避开首尾边界效应
+- 拖拽测试假时间戳陷阱：`drag_edit` 按 `time.time()-timestamp` 算延迟，测试用假时间戳 1000.0 导致延迟 ~17 亿秒、时近性权重 exp(-Δt/τ)→0、编辑被完全忽略 → 给 `drag_edit`/`manual_edit` 增加 `edit_latency_sec` 显式覆盖参数（生产环境 UI 传真实延迟，测试传 5.0s），修正后实测拖拽使曲线移动 +0.154（可见形变）
+
+**Phase 3 完成标准核对**（REFACTOR_PLAN.md §28）：
+
+- [x] 实现时间序列曲线（RTS 平滑轨迹）
+- [x] Model Estimate curve（mean_valence/mean_arousal）
+- [x] Raw Observation curve（raw_valence/raw_arousal，不可变）
+- [x] Confidence band（var_* + confidence_band(±1σ/±2σ)）
+- [x] Anchor points（control_point_indices 稀疏控制点）
+- [x] 曲线拖拽（drag_edit → 增量重平滑 → 曲线实时变形）
+- [x] 用户手动输入（manual_edit）
+- [x] Undo / Redo（双栈，新编辑清空 redo）
+- [x] **用户可以直接通过曲线修改当前情绪状态**（拖拽使曲线移动 +0.154 验证）
+
+**下一步（Phase 4）**：Correction Learning（个人在线学习）。
+- 新建 `emowave/core/calibration/`：correction dataset（从 CurveEdit/UserCorrection 聚合）、系统性偏差统计（part1 §4.4：总把峰值拉高→σ 被低估；总拉陡→ℓ 太大）。
+- 实现边际似然最大化 + 层次先验收缩（part1 §3.3，Taylor 2017）学习个人 ℓ/σ/σ_noise。
+- Coactive Learning 有界更新（part1 §4.3，Shivaswamy & Joachims 2015）：把拖动当"改进"而非"真值"，单次大幅拖动只产生有界影响。
+- 验证：在 data_simulator_v2 的 4 类画像上确认学到的 ℓ 能区分画像（情绪稳定型 ℓ > 焦虑敏感型 ℓ）；"修正越多，误差是否下降"。
+
+---
