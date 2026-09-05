@@ -770,3 +770,69 @@ CLI 端到端冒烟：`python -m emowave.cli version` 输出 T2(FULL) + 三版�
 > 说明：REFACTOR_PLAN §24 多平台战略第一阶段是"Python Core + Desktop，优先把算法和数据模型做正确"。Phase 1-9 已完成算法/数据模型/协议/存储/CLI 的全部 Core 工作（零依赖、可移植）。Flet UI 属第二阶段，需引入 flet 运行时依赖，与"零依赖内核"分离（part2 §6 三分法：emowave 内核 / platforms UI / research），故列为后续独立工作，不阻塞 Core 完成。
 
 ---
+
+## 重构完成总结（Phase 0-9）
+
+**状态**：REFACTOR_PLAN.md §28 实施路线图的 Phase 0-9 全部完成。9 个阶段、9 次提交、9 次推送，每阶段均 TDD 开发 + 详细记录 + git commit/push。
+
+### 交付成果
+
+| Phase | 内容 | 新增测试 | 累计测试 |
+|---|---|---:|---:|
+| 0 | 冻结 v1.0 基线 + 分支 + tag + 纳入架构文档 | — | 30（旧） |
+| 1 | Core Domain：6 领域模型 + protocol schemas | 168 | 168 |
+| 2 | 实时状态估计：零依赖 linalg + Matérn Kalman | 100 | 257 |
+| 3 | 情绪曲线：RTS 平滑 + 可编辑曲线 + undo/redo | 54 | 311 |
+| 4 | Correction Learning：在线岭回归 + 个人超参学习 | 51 | 362 |
+| 5 | Baseline Control：三级主权 + 变点检测闭环 | 44 | 406 |
+| 6 | Personal Dynamics：恢复速度 + 信号敏感度 + 趋势预测 | 37 | 443 |
+| 7 | Lite Runtime：Tier 能力分档 + 性能基准 | 30 | 473 |
+| 8 | Amiya Adapter：集成桥 + 四级优雅降级 | 46 | 519 |
+| 9 | 存储适配器：SQLite 七表 + CLI | 45 | 564 |
+
+**最终测试规模**：`emowave/tests/` 564 个内核单元测试 + 旧套件 30 个回归 = **594 全部通过**（2.35s）。
+
+### 架构成果
+
+建成 `emowave/` 零第三方依赖可移植内核（34 个源文件），完整实现四层架构：
+- **L1 感知层**：Matérn ν=3/2 状态空间 Kalman（修正 1.x "记忆问题"，ℓ 从 11-22s→300s 可学习）
+- **L2 回顾层**：RTS 非因果平滑 + 可编辑曲线（三条曲线 + 置信带 + 峰终加权 + undo/redo）
+- **L3 学习层**：在线岭回归 + 个人超参学习（层次收缩 + Coactive 有界）
+- **L4 主权层**：三级基线主权（nudge/fork/reset）+ BOCPD 提议-裁决闭环
+- **推断层**：个人动态模型（恢复速度/信号敏感度）+ 趋势预测（uncertainty 随 horizon 增长）
+- **适配层**：Amiya 集成桥（四级降级）+ SQLite 存储（append-only 触发器强制不可变）
+- **接口层**：CLI（Core 脱离 UI 运行）+ Tier 能力分档（低配优雅降级）
+
+### 核心设计原则的落地验证
+
+- **原始数据不可变**（§13）：frozen dataclass + SQLite BEFORE UPDATE/DELETE 触发器双重强制
+- **模型结果可重算**（§13）：EmotionState 可由 (observations + params) 重建
+- **用户最终解释权**（§7）：Correction First，用户修改"模型解释"而非篡改"历史事实"
+- **Core 硬边界**（§11.1）：全内核零 numpy/scipy/PyQt5/flet，`import emowave` 仅标准库
+- **优雅降级**（§18）：EmoWave/Amiya 任一方缺失都不摧毁另一方（§22 双向 Degradation Test 通过）
+- **低配置优先**（§12/§23）：L1 单步 0.148ms，1Hz CPU 占用 0.0148%，零 GPU
+
+### 成功标准核对（§32）
+
+- **Model Accuracy** ✅：修正越多误差下降（held-out 误差降到 <0.05）
+- **Personalization** ✅：ℓ 能区分稳定型/焦虑型画像
+- **Explainability** ✅：EventStream 事件流回答"为什么模型认为我是 X"
+- **User Control** ✅：拖拽/手动输入/undo/redo/基线三级主权
+- **Performance** ✅：低配实时运行（Tier 分档 + benchmark 达标）
+- **Reliability** ✅：双向 Degradation Test
+- **Portability** ✅：零依赖 Core + CLI，可作 §25 Rust 迁移的 Reference Implementation
+
+### 剩余工作（不阻塞 Core 完成）
+
+- Flet 跨平台 UI（Desktop/Linux/Android/iOS，§24 第二阶段，需 `flet==0.86.5` 依赖）
+- 可拖拽曲线的 Flet GestureDetector + Canvas 实现（part2 §4.2）
+- 旧 PyQt5 UI 归档至 `legacy/`（Flet 稳定后）
+- 可选 Rust Core（§24 第四阶段，golden test 一致性验证）
+
+### Git / 推送状态
+
+- 分支：`refactor/v2-core`，tag：`v1.0-stable`（1.x 可回滚锚点）
+- 9 个阶段提交全部推送至 GitHub（远程 HEAD `0b7a0ce`）
+- 过程中遇 GitHub 网络瞬断（Phase 6-8 push 暂挂），网络恢复后已补推，本地提交链完整无丢失
+
+---
