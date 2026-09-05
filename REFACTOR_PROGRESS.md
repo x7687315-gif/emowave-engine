@@ -836,3 +836,29 @@ CLI 端到端冒烟：`python -m emowave.cli version` 输出 T2(FULL) + 三版�
 - 过程中遇 GitHub 网络瞬断（Phase 6-8 push 暂挂），网络恢复后已补推，本地提交链完整无丢失
 
 ---
+
+## 代码审查（Phase 9 后，合并前）
+
+用 `diegosouzapw-analyze-code` 框架对 `emowave/` 新内核做了独立审查（作者自审有盲区，交给独立 agent 复核）。结论：**无 CRITICAL，核心数学逐行核对正确**（Matérn F/Q、RTS 后向递推、对数似然、岭回归），分层零违规，异常纪律优秀。发现 1 HIGH + 若干 MEDIUM/LOW。
+
+### 已修复（合并前）
+
+- **[HIGH] NaN/Inf 静默污染 Kalman 状态**：`_clip_unit`/`_clip` 因 `nan<0` 与 `nan>1` 均为 False 而放行 NaN，单条坏读数即永久污染整条轨迹（`F·NaN=NaN`），且 confidence 谎报 ~1.0。修复：Observation 所有字段入口加 `math.isfinite` 门控（NaN/Inf → None 未观察 / confidence→1.0 / timestamp→拒绝），EmotionState._clip 加非有限兜底。已实测复现并验证修复（后续正常观察仍收敛到 0.6）。
+- **[MEDIUM] baseline 通道曲线编辑静默空操作**：`drag_edit/manual_edit(channel="baseline")` 的伪观察无情绪通道，被 smoother 静默忽略——用户改基线毫无反应。修复：显式拒绝并指引走 L4 `BaselineController.nudge/fork`（part1 §5.1 基线是 GP 均值函数，非曲线拖拽对象）。
+- **[MEDIUM] SQLite 跨线程写不安全**：`check_same_thread=False` 共享连接并发 execute/commit 非线程安全，WAL 下写写冲突抛 "database is locked"，而 API 宣称 async_persistence。修复：加 `threading.RLock` + `_synchronized` 装饰器串行化 9 个写方法 + `PRAGMA busy_timeout=5000`。
+
+### 新增回归测试（12 个）
+
+Observation NaN/Inf 硬化（8）+ estimator 状态抗 NaN（1）+ baseline 通道拒绝（2）+ SQLite 并发写线程安全（1）。**测试总数 594 → 606，全通过（2.73s）。**
+
+### 已知技术债（本次未改，排期处理）
+
+- [MEDIUM] `_observation_update` 逻辑在 estimator/smoother/personal_model 三处近乎重复（数值修正需改三处，易漂移）→ 应抽共享 helper。工作量 M。
+- [LOW] `matern_process_noise` 在 λΔt 极小时 `P∞-F·P∞·F` 灾难性抵消 → 可改 Matérn-3/2 Q 解析闭式（含 Δt³ 项）。工作量 M。
+- [LOW] `fork` 默认分支可能继承旧 regime_id（影响审计分组，不影响 active_regime_at 正确性）。
+- [LOW] `amiya._params_baseline` 硬编码 (0.5,0.5) 未接 BaselineController（输出协议基线字段恒 0.5）；`predictor.recovery_speed_changing` 早退分支 dict 缺 "slower" 键；若干注释与实现差因子（trend/deviation）。
+- [INFO] RTS 后向递推仅行为测试覆盖，缺与解析 G_k 的黄金值对拍。
+
+审查建议：修复 HIGH + 2 MEDIUM 后**可合并**；核心数学层质量高，无需返工。上述技术债按清单排期，不阻塞合并。
+
+---

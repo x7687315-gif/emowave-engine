@@ -452,3 +452,39 @@ def test_context_manager(tmp_path):
     # 退出后连接已关闭
     with pytest.raises(Exception):
         s.conn.execute("SELECT 1")
+
+
+def test_concurrent_writes_thread_safe(tmp_path):
+    """多线程并发写不崩溃（MEDIUM 修复：写串行化锁 + busy_timeout）。
+
+    Flet/Electron UI 常在后台线程回调里写库（tier.async_persistence）。
+    修复前 check_same_thread=False 的共享连接并发 execute/commit 非线程安全，
+    WAL 下写写冲突会抛 "database is locked"。修复后所有写方法经
+    _synchronized 串行化 + busy_timeout=5000。
+    """
+    import threading
+
+    db_path = str(tmp_path / "concurrent.db")
+    store = SQLiteStorage(db_path)
+    n_threads = 8
+    per_thread = 25
+    errors = []
+
+    def worker(tid):
+        try:
+            for i in range(per_thread):
+                store.append_observation(
+                    Observation(timestamp=1000.0 + tid * 100 + i, valence=0.5)
+                )
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker, args=(t,)) for t in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"并发写抛异常: {errors}"
+    assert store.count_observations() == n_threads * per_thread
+    store.close()

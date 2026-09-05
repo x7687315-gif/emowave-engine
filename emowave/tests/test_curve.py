@@ -416,3 +416,22 @@ def test_curve_version_increments_per_edit():
     assert editor.version == v0 + 1
     editor.drag_edit(timestamp=1020.0, channel="valence", value_after=0.7)
     assert editor.version == v0 + 2
+
+
+def test_drag_edit_baseline_channel_rejected():
+    """baseline 通道不能通过曲线拖拽编辑（MEDIUM 修复：消除静默空操作）。
+
+    基线是 GP 均值函数，走 L4 主权 BaselineController.nudge/fork；
+    曲线拖拽的伪观察对 baseline 无意义（smoother 会静默忽略）。
+    """
+    obs = make_obs(30, v=0.4)
+    editor = CurveEditor(obs, n_nodes=30)
+    with pytest.raises(ValueError):
+        editor.drag_edit(timestamp=1015.0, channel="baseline", value_after=0.6)
+
+
+def test_manual_edit_baseline_channel_rejected():
+    obs = make_obs(30, v=0.4)
+    editor = CurveEditor(obs, n_nodes=30)
+    with pytest.raises(ValueError):
+        editor.manual_edit(timestamp=1015.0, channel="baseline", value=0.6)

@@ -178,8 +178,10 @@ class EmotionState:
 
 
 def _clip(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
-    """把标量裁剪到 [lo, hi]。"""
+    """把标量裁剪到 [lo, hi]。非有限值（NaN/Inf）→ lo（安全兜底）。"""
     x = float(x)
+    if not math.isfinite(x):
+        return lo
     if x < lo:
         return lo
     if x > hi:

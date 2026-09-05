@@ -25,10 +25,12 @@ adapter 可以）。用标准库 sqlite3，零第三方依赖。
 from __future__ import annotations
 
 import json
+import functools
 import os
 import sqlite3
+import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from emowave.core.domain.baseline import Baseline, BaselineShiftEvent
 from emowave.core.domain.correction import UserCorrection
@@ -36,6 +38,24 @@ from emowave.core.domain.emotion_state import EmotionState
 from emowave.core.domain.events import StateEvent
 from emowave.core.domain.model_parameters import ModelParameters
 from emowave.core.domain.observation import Observation
+
+
+def _synchronized(method: Callable) -> Callable:
+    """用实例的 self._lock 串行化被装饰方法，保证跨线程写安全。
+
+    sqlite3 连接对象（check_same_thread=False）虽可跨线程共享，但并发
+    execute/commit 非线程安全；Flet/Electron UI 常在后台线程回调里写入
+    （tier.async_persistence）。所有写方法经此装饰器串行化，配合
+    PRAGMA busy_timeout，避免并发写抛 "database is locked"。
+    """
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
 
 # 当前 Schema 版本（§13/§27：所有迁移带版本号）
 SCHEMA_VERSION = 1
@@ -76,6 +96,8 @@ class SQLiteStorage:
             parent = os.path.dirname(os.path.abspath(path))
             os.makedirs(parent, exist_ok=True)
         self.path = path
+        # 写串行化锁（配合 _synchronized 装饰器，保证跨线程写安全）
+        self._lock = threading.RLock()
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         # WAL 模式提升并发读写（异步持久化的基础）
@@ -83,6 +105,11 @@ class SQLiteStorage:
             self.conn.execute("PRAGMA journal_mode=WAL")
         except sqlite3.Error:
             pass  # 内存库或不支持 WAL 时忽略
+        # 并发写时等待而非立即抛 "database is locked"
+        try:
+            self.conn.execute("PRAGMA busy_timeout=5000")
+        except sqlite3.Error:
+            pass
         self._create_schema()
         if enforce_immutable:
             self._install_immutable_triggers()
@@ -273,6 +300,7 @@ class SQLiteStorage:
     # Observations（append-only）
     # ============================================================
 
+    @_synchronized
     def append_observation(self, obs: Observation) -> int:
         """追加一条观察（永不覆盖，§13）。返回 row id。"""
         cur = self.conn.execute(
@@ -289,6 +317,7 @@ class SQLiteStorage:
         self.conn.commit()
         return cur.lastrowid
 
+    @_synchronized
     def append_observations(self, observations: List[Observation]) -> int:
         """批量追加（单事务，§23 异步/批量写入）。返回写入条数。"""
         if not observations:
@@ -358,6 +387,7 @@ class SQLiteStorage:
     # EmotionStates（可重算，允许覆盖）
     # ============================================================
 
+    @_synchronized
     def save_emotion_state(self, state: EmotionState) -> int:
         """保存模型估计（§13：可重算，非不可变）。"""
         cur = self.conn.execute(
@@ -407,6 +437,7 @@ class SQLiteStorage:
             ))
         return out
 
+    @_synchronized
     def clear_emotion_states(self) -> int:
         """清空模型估计（§13：模型结果可重算，故允许清空后重建）。
 
@@ -422,6 +453,7 @@ class SQLiteStorage:
     # UserCorrections（append-only，永久保留）
     # ============================================================
 
+    @_synchronized
     def append_correction(self, c: UserCorrection) -> int:
         """追加用户纠正（§13：永久保留，是个人模型的监督信号）。"""
         cur = self.conn.execute(
@@ -481,6 +513,7 @@ class SQLiteStorage:
     # Baselines + BaselineEvents（append-only 版本链）
     # ============================================================
 
+    @_synchronized
     def save_baseline(self, b: Baseline) -> int:
         """保存基线版本（INSERT OR REPLACE by baseline_id，版本链 append-only）。"""
         cur = self.conn.execute(
@@ -516,6 +549,7 @@ class SQLiteStorage:
             ))
         return out
 
+    @_synchronized
     def append_baseline_event(self, e: BaselineShiftEvent) -> int:
         cur = self.conn.execute(
             """INSERT INTO baseline_events
@@ -551,6 +585,7 @@ class SQLiteStorage:
     # ModelParameters（append-only 版本链）
     # ============================================================
 
+    @_synchronized
     def save_model_parameters(self, p: ModelParameters) -> int:
         cur = self.conn.execute(
             """INSERT INTO model_parameters
@@ -597,6 +632,7 @@ class SQLiteStorage:
     # StateEvents（append-only）
     # ============================================================
 
+    @_synchronized
     def append_state_event(self, e: StateEvent) -> int:
         cur = self.conn.execute(
             """INSERT OR IGNORE INTO state_events

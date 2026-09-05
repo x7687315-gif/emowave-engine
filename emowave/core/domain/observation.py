@@ -18,6 +18,7 @@ Observation 是 EmoWave 数据流的入口，代表"系统看到了什么"，而
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Any, Dict, Optional
@@ -39,19 +40,27 @@ _V_MAX = 1.0
 
 
 def _clip_unit(x: Optional[float]) -> Optional[float]:
-    """把 [0, 1] 维度的值裁剪到合法区间。None 直接返回 None。
+    """把 [0, 1] 维度的值裁剪到合法区间。None 或非有限值（NaN/Inf）→ None。
 
     为什么需要 clip：用户从 UI 传来的滑条值可能是 0-100 的整数被误传，
     传感器可能因噪声返回 -0.02 或 1.05。Core 层必须自我保护，
     非法输入不应摧毁后续计算（REFACTOR_PLAN.md §12 低配置原则）。
+
+    为什么 NaN/Inf → None 而非 0/1：`nan < 0` 与 `nan > 1` 都为 False，
+    若只靠上下界裁剪，NaN 会原样穿透并永久污染 Kalman 状态
+    （F·NaN=NaN，此后每条观察都产出 NaN）。坏读数/除零的正确语义是
+    "未观察到"（None），让 estimator 跳过它而非把它当成真实情绪值。
     """
     if x is None:
+        return None
+    x = float(x)
+    if not math.isfinite(x):
         return None
     if x < _V_MIN:
         return _V_MIN
     if x > _V_MAX:
         return _V_MAX
-    return float(x)
+    return x
 
 
 @dataclass(frozen=True)
@@ -93,38 +102,47 @@ class Observation:
         frozen=True 阻止常规赋值，因此用 object.__setattr__ 写回裁剪后的值。
         这是 dataclass 中做"构造时归一化"的标准手法。
         """
-        if self.timestamp <= 0:
+        if not math.isfinite(self.timestamp) or self.timestamp <= 0:
             raise ValueError(
-                f"Observation.timestamp 必须为正 Unix 时间戳，得到 {self.timestamp}"
+                f"Observation.timestamp 必须为正的有限 Unix 时间戳，得到 {self.timestamp}"
             )
 
-        # 归一化 [0, 1] 维度
+        # 归一化 [0, 1] 维度（_clip_unit 已把 NaN/Inf 归为 None）
         object.__setattr__(self, "valence", _clip_unit(self.valence))
         object.__setattr__(self, "arousal", _clip_unit(self.arousal))
         object.__setattr__(self, "activity", _clip_unit(self.activity))
 
-        # 归一化 confidence 到 [0, 1]
+        # 归一化 confidence 到 [0, 1]；非有限值回退安全默认 1.0
         c = float(self.confidence)
+        if not math.isfinite(c):
+            c = 1.0
         if c < 0.0:
             c = 0.0
         elif c > 1.0:
             c = 1.0
         object.__setattr__(self, "confidence", c)
 
-        # 生理字段仅做类型与非负检查（不做上限裁剪：BPM 可以到 220+）
+        # 生理字段：非有限值视为未观察（None），有限值做非负检查
+        # （不做上限裁剪：BPM 可以到 220+）
         for name in ("hr", "hrv"):
             v = getattr(self, name)
             if v is not None:
                 v = float(v)
+                if not math.isfinite(v):
+                    object.__setattr__(self, name, None)
+                    continue
                 if v < 0:
                     raise ValueError(f"Observation.{name} 不能为负，得到 {v}")
                 object.__setattr__(self, name, v)
 
         if self.sleep is not None:
             s = float(self.sleep)
-            if s < 0 or s > 10:
+            if not math.isfinite(s):
+                object.__setattr__(self, "sleep", None)
+            elif s < 0 or s > 10:
                 raise ValueError(f"Observation.sleep 必须在 [0, 10]，得到 {s}")
-            object.__setattr__(self, "sleep", s)
+            else:
+                object.__setattr__(self, "sleep", s)
 
         # source 允许传字符串，自动转 Enum
         if not isinstance(self.source, ObservationSource):

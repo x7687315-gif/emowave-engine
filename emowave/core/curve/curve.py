@@ -362,6 +362,22 @@ class CurveEditor:
     # 编辑操作
     # ============================================================
 
+    @staticmethod
+    def _check_editable_channel(channel: str) -> None:
+        """曲线编辑只支持情绪通道；baseline 通道走 L4 主权（BaselineController）。
+
+        part1 §5.1：基线是 GP 的均值函数 m(t)，通过 nudge/fork 编辑，
+        不是通过曲线拖拽的伪观察。若允许 drag_edit(channel=baseline)，
+        smoother._merge_edits 会因该伪观察无情绪通道而静默忽略它——
+        用户改了基线却毫无反应（MEDIUM 静默 UX bug）。这里显式拒绝并指引正确入口。
+        """
+        ch = getattr(channel, "value", channel)
+        if ch == CurveChannel.BASELINE.value:
+            raise ValueError(
+                "baseline 通道不能通过曲线拖拽编辑；基线是 GP 均值函数，"
+                "请用 BaselineController.nudge()/fork()（L4 主权层，part1 §5.2）。"
+            )
+
     def drag_edit(
         self,
         timestamp: float,
@@ -393,6 +409,7 @@ class CurveEditor:
         Returns:
             创建的 CurveEdit（已压入编辑日志）
         """
+        self._check_editable_channel(channel)
         if edit_latency_sec is None:
             edit_latency = max(0.0, time.time() - timestamp)
         else:
@@ -427,6 +444,7 @@ class CurveEditor:
         与 drag_edit 的区别：source 语义上是"手动输入"，可靠性先验更高
         （ salience 默认给高值，因为手动输入通常是深思熟虑的）。
         """
+        self._check_editable_channel(channel)
         value_before = self._interpolate_model_value(timestamp, channel)
         if edit_latency_sec is None:
             edit_latency = max(0.0, time.time() - timestamp)

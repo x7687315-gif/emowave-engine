@@ -670,3 +670,30 @@ def test_estimator_module_has_no_numpy_import():
     assert "import numpy" not in src
     assert "import scipy" not in src
     assert "np." not in src
+
+
+def test_estimator_state_survives_nan_observations():
+    """NaN 观察不得永久污染 Kalman 状态（代码审查 HIGH 项回归）。
+
+    修复前：单条 NaN 观察使 _x 含 NaN，此后每条观察都产出 NaN 状态，
+    且 confidence 谎报 ~1.0。修复后：NaN 被当作未观察，状态始终有限，
+    后续正常观察仍正确跟踪。
+    """
+    import math
+    est = make_estimator()
+    est.initialize(timestamp=1000.0, valence=0.5, arousal=0.5)
+    stream = [
+        Observation(timestamp=1001.0, valence=0.6, arousal=0.5),
+        Observation(timestamp=1002.0, valence=float("nan"), arousal=0.5),  # NaN
+        Observation(timestamp=1003.0, valence=0.6, arousal=0.5),
+        Observation(timestamp=1004.0, valence=0.6, arousal=float("inf")),  # Inf
+        Observation(timestamp=1005.0, valence=0.6, arousal=0.5),
+    ]
+    last = None
+    for o in stream:
+        last = est.update(o)
+        assert math.isfinite(last.valence), "valence 被 NaN 污染"
+        assert math.isfinite(last.arousal), "arousal 被 NaN 污染"
+        assert math.isfinite(last.confidence)
+    # 末条正常观察后应仍向 0.6 收敛（未被污染）
+    assert last.valence == pytest.approx(0.6, abs=0.05)

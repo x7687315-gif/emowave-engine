@@ -169,3 +169,54 @@ def test_observation_from_dict_tolerates_missing_optional_fields():
     obs = Observation.from_dict({"timestamp": 1.0})
     assert obs.timestamp == 1.0
     assert obs.valence is None
+
+
+# ============================================================
+# NaN/Inf 输入硬化（代码审查 HIGH 项回归）
+# ============================================================
+
+
+def test_nan_valence_becomes_unobserved():
+    """NaN 效价应被当作未观察（None），而非穿透污染下游状态。"""
+    import math
+    obs = Observation(timestamp=1.0, valence=float("nan"), arousal=0.5)
+    assert obs.valence is None
+    assert obs.arousal == 0.5  # 另一通道不受影响
+
+
+def test_inf_valence_becomes_unobserved():
+    import math
+    obs = Observation(timestamp=1.0, valence=float("inf"), arousal=float("-inf"))
+    assert obs.valence is None
+    assert obs.arousal is None
+
+
+def test_nan_activity_becomes_unobserved():
+    obs = Observation(timestamp=1.0, activity=float("nan"))
+    assert obs.activity is None
+
+
+def test_nan_physio_becomes_unobserved():
+    obs = Observation(timestamp=1.0, hr=float("nan"), hrv=float("inf"))
+    assert obs.hr is None
+    assert obs.hrv is None
+
+
+def test_nan_sleep_becomes_unobserved():
+    obs = Observation(timestamp=1.0, sleep=float("nan"))
+    assert obs.sleep is None
+
+
+def test_nan_confidence_falls_back_to_default():
+    obs = Observation(timestamp=1.0, valence=0.5, confidence=float("nan"))
+    assert obs.confidence == 1.0  # 安全默认，非 NaN
+
+
+def test_nan_timestamp_rejected():
+    with pytest.raises(ValueError):
+        Observation(timestamp=float("nan"), valence=0.5)
+
+
+def test_inf_timestamp_rejected():
+    with pytest.raises(ValueError):
+        Observation(timestamp=float("inf"), valence=0.5)
