@@ -613,3 +613,87 @@ research/
 > **备注**：Phase 6 与 Phase 7 的提交已在本地完成（commit 6c63a2b 及后续），但因 GitHub 网络瞬断（连接重置）push 暂挂，网络恢复后将一并推送。本地提交安全，无数据丢失风险。
 
 ---
+
+### Phase 8 — Amiya Adapter / 集成与优雅降级（已完成 ✅）
+
+**目标**：EmoWave 与 Amiya 可选集成，任何一方缺失都不摧毁另一方。完成标准（REFACTOR_PLAN.md §28 Phase 8）：`EmoWave without Amiya ✅ / Amiya without EmoWave ✅ / EmoWave + Amiya ✅`。
+
+**做了什么**：
+
+```
+emowave/adapters/
+├── __init__.py
+└── agent/
+    ├── __init__.py
+    └── amiya.py    EmotionBridge + map_state_to_amiya_key +
+                    rule_based_fallback + EMOTION_KEYS
+
+emowave/__init__.py  顶层导出 EmotionBridge（part2 §3.3：Amiya 侧
+                     `from emowave import EmotionBridge`）
+
+emowave/tests/
+└── test_adapter_amiya.py   46 tests
+```
+
+**怎么完成的（关键设计决策）**：
+
+1. **不采用直接 import 依赖**（§14.1）：EmotionBridge 不 import 任何 Amiya 代码，Amiya 缺失只是没人调用它。EmoWave Core 完整独立运行（standalone，§14.2）。
+
+2. **连续 (v,a) → Amiya 4 状态映射**（part2 §3.4）：`map_state_to_amiya_key` 输出 calm/thinking/worried/happy，与 Amiya 现有 `core/emotion.py` 的 `detect_emotion(text)->str` 同签名——下游（提示词注入、皮肤联动）零改动即可从"关键词猜"升级为"连续模型推断"。**映射表歧义的工程决策**：part2 §3.4 表格条件重叠（a>0.65 同时满足 worried/happy 的 a>0.5）且未定优先级——按行序 first-match 会让 thinking 成死代码，thinking 优先又会丢失高唤醒负性的困扰信号（v=0.1,a=0.9 极度困扰被判 thinking，对陪伴 Agent 有害）。本实现解析为：高唤醒时优先用效价区分 worried(v<0.4)/happy(v>0.6)，效价中性(0.4-0.6)才落 thinking，兼顾表中"无论效价"本意与陪伴安全。
+
+3. **四级优雅降级**（part2 §3.2 / REFACTOR_PLAN §18）：
+   - **L0 启动期**：emowave 未安装/import 失败 → Amiya 侧静默回退（本桥零依赖，import 不会失败）
+   - **L1 配置期**：`EMOWAVE_ENABLED` 默认 0（opt-in）→ enabled=False 时 detect 直接走规则回退，根本不跑模型
+   - **L2 运行期**：detect/ingest_input/handshake 全部 try-except，单次异常 → 捕获+warning+回退 rule_based_fallback，**绝不上抛**（part2 §3.2 红线）
+   - **L3 能力期**：桥持有 Tier（Phase 7），低配/省电可降级
+
+4. **Amiya Emotion Fallback 安全底座**（REFACTOR_PLAN §19）：`rule_based_fallback` 镜像 Amiya 关键词规则（零依赖，永远可用），负面词优先（陪伴安全）。旧 Emotion 不被废弃，而是成为 Graceful Degradation 的底座。
+
+5. **handshake / capability discovery**（§15）：`handshake()` 返回 AmiyaHandshake（Phase 1 协议），能力发现 `supports(capability)`，版本不兼容（schema 不等/protocol 过新）→ 返回 None 禁用集成（§18 version mismatch fallback），连接超时 → None（§28 connection timeout）。
+
+6. **双向协议**：
+   - EmoWave→Amiya（§16）：`get_state_output()` 返回 EmotionStateOutput，只给结论性状态（valence/arousal/intensity/trend/confidence/emotion_label），测试验证不泄露 covariance/kalman/db 等内部字段；`state_envelope()` 封装为 Envelope 跨进程传输。
+   - Amiya→EmoWave（§17）：`ingest_input(AmiyaInput)` 经 `to_observation_dict()` 转为 source=agent 的 Observation 走正常估计流程，**不直接覆盖状态**；source=user 的显式输入 confidence=1 优先级最高。
+
+7. **文本轻量估计**（part2 §8 开放问题1）：Amiya 纯文本驱动时，`_text_to_va` 用关键词加权做文本→(v,a) 最小可行估计（零依赖，不引入新模型），无情绪线索时回退规则分类。
+
+**验证结果**：
+
+| 测试集 | 通过 | 失败 | 耗时 |
+|---|---:|---:|---:|
+| `emowave/tests/`（Phase 1-8 累计） | **519** | 0 | — |
+| 其中 Phase 8 新增（adapter_amiya） | 46 | 0 | 0.28s |
+| 全套件 + 旧回归 | **549** | 0 | 3.09s |
+
+`from emowave import EmotionBridge` 零 numpy/scipy/PyQt5/flet 依赖（顶层包含适配器后仍满足）。
+
+**关键完成标准验证**：
+- **§22 Degradation Test**：`test_degradation_amiya_absent_emowave_still_works`（Amiya 不存在）、`test_degradation_amiya_disconnect_emowave_continues`（断开）、`test_degradation_version_mismatch_disables_adapter`（版本不兼容）、`test_degradation_connection_timeout`（超时）——四种情况 EmoWave 核心均正常运行。
+- **§22 Reverse Degradation Test**：`test_reverse_degradation_amiya_works_without_emowave`（注入内核故障 → detect 捕获异常回退规则分类，返回 worried，fallback_count≥1，绝不上抛）。
+- **§28 三种组合**：`test_completion_emowave_without_amiya` / `test_completion_amiya_without_emowave` / `test_completion_emowave_plus_amiya` 全部通过。
+- **L2 绝不上抛**：`test_bridge_detect_never_raises` 用 NaN/Inf/None 等边界输入验证 detect 始终返回合法键。
+
+**过程中修正的 1 处问题**：
+- 测试自相矛盾断言：`test_map_clips_out_of_range` 残留一行错误期望（`(-1,2)=="happy"`，实际应为 worried，因 v→0<0.4 且 a→1>0.65）→ 删除错误断言，保留正确的 worried + 补充 calm 边界
+
+**Phase 8 完成标准核对**（REFACTOR_PLAN.md §28）：
+
+- [x] 定义 handshake（AmiyaHandshake + handshake()）
+- [x] 定义 capability discovery（supports + AmiyaCapability）
+- [x] 定义 EmotionState 输出协议（get_state_output → EmotionStateOutput）
+- [x] 定义 UserFeedback 输入协议（ingest_input ← AmiyaInput）
+- [x] 实现 Amiya Adapter（EmotionBridge）
+- [x] 实现 connection timeout（handshake timeout_sec）
+- [x] 实现 version mismatch fallback（is_compatible 检查 → 禁用集成）
+- [x] 实现完全离线 standalone 模式（桥不依赖 Amiya，Core 独立运行）
+- [x] **EmoWave without Amiya ✅ / Amiya without EmoWave ✅ / EmoWave + Amiya ✅**
+
+**下一步（Phase 9）**：存储适配器 + CLI + 多平台收尾（REFACTOR_PLAN.md §28 Phase 9 + part2 §6）。
+- 新建 `emowave/adapters/storage/sqlite.py`：Schema 版本化持久化（observations/emotion_states/user_corrections/baselines/baseline_events/model_parameters/state_events 七表，§13），原始数据不可变约束，异步/批量写入。
+- 新建 `emowave/cli/`：命令行入口（T0 档位的最小可用接口，验证 Core 可脱离 UI 运行）。
+- 数据迁移测试（§22 Migration Test）+ 跨平台 golden test 数据（§25 Python→Rust 一致性预留）。
+- 多平台：Flet UI 骨架属 part2 §4（需 flet 依赖，列入 optional-dependencies，本阶段不引入运行时依赖）。
+
+> **备注（更新）**：Phase 6/7/8 的提交均已在本地完成，因 GitHub 网络中断（curl github.com 返回 000，连接重置）push 暂挂。Phase 0-5 已成功推送。网络恢复后将一并推送 Phase 6-9。本地提交链完整安全。
+
+---

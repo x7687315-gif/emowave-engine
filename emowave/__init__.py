@@ -39,6 +39,14 @@ from emowave.core.protocol.schemas import (
     Envelope,
 )
 
+# Amiya 集成适配器（part2 §3.3：Amiya 侧 `from emowave import EmotionBridge`）
+from emowave.adapters.agent.amiya import (
+    EmotionBridge,
+    EMOTION_KEYS,
+    map_state_to_amiya_key,
+    rule_based_fallback,
+)
+
 __version__ = "2.0.0-alpha.0"
 
 __all__ = [
@@ -63,4 +71,9 @@ __all__ = [
     "EventStream",
     # 协议
     "Envelope",
+    # Amiya 适配器
+    "EmotionBridge",
+    "EMOTION_KEYS",
+    "map_state_to_amiya_key",
+    "rule_based_fallback",
 ]
