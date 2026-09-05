@@ -10,6 +10,12 @@ from emowave.core.calibration.personal_model import (
     kalman_log_likelihood,
 )
 from emowave.core.calibration.calibrator import Calibrator
+from emowave.core.calibration.baseline_control import (
+    BaselineController,
+    BaselineRegime,
+    ChangePointDetector,
+    ChangePointProposal,
+)
 
 __all__ = [
     "CorrectionDataset",
@@ -18,4 +24,8 @@ __all__ = [
     "PersonalModelLearner",
     "kalman_log_likelihood",
     "Calibrator",
+    "BaselineController",
+    "BaselineRegime",
+    "ChangePointDetector",
+    "ChangePointProposal",
 ]

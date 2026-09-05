@@ -399,3 +399,71 @@ calibration 模块零 numpy/scipy/PyQt5 依赖。
 - 验证：用户重标定后模型不会把新基线继续判断为异常（REFACTOR_PLAN.md §22 Baseline Test）；注入人工漂移确认 BOCPD 召回。
 
 ---
+
+### Phase 5 — Baseline Control / L4 主权层（已完成 ✅）
+
+**目标**：让用户能明确告诉系统"这是我的新正常状态"。完成标准（REFACTOR_PLAN.md §28 Phase 5）：**用户可以明确告诉系统"这是我的新正常状态"**。
+
+**做了什么**：
+
+```
+emowave/core/calibration/
+└── baseline_control.py   BaselineController + BaselineRegime +
+                          ChangePointDetector + ChangePointProposal
+
+emowave/tests/
+└── test_baseline_control.py   44 tests
+```
+
+**怎么完成的（关键设计决策）**：
+
+1. **三级用户主权**（part1 §5.2）：
+   - **L1 Nudge 微调**：上下拖动基线虚线，"我最近的正常水平就是这样"。同一 regime 内产生新 Baseline 版本（version+1，parent 链），不分段。立即生效。
+   - **L2 Fork 分叉**：标记某时刻为"新基线起点"，"从这里开始我是另一个人了"。引入**硬变点**：关闭当前 regime（end_time=分叉点），开启新 regime（独立 baseline，此后学习只用分叉后数据）。这是对"大波折"需求的正面回应。
+   - **L3 Reset 重置**：清空个人模型回到群体先验，"忘掉我，重新开始"，开启全新 regime。
+
+2. **基线作为 GP 均值函数 m(t)**（part1 §5.1）：情绪(t)=m(t)+f(t)，m 是缓慢漂移的基线（均值函数），f 是零均值 GP（波动部分，由 Phase 2 估计器学习）。基线编辑与曲线编辑共用同一套数学。`recompute_thresholds` 把阈值定义为基线±k·σ（基线相对），因此 nudge/fork 后阈值自动跟随平移。
+
+3. **不变量保证**（REFACTOR_PLAN.md §8）：原始数据不变、历史记录不变，只有模型参数（基线/regime/阈值）重新标定。每次 nudge/fork/reset 产生一条 `BaselineShiftEvent`（append-only 事件流），基线历史与 regime 分段完整保留，支持 `baseline_at(timestamp)` 用任意历史时刻的基线重算。
+
+4. **BOCPD 提议-裁决闭环**（part1 §5.3）：`ChangePointDetector` 用轻量 EWMA + z-score 持续偏离检测（不引入重型 BOCPD 库，符合 part2 §4.4 与低配置原则）——找最长"连续同向超阈值"段，提议变点 + 置信度（综合持续长度与偏离幅度）+ 建议新基线（偏离段均值）。用户裁决：确认→采纳分叉（auto_bocpd 来源），拒绝→记录负样本。
+
+5. **检测器阈值数据驱动校准**（part1 §5.3 核心价值）：裁决累积为带标签变点数据集，`calibrate` 按确认率调整 z_threshold/min_sustained——拒绝率>0.7（误报多）→更保守（×1.15，+1 步），确认率>0.8（可能漏报）→更敏感（×0.9，有下限），0.3-0.8→不动。这把旧版 config 里 `SHIFT_CONSECUTIVE_DAYS=3`/`SHIFT_STD_DEVIATIONS=2.0` 两个拍脑袋常数换成数据驱动的决策规则。样本<3 不校准（防过拟合，呼应 part1 §9）。
+
+**验证结果**：
+
+| 测试集 | 通过 | 失败 | 耗时 |
+|---|---:|---:|---:|
+| `emowave/tests/`（Phase 1-5 累计） | **406** | 0 | — |
+| 其中 Phase 5 新增（baseline_control） | 44 | 0 | 0.16s |
+| 全套件 + 旧回归 | **436** | 0 | 2.17s |
+
+**关键完成标准验证**：
+- **§22 Baseline Test**：`test_baseline_test_recalibration_stops_false_alarm` 验证用户状态从 0.5 漂移到 0.7 后，重标定前 0.7 被判异常（z=2.5>2），nudge 基线到 0.7 后同样状态不再异常（z≈0）——"这不是异常，这是新的我"。`test_baseline_test_fork_recalibration` 验证 fork 分叉后按新 regime 基线判断。
+- **阈值跟随基线**：`test_thresholds_shift_after_nudge` 验证基线上移 0.2 后预警阈值同步上移 0.2。
+- **变点检测**：持续偏离提议、单点尖峰忽略（min_sustained 防护）、稳定信号不误报、更长更强偏离置信度更高。
+- **裁决校准**：多拒绝→阈值升高（保守）、多确认→阈值降低（敏感，有下限）、样本少/均衡→不校准。
+
+**过程中修正的 2 处问题**：
+- `current` 语义缺陷：原用 `select_active_baseline(history, time.time())`，当操作带未来时间戳时（如 reset 到 base+200）real-now 查询返回旧基线 → 改为返回 `history[-1]`（最新定义的基线，操作立即生效语义），`baseline_at(ts)` 仍用 select_active_baseline 做历史查询
+- 测试假时间戳陷阱（同 Phase 3）：propose/adjudicate 测试用 ts=1000.0+i，而 controller 初始基线 effective_from=真实 time.time()，fork 在 1003 关闭旧基线时 effective_to(1003)<effective_from(1.78e9) 报错 → 测试改用 base=time.time() 真实时间戳；并在 fork 增加清晰守卫（timestamp<current.effective_from 时抛明确 ValueError 而非下游晦涩错误）
+
+**Phase 5 完成标准核对**（REFACTOR_PLAN.md §28）：
+
+- [x] 基线可视化（EmotionCurve.raw/mean + Baseline 提供数据，UI 在 Phase 9）
+- [x] 用户主动调整基线（nudge/fork/reset 三级主权）
+- [x] BaselineShiftEvent（每次变更记录，append-only）
+- [x] 基线历史（history + baseline_at 历史查询）
+- [x] 基线版本（version/parent_id 链）
+- [x] 基于新基线重新计算阈值（recompute_thresholds 基线相对）
+- [x] 基线迁移测试（§22 Baseline Test 通过）
+- [x] **用户可以明确告诉系统"这是我的新正常状态"**
+
+**下一步（Phase 6）**：Personal Dynamics Model（个人动态模型，REFACTOR_PLAN.md §10）。
+- 引入状态转移模型 E_{t+1}=f(E_t, X_t, U_t, Δt)，学习"这个用户的情绪是怎么变化的"。
+- 学习 temporal decay（恢复速度）、signal sensitivity（哪些信号对这个用户重要）、个人波动范围。
+- 预测短期趋势 + 对预测给出 uncertainty。
+- 复用 Phase 2 的 Matérn 状态空间（ℓ 即 temporal decay）与 Phase 4 的个人参数学习。
+- 验证：模型不只识别当前状态，而能回答"如果当前状态保持不变，趋势会怎样""恢复速度是否在变化"。
+
+---
