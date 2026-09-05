@@ -41,12 +41,14 @@ from emowave.core.domain.observation import Observation
 
 
 def _synchronized(method: Callable) -> Callable:
-    """用实例的 self._lock 串行化被装饰方法，保证跨线程写安全。
+    """用实例的 self._lock 串行化被装饰方法，保证跨线程访问安全。
 
     sqlite3 连接对象（check_same_thread=False）虽可跨线程共享，但并发
-    execute/commit 非线程安全；Flet/Electron UI 常在后台线程回调里写入
-    （tier.async_persistence）。所有写方法经此装饰器串行化，配合
-    PRAGMA busy_timeout，避免并发写抛 "database is locked"。
+    execute/commit 非线程安全——不仅写写冲突，读写并发在同一连接上同样不安全；
+    Flet/Electron UI 常在后台线程回调里读写（tier.async_persistence）。
+    所有公共读写方法经此装饰器串行化，配合 PRAGMA busy_timeout，
+    避免并发访问抛 "database is locked"。RLock 可重入，读方法内部调用
+    _row_to_* 等私有方法不会死锁。
     """
 
     @functools.wraps(method)
@@ -96,7 +98,7 @@ class SQLiteStorage:
             parent = os.path.dirname(os.path.abspath(path))
             os.makedirs(parent, exist_ok=True)
         self.path = path
-        # 写串行化锁（配合 _synchronized 装饰器，保证跨线程写安全）
+        # 读写串行化锁（配合 _synchronized 装饰器，保证跨线程访问安全）
         self._lock = threading.RLock()
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
@@ -290,6 +292,7 @@ class SQLiteStorage:
         )
         self.conn.commit()
 
+    @_synchronized
     def get_schema_version(self) -> int:
         row = self.conn.execute(
             "SELECT value FROM schema_meta WHERE key='schema_version'"
@@ -341,6 +344,7 @@ class SQLiteStorage:
         self.conn.commit()
         return len(rows)
 
+    @_synchronized
     def get_observations(
         self,
         start_ts: Optional[float] = None,
@@ -366,6 +370,7 @@ class SQLiteStorage:
         rows = self.conn.execute(sql, params).fetchall()
         return [self._row_to_observation(r) for r in rows]
 
+    @_synchronized
     def count_observations(self) -> int:
         return self.conn.execute("SELECT COUNT(*) AS c FROM observations").fetchone()["c"]
 
@@ -406,6 +411,7 @@ class SQLiteStorage:
         self.conn.commit()
         return cur.lastrowid
 
+    @_synchronized
     def get_emotion_states(
         self, start_ts: Optional[float] = None, end_ts: Optional[float] = None,
         limit: Optional[int] = None,
@@ -473,6 +479,7 @@ class SQLiteStorage:
         self.conn.commit()
         return cur.lastrowid
 
+    @_synchronized
     def get_corrections(
         self, start_ts: Optional[float] = None, end_ts: Optional[float] = None,
         limit: Optional[int] = None,
@@ -506,6 +513,7 @@ class SQLiteStorage:
             ))
         return out
 
+    @_synchronized
     def count_corrections(self) -> int:
         return self.conn.execute("SELECT COUNT(*) AS c FROM user_corrections").fetchone()["c"]
 
@@ -532,6 +540,7 @@ class SQLiteStorage:
         self.conn.commit()
         return cur.lastrowid
 
+    @_synchronized
     def get_baselines(self) -> List[Baseline]:
         rows = self.conn.execute(
             "SELECT * FROM baselines ORDER BY effective_from ASC, version ASC"
@@ -565,6 +574,7 @@ class SQLiteStorage:
         self.conn.commit()
         return cur.lastrowid
 
+    @_synchronized
     def get_baseline_events(self) -> List[BaselineShiftEvent]:
         rows = self.conn.execute(
             "SELECT * FROM baseline_events ORDER BY timestamp ASC"
@@ -603,6 +613,7 @@ class SQLiteStorage:
         self.conn.commit()
         return cur.lastrowid
 
+    @_synchronized
     def get_latest_model_parameters(self) -> Optional[ModelParameters]:
         row = self.conn.execute(
             "SELECT * FROM model_parameters ORDER BY version DESC, updated_at DESC LIMIT 1"
@@ -611,6 +622,7 @@ class SQLiteStorage:
             return None
         return self._row_to_params(row)
 
+    @_synchronized
     def get_model_parameters_history(self) -> List[ModelParameters]:
         rows = self.conn.execute(
             "SELECT * FROM model_parameters ORDER BY version ASC"
@@ -646,6 +658,7 @@ class SQLiteStorage:
         self.conn.commit()
         return cur.lastrowid
 
+    @_synchronized
     def get_state_events(
         self, start_ts: Optional[float] = None, end_ts: Optional[float] = None,
         limit: Optional[int] = None,

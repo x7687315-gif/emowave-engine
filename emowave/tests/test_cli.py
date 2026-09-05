@@ -6,7 +6,16 @@
 
 import pytest
 
-from emowave.cli import build_parser, main
+from emowave.cli import build_parser, main, _ensure_utf8_stdout
+
+
+def test_ensure_utf8_stdout_is_safe_and_idempotent():
+    """Windows 控制台 GBK 编码修复的守卫：helper 可调用、幂等、不抛异常。
+
+    修复前 CLI 打印 ℓ(U+2113)/·/→ 在 GBK 控制台抛 UnicodeEncodeError 崩溃。
+    """
+    _ensure_utf8_stdout()
+    _ensure_utf8_stdout()  # 幂等，重复调用不报错
 
 
 def test_parser_has_subcommands():

@@ -40,8 +40,14 @@ from emowave.core.protocol.schemas import (
 )
 
 
+# 合成观察点数上限（防止 --points 误输入超大值导致内存/时间爆炸，SEC-003 参数有效性）
+MAX_SYNTH_POINTS = 200_000
+
+
 def _synthetic_observations(n: int, start_ts: float = 1000.0) -> List[Observation]:
     """生成一段合成情绪观察（慢正弦 + 一个应激峰），用于 demo/curve。"""
+    # 参数有效性防护：钳到 [1, MAX_SYNTH_POINTS]
+    n = max(1, min(int(n), MAX_SYNTH_POINTS))
     obs = []
     for i in range(n):
         # 基础慢波 + 中段一个应激峰
@@ -188,7 +194,22 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _ensure_utf8_stdout() -> None:
+    """强制 stdout/stderr 用 UTF-8，避免 Windows 控制台 GBK 编码崩溃。
+
+    CLI 输出含 ℓ(U+2113)、·、→ 等非 GBK 字符，Windows 默认代码页打印会抛
+    UnicodeEncodeError。reconfigure 到 UTF-8 一次性解决全部子命令的输出编码。
+    对不可 reconfigure（被重定向 / 旧版本）的流静默跳过。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main(argv: Optional[List[str]] = None) -> int:
+    _ensure_utf8_stdout()
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "command", None):
