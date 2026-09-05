@@ -10,11 +10,11 @@
 
 `观测 → 估计 → 查看 → 修正 → 学习 → 校准 → 循环`
 
-![测试 606 通过](https://img.shields.io/badge/%E6%B5%8B%E8%AF%95-606%20%E9%80%9A%E8%BF%87-16130F)
-![运行时依赖 零](https://img.shields.io/badge/%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96-%E9%9B%B6-D6382B)
-![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-16130F)
-![schema v1](https://img.shields.io/badge/schema-v1-D6382B)
-![License MIT](https://img.shields.io/badge/License-MIT-16130F)
+![测试 606 通过](https://img.shields.io/badge/%E6%B5%8B%E8%AF%95-606%20%E9%80%9A%E8%BF%87-64748B)
+![运行时依赖 零](https://img.shields.io/badge/%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96-%E9%9B%B6-2E6BE6)
+![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-64748B)
+![schema v1](https://img.shields.io/badge/schema-v1-2E6BE6)
+![License MIT](https://img.shields.io/badge/License-MIT-64748B)
 
 ---
 
