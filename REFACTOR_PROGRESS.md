@@ -150,3 +150,97 @@ emowave/
 - 验证：新参数化在旧 `test_data/` 上 RMSE 不劣于旧实现（part1 §8 阶段 1）。
 
 ---
+
+### Phase 2 — 实时状态估计（已完成 ✅）
+
+**目标**：重构 Kalman / state estimator，实现 `Observation → Estimator → EmotionState` 闭环。完成标准（REFACTOR_PLAN.md §28 Phase 2）：**输入连续 Observation，可以持续输出 EmotionState**。
+
+**做了什么**：
+
+```
+emowave/core/
+├── linalg.py                  纯标准库矩阵运算（零依赖，替换 numpy）
+└── estimator/
+    ├── __init__.py
+    ├── matern.py              Matérn ν=3/2 状态空间闭式解
+    └── estimator.py           StateEstimator + EstimatorConfig + compute_observation_noise
+
+emowave/tests/
+├── test_linalg.py             33 tests
+├── test_estimator_matern.py   24 tests
+└── test_estimator.py          43 tests
+
+research/
+└── bench_matern_vs_legacy.py  新旧估计器 RMSE 对照基准（永不进设备）
+```
+
+**怎么完成的（关键设计决策）**：
+
+1. **零依赖 linalg**（LIGHTWEIGHT part2 §2.2 映射表）：用 `list[list[float]]` 实现矩阵加/减/数乘/乘法/矩阵-向量乘/转置/迹/对角阵，以及 **n×n 求逆（高斯-约当消元 + 部分主元选取）**。2×2 走闭式解（Kalman 新息协方差 S 常为 2×2，更快更稳）。验证 4×4（Kalman）与 10×10（LinUCB）求逆 `A·A⁻¹=I` 误差 < 1e-8，奇异矩阵抛 ValueError，部分主元处理对角元接近零的病态情况。
+
+2. **Matérn ν=3/2 状态空间闭式解**（part1 §2.4，Hartikainen & Särkkä 2010）：
+   - 转移矩阵 `F(Δt)=e^(-λΔt)·[[1+λΔt, Δt], [-λ²Δt, 1-λΔt]]`，λ=√3/ℓ
+   - 稳态协方差 `P∞=σ²·[[1,0],[0,λ²]]`
+   - 过程噪声 `Q(Δt)=P∞-F·P∞·Fᵀ`（自洽性：Δt→0 时 Q→0，Δt→∞ 时 Q→P∞）
+   - 双通道 4×4 块对角（状态排序 `[v, v̇, a, ȧ]`，part1 §2.3 与现有向量同构）
+   - **数学验证**：测试用数值微分确认 `Δt→0 时 F→I` 且 `dF/dΔt|₀=A=[[0,1],[-λ²,-2λ]]`（part1 §2.4 声称的两条性质）
+
+3. **取代旧版手写 F 与 velocity_damping**：旧版 `F[0][2]=dt`（匀速运动）+ `velocity_damping=0.85` 魔法常数被 Matérn 闭式解取代。阻尼已内含在 `e^(-λΔt)` 中，一个有心理学含义的参数 ℓ（情绪惯性，Kuppens 2010）取代了一个拍脑袋常数。测试 `test_estimator_uses_matern_not_handwritten_F` 验证 `_predict` 后状态符合 Matérn 而非匀速模型。
+
+4. **保留旧版两个好设计**（part1 §3.1 明确"不要丢"）：
+   - **自适应观测噪声** `compute_observation_noise`：滑条交互质量 → 噪声（快速拖动噪声低、静止后跳变噪声高）。重新设计为**相对因子乘以学习到的 sigma_noise**（个人化基线），而非旧版的绝对值取 max——这样 sigma_noise 可被 Phase 4 校准学习，交互质量作为相对调制。
+   - **生理控制输入**：HR/HRV 作为唤醒速度先验，`control_arousal = w_hrv·hrv_drop + w_hr·hr_change/100`，signal_quality<0.3 时门控归零。支持从 meta 显式提供或从 hr/hrv 与 baseline 自动推导。
+
+5. **新增完整协方差输出**（part1 §3.1）：`EmotionState.variance_valence/arousal` 取自 P 对角元，供 L2 回顾层与置信带渲染。`covariance` property 返回完整 4×4（拷贝），不只是旧版的 trace。
+
+6. **派生量计算**：
+   - `confidence = 1 - exp(-reduction/confidence_scale)`，reduction = 后验位置方差相对平稳方差的缩减（未观测→0，多次观测→1），带 min_confidence 下限避免冷启动 UI 全虚化
+   - `stability = exp(-speed/stability_scale)`，speed=√(v̇²+ȧ²)（速度越大越不稳定）
+   - `trend`：强度变化率 `intensity_dot=((v-0.5)v̇+(a-0.5)ȧ)/(√0.5·dist)` 的符号 → RISING/FALLING/STABLE，中性点附近返回 UNKNOWN
+   - `intensity`：由 EmotionState property 按 Russell 环状模型计算（Phase 1 已修正旧 bug）
+
+7. **防御性设计**：乱序观察（时间戳倒退）抛 ValueError；长时间无观察 Δt 钳到 600s 上限避免外推发散；部分观察（只有 valence 或只有 arousal）构造对应降维 H/R；纯生理观察只走预测+控制输入不做观测更新；extrapolate 先保存再恢复内部状态（外推不污染滤波器）。
+
+**验证结果**：
+
+| 测试集 | 通过 | 失败 | 耗时 |
+|---|---:|---:|---:|
+| `emowave/tests/`（Phase 1+2 累计） | **257** | 0 | 0.38s |
+| 其中 Phase 2 新增（linalg+matern+estimator） | 100 | 0 | — |
+| 旧套件 `tests/`+`test_engine.py`（回归） | 30 | 0 | 0.81s |
+
+**RMSE 对照基准**（`research/bench_matern_vs_legacy.py`，part1 §8 阶段 1 验证要求）：
+
+合成 Matérn ν=3/2 轨迹（ℓ=300s，600 步 1Hz）作 ground truth，加 σ=0.08 观测噪声 + 30% 随机 gap，新旧估计器在完全相同观测上对照，5 个随机种子平均：
+
+| 指标 | 旧版 Kalman | 新版 Matérn | 结论 |
+|---|---:|---:|---|
+| 全局 RMSE | 0.0645 | **0.0530** | ✅ 新版更优（不劣于旧版） |
+| gap 区域 RMSE | 0.0759 | **0.0552** | ✅ 新版改善 **27.2%** |
+
+gap 区域的显著改善直接验证了 part1 §1.2 "记忆问题"的修复：旧版 ℓ≈11-22s 在观测缺失时无法维持状态，新版 ℓ=300s 凭惯性平滑外推。
+
+**过程中修正的 3 处问题**（均为测试期望/设计问题，非实现 bug）：
+- `compute_observation_noise` 设计缺陷：`max(sigma, sigma_noise)` 地板使交互因子失效 → 重设计为相对因子乘以 sigma_noise
+- `test_trend_falling`：arousal 在末段已 plateau 到中性点，trend 反映平台期而非下降段 → 改为末步仍在下降的斜坡
+- `test_longer_ell`：原断言"长 ℓ 对尖峰响应更弱"依赖速度-位置协方差耦合（经数值诊断确认是 Matérn 临界阻尼均值回复的真实行为，非 bug）→ 改为检验 ℓ 的核心语义"情绪惯性"（外推时速度按 e^(-λΔt) 衰减，长 ℓ 漂移持续更久）
+
+**Phase 2 完成标准核对**（REFACTOR_PLAN.md §28）：
+
+- [x] 重构 Kalman / state estimator（Matérn 状态空间化）
+- [x] 实现统一输入 Observation
+- [x] 输出 EmotionState
+- [x] 增加 confidence
+- [x] 增加 uncertainty（variance_valence/arousal + 完整协方差）
+- [x] 增加 trend（rising/falling/stable/unknown）
+- [x] 增加实时 event stream（Phase 1 已建 EventStream，估计器输出可挂接）
+- [x] **输入连续 Observation，可以持续输出 EmotionState**（闭环测试验证）
+
+**下一步（Phase 3）**：情绪曲线（可编辑曲线是新版第一核心交互，part1 §3.2 L2 回顾层）。
+- 新建 `emowave/core/curve/smoother.py`：RTS（Rauch-Tung-Striebel）平滑器，O(N) 非因果全局平滑，产出均值曲线 μ(t) + 置信带 σ(t)。
+- 新建 `emowave/core/curve/curve.py`：EmotionCurve 数据结构 + 节点网格降采样（part2 §2.4，N=2000→300 使纯 Python RTS 从 172ms 降到 ~26ms）。
+- 三条曲线：Raw Observation / Model Estimate / User Corrected State（REFACTOR_PLAN.md §6.3）。
+- 控制点 + 拖拽语义（CurveEdit append-only，峰终加权，part1 §3.2.1 / §4.2）。
+- 验证：平滑后曲线 RMSE 优于滤波（平滑利用未来信息必然更优），注入合成用户编辑确认模型不发散。
+
+---
