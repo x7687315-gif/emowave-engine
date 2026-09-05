@@ -314,3 +314,88 @@ curve 模块零 numpy/scipy/PyQt5 依赖（LIGHTWEIGHT part2 §2 持续满足）
 - 验证：在 data_simulator_v2 的 4 类画像上确认学到的 ℓ 能区分画像（情绪稳定型 ℓ > 焦虑敏感型 ℓ）；"修正越多，误差是否下降"。
 
 ---
+
+### Phase 4 — Correction Learning / L3 学习层（已完成 ✅）
+
+**目标**：让模型从用户纠正中逐渐发生可验证的个性化变化。完成标准（REFACTOR_PLAN.md §28 Phase 4）：**模型能够从用户纠正中逐渐发生可验证的个性化变化**。
+
+**做了什么**：
+
+```
+emowave/core/calibration/
+├── __init__.py
+├── corrections.py      CorrectionDataset + BiasStatistics + OnlineResidualRegression
+├── personal_model.py   PersonalModelLearner + kalman_log_likelihood + LearnerConfig
+└── calibrator.py       Calibrator（编排 dataset + 残差回归 + 超参学习）
+
+emowave/tests/
+├── test_calibration_corrections.py        30 tests
+└── test_calibration_personal_model.py     21 tests
+```
+
+**怎么完成的（关键设计决策）**：
+
+1. **两类学习并存互补**（REFACTOR_PLAN.md §9.3 + part1 §3.3）：
+   - **残差回归**（OnlineResidualRegression）：学习"模型输出→用户偏好"的系统性映射，直接补偿预测值。快、立即降误差。对应 §9.3 Online Ridge Regression。在线更新 `A←A+wφφᵀ, b←b+w·r·φ, θ=(A+λI)⁻¹b`，φ(x)=[1,x]。
+   - **超参数学习**（PersonalModelLearner）：学习 ℓ/σ/σ_noise 动力学参数，改变模型本身行为。慢、深层、形成"个人动态模型"。对应 part1 §3.3 边际似然+层次先验。
+   - 为什么两者都要：残差回归补偿"静态偏移"（模型总低估 0.1），超参学习补偿"动态结构"（模型惯性比用户短）。前者立竿见影，后者长期塑形。
+
+2. **系统性偏差诊断**（part1 §4.4 诊断表的代码落地）：`BiasStatistics` 从加权纠正流提取四个信号——
+   - `peak_weighted_delta`（高 salience 纠正的加权 delta）→ σ 幅度偏差
+   - `delta_autocorr`（相邻 delta 加权 lag-1 自相关）→ ℓ 惯性偏差（持续=ℓ 应增大，交替=ℓ 应减小）
+   - `delta_scatter`（去系统分量后的加权标准差）× `(1-direction_consistency)` → σ_noise 偏差
+   - `direction_consistency`（|加权均值|/加权|均值|）区分系统性 vs 随机
+   全部按 reliability_weight 加权（part1 §4.2 峰终加权贯穿到学习层）。
+
+3. **层次先验收缩**（part1 §3.3，Taylor 2017 / Oravecz 2011）：`θ_final = w_pop·θ_pop + (1-w_pop)·θ_personal`，w_pop 由 dataset 累积 ESS（Σ weight）分段决定——ESS<5 纯群体（1.0），5-20 强收缩（0.8），20-40 线性过渡，≥40 保留 20% 群体锚点防漂移。防小样本过拟合（part1 §9 风险表）。
+
+4. **Coactive 有界更新**（part1 §4.3，Shivaswamy & Joachims 2015）：把拖动当"改进"而非"真值"——
+   - 每条样本按 reliability_weight 加权（随意拖动权重低）
+   - 岭正则 λ 防单次极端样本主导 θ
+   - 残差修正裁剪到 ±max_correction（默认 0.3）
+   - 超参数单步相对变化裁剪到 ±max_relative_step（默认 20%）
+   测试验证：单次极端拖动（0→1）后参数仍 ≥0 且变化 ≤15%，模型不被毁掉。
+
+5. **边际似然**（part1 §3.3）：`kalman_log_likelihood` 用 Kalman 前向遍累积 `log p(y|θ)=Σ[-½log|2πS_k|-½y_kᵀS_k⁻¹y_k]`，O(N)。`_log_det` 用高斯消元+部分主元算 log|det| 避免下溢。验证：与数据生成过程匹配的参数（ℓ=300 平滑信号）似然高于失配参数（ℓ=20）。
+
+6. **渐进式个性化**：learner.update 每次事件结束调用一步，参数逐步向用户收敛（不是一步到位拟合）。`Calibrator` 编排完整闭环：ingest_correction/ingest_curve_edit → dataset+残差回归累积 → learn() 超参更新 → calibrate() 预测时施加残差修正。
+
+**验证结果**：
+
+| 测试集 | 通过 | 失败 | 耗时 |
+|---|---:|---:|---:|
+| `emowave/tests/`（Phase 1-4 累计） | **362** | 0 | — |
+| 其中 Phase 4 新增（corrections+personal_model） | 51 | 0 | 0.26s |
+| 全套件 + 旧回归（emowave+tests+test_engine） | **392** | 0 | 2.76s |
+
+calibration 模块零 numpy/scipy/PyQt5 依赖。
+
+**关键完成标准验证**：
+- **"修正越多，误差下降"**（§28 Phase 4）：`test_regression_error_decreases_with_more_corrections` 与 `test_calibrator_error_decreases_end_to_end` 模拟有系统偏差的用户（corrected=pred+0.15+0.3pred），随纠正累积 held-out 误差从初始单调下降到 <0.05。
+- **"ℓ 能区分画像"**（part1 §8 阶段4）：`test_learner_distinguishes_stable_vs_anxious_archetypes` 验证情绪稳定型（纠正持续，autocorr 高）学到的 ℓ 显著大于焦虑敏感型（纠正交替，autocorr 负）。
+- **part1 §4.4 诊断表四行全覆盖**：峰值拉高→σ 增大、峰值拉平→σ 减小、纠正持续→ℓ 增大、纠正交替→ℓ 减小、随机拖动→σ_noise 增大，各有独立测试。
+
+**过程中修正的 3 处问题**：
+- 测试缺 `CorrectionSource` 导入 → 补充
+- 层次收缩设计缺陷：`max(w_by_events, w_by_ess)` 中新建 prior 的 n_events=0 给 w=1.0，max 后抵消了大量纠正证据（ESS 高），使个性化无法发生（σ 被卡在 ~0.18）→ 改为以 dataset 累积 ESS 为直接证据度量（ESS 才是真实的个人证据量），修正后 σ 可收敛到 ~0.5
+- `test_learner_shrinkage_alpha_increases`：固定 dataset 下 alpha 恒定 → 改为每步追加纠正（现实流程：ESS 渐增），alpha 真正单调上升
+
+**Phase 4 完成标准核对**（REFACTOR_PLAN.md §28）：
+
+- [x] 保存 UserCorrection（dataset append-only）
+- [x] 建立 correction dataset（CorrectionDataset 聚合 UserCorrection/CurveEdit）
+- [x] 统计系统性模型偏差（BiasStatistics 四信号，part1 §4.4）
+- [x] 实现 Online Regression（OnlineResidualRegression 岭回归）
+- [x] 增加个人参数（PersonalModelLearner 学 ℓ/σ/σ_noise + 层次收缩）
+- [x] 建立 Model Error 曲线（held_out_error + 边际似然评估）
+- [x] 验证"修正越多，误差是否下降"（端到端测试误差降到 <0.05）
+- [x] **模型能够从用户纠正中逐渐发生可验证的个性化变化**
+
+**下一步（Phase 5）**：Baseline Control（基线主权，REFACTOR_PLAN.md §8）。
+- 新建 `emowave/core/calibration/baseline_control.py`：基线作为 GP 均值函数 m(t)（part1 §5.1），三级用户主权 nudge/fork/reset（part1 §5.2）。
+- Fork 引入硬变点：regimes 分段，每段独立 baseline 与 θ，此后学习只用分叉后数据。
+- BaselineShiftEvent 记录 + 基线历史/版本。
+- BOCPD 提议 + 用户裁决闭环（part1 §5.3）：把 config 里 SHIFT_CONSECUTIVE_DAYS=3/SHIFT_STD_DEVIATIONS=2.0 的拍脑袋常数换成数据驱动。
+- 验证：用户重标定后模型不会把新基线继续判断为异常（REFACTOR_PLAN.md §22 Baseline Test）；注入人工漂移确认 BOCPD 召回。
+
+---
