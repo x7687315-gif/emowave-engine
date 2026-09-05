@@ -696,4 +696,77 @@ emowave/tests/
 
 > **备注（更新）**：Phase 6/7/8 的提交均已在本地完成，因 GitHub 网络中断（curl github.com 返回 000，连接重置）push 暂挂。Phase 0-5 已成功推送。网络恢复后将一并推送 Phase 6-9。本地提交链完整安全。
 
+> **网络恢复**：Phase 6/7/8 已成功推送（远程 9c5d99d..ab59051），GitHub 恢复 200。
+
+---
+
+### Phase 9 — 存储适配器 + CLI / 数据层收尾（已完成 ✅）
+
+**目标**：完成数据持久化层（§13）与脱离 UI 的最小可用接口，使七表 schema 版本化、原始数据不可变在数据库层强制。
+
+**做了什么**：
+
+```
+emowave/adapters/storage/
+├── __init__.py
+└── sqlite.py     SQLiteStorage：七表 schema 版本化 + append-only 触发器 +
+                  批量写入 + WAL
+
+emowave/cli/
+├── __init__.py   demo / detect / curve / version 四子命令
+└── __main__.py   支持 python -m emowave.cli
+
+emowave/tests/
+├── test_storage_sqlite.py   35 tests
+└── test_cli.py              10 tests
+```
+
+**怎么完成的（关键设计决策）**：
+
+1. **七表 schema**（§13）：observations / emotion_states / user_corrections / baselines / baseline_events / model_parameters / state_events + schema_meta。全部用标准库 sqlite3，零第三方依赖（存储是 adapter 职责，§11.1 允许这一层认识 SQLite，Core 不认识）。
+
+2. **原始数据不可变在数据库层强制**（§13 核心原则）：observations / user_corrections / baseline_events / state_events 四表安装 `BEFORE UPDATE/DELETE → RAISE(ABORT)` 触发器。即使绕过适配器直接写 SQL 也无法篡改原始事实——这是比"不提供 update 方法"更强的保证。`enforce_immutable=False` 可关闭（数据迁移特殊场景）。测试验证 UPDATE/DELETE 抛 IntegrityError。
+
+3. **模型结果可重算**（§13）：emotion_states 是唯一允许 `clear_emotion_states()` 的表（派生产物，可由 observations + model_parameters 重建）。清空 emotion_states 不影响 observations（测试验证）。
+
+4. **用户修正永久保留**（§13）：user_corrections append-only（触发器强制），是个人模型监督信号，永不丢弃。
+
+5. **Schema 版本化 + 迁移**（§13/§27）：schema_meta 表存 schema_version，`_ensure_schema_version` / `_migrate(from, to)` 提供带版本号的迁移骨架（为 Mobile/Rust Core 迁移留空间，§25）。Migration Test 验证重复打开同库不破坏数据/版本（幂等）。
+
+6. **批量 + WAL**（§23 异步/批量写入）：`append_observations` 单事务 executemany 批量写入；PRAGMA journal_mode=WAL 提升并发读写（异步持久化基础）。
+
+7. **CLI 四子命令**（§11 cli/，T0 最小接口）：
+   - `demo`：合成观察流 → 实时状态估计（打印 valence/arousal/intensity/confidence/trend/±1σ 置信带）
+   - `detect`：文本/(v,a) → Amiya 4 状态（EmotionBridge）
+   - `curve`：RTS 平滑 → 节点网格 + 置信带
+   - `version`：版本/协议 schema/探测档位
+   CLI 证明 Core 可完全脱离 UI 运行（Phase 1 完成标准的端到端体现），零 numpy/PyQt5/flet 依赖。
+
+**验证结果**：
+
+| 测试集 | 通过 | 失败 | 耗时 |
+|---|---:|---:|---:|
+| `emowave/tests/`（Phase 1-9 累计） | **564** | 0 | — |
+| 其中 Phase 9 新增（storage+cli） | 45 | 0 | 0.38s |
+| 全套件 + 旧回归 | **594** | 0 | 2.35s |
+
+CLI 端到端冒烟：`python -m emowave.cli version` 输出 T2(FULL) + 三版本号；`detect --valence 0.15 --arousal 0.9` 正确输出 worried。
+
+**Phase 9 完成标准核对**（REFACTOR_PLAN.md §28）：
+
+- [x] SQLite migration（七表 schema 版本化 + 迁移骨架 + Migration Test）
+- [x] 原始数据不可变（数据库层触发器强制）
+- [x] 模型结果可重算（emotion_states 可清空重建）
+- [x] 用户修正永久保留（append-only 触发器）
+- [x] 批量/异步持久化基础（executemany + WAL）
+- [x] CLI 入口（Core 脱离 UI 运行）
+- [x] cross-platform golden test 基础（CLI + 纯 Python Core 可作 §25 Reference Implementation）
+
+**剩余工作（需 flet 依赖，列为 optional，不在本次零依赖内核范围）**：
+- [ ] Desktop UI / Linux UI / Mobile UI（part2 §4 Flet 跨平台 UI，需 `flet==0.86.5`）
+- [ ] Android/iOS prototype（`flet build apk/ipa`，需对应构建机）
+- [ ] 可拖拽曲线的 Flet GestureDetector + Canvas 实现（part2 §4.2）
+
+> 说明：REFACTOR_PLAN §24 多平台战略第一阶段是"Python Core + Desktop，优先把算法和数据模型做正确"。Phase 1-9 已完成算法/数据模型/协议/存储/CLI 的全部 Core 工作（零依赖、可移植）。Flet UI 属第二阶段，需引入 flet 运行时依赖，与"零依赖内核"分离（part2 §6 三分法：emowave 内核 / platforms UI / research），故列为后续独立工作，不阻塞 Core 完成。
+
 ---
