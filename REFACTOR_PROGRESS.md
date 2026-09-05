@@ -467,3 +467,73 @@ emowave/tests/
 - 验证：模型不只识别当前状态，而能回答"如果当前状态保持不变，趋势会怎样""恢复速度是否在变化"。
 
 ---
+
+### Phase 6 — Personal Dynamics Model / 推断层（已完成 ✅）
+
+**目标**：模型不只识别当前状态，而开始学习"这个用户的情绪是怎么变化的"。完成标准（REFACTOR_PLAN.md §28 Phase 6）。
+
+**做了什么**：
+
+```
+emowave/core/inference/
+├── __init__.py
+├── dynamics.py     SignalSensitivity + PersonalDynamicsModel +
+│                   OnlineFeatureRegression + DynamicsLearner +
+│                   predict_forward + recovery_half_time
+└── predictor.py    TrendForecast + TrendPredictor
+
+emowave/tests/
+└── test_inference_dynamics.py   37 tests
+```
+
+**怎么完成的（关键设计决策）**：
+
+1. **状态转移模型 E_{t+1}=f(E_t,X_t,U_t,Δt)**（§10）：复用 Phase 2 Matérn 状态空间——F(Δt) 即 E_t→E_{t+1} 的转移，X_t（生理信号）经 control input 注入，U_t（用户修正）经 Phase 3/4 的编辑伪观察注入，Δt 进入闭式解。`predict_forward` 提供纯状态转移的前向预测。
+
+2. **temporal decay → 恢复速度的可解释翻译**：`recovery_half_time(ℓ)=0.969·ℓ`。推导——Matérn 位置偏离按 d(Δt)=e^(-λΔt)(1+λΔt)·d₀ 衰减，解 d/d₀=0.5 得 λΔt≈1.678，即 t_half≈1.678ℓ/√3≈0.969ℓ。**ℓ 本质就是恢复时间尺度**，把抽象的 ℓ 翻译成"情绪恢复一半要多久"的可解释量。测试用 Matérn 衰减公式反向验证 0.969 系数（半衰期处偏离确实≈0.5）。
+
+3. **signal sensitivity 学习**（§10"什么因素最容易让这个用户变化"）：`OnlineFeatureRegression` 多特征在线岭回归（含 R² 诊断），从 (生理/情境信号 → 状态变化率) 对学习个人权重。`DynamicsLearner.ingest_transition` 把相邻观察的状态变化作为目标 y、prev 时刻信号（hr_z/hrv_drop/activity/sleep 中心化 + 自身惯性）作为特征。R² 低 → 该信号只是噪声（§9.2"哪些信号只是噪声"）。`dominant_signals` 返回影响最大的前 k 个信号。
+
+4. **个人波动范围**：volatility = 个人 σ（Phase 4 已学），mean_valence/arousal = 个人吸引子中心。组装进 `PersonalDynamicsModel`。
+
+5. **短期趋势预测 + uncertainty**（§6.4 诚实表达不确定性）：`TrendPredictor.forecast` 从 EmotionState 前向传播，置信带随 horizon 变宽（Q 累积，方差单调增长趋近 P∞），置信度随 horizon 与预测方差下降（`_forecast_confidence` 双重指数惩罚）。`recovery_estimate` 基于恢复半衰期估算"回到基线附近"的时间（偏离越大需越多半衰期）。`recovery_speed_changing` 对比两时期模型判断恢复速度变化（§10 问题4）。
+
+6. **基线作为 GP 均值函数的落地**（part1 §5.1）：`predict_forward` 在**偏离空间**传播——位置减去基线均值 m，F 使偏离回复到 0，输出加回 m。这修正了"原始 Matérn F 把状态均值回复到 0（而非情绪中性点 0.5/基线）"的建模错误，保证无观测时状态回复到基线而非 0。
+
+**验证结果**：
+
+| 测试集 | 通过 | 失败 | 耗时 |
+|---|---:|---:|---:|
+| `emowave/tests/`（Phase 1-6 累计） | **443** | 0 | — |
+| 其中 Phase 6 新增（dynamics+predictor） | 37 | 0 | 0.21s |
+| 全套件 + 旧回归 | **473** | 0 | 2.73s |
+
+inference 模块零 numpy/scipy/PyQt5 依赖。
+
+**关键完成标准验证**（§10 四个问题）：
+- 问题1"趋势会怎样"：`forecast` 输出 trend + 预测轨迹 + 置信带；CI 随 horizon 变宽、置信度随 horizon 下降。
+- 问题2"什么因素最易让该用户变化"：`most_influential_signals` / `dominant_signals`；HRV 下降驱动唤醒的用户学到 w_hrv_arousal>0。
+- 问题4"恢复速度是否变化"：`recovery_estimate`（ℓ 短者恢复快）+ `recovery_speed_changing`（半衰期对比）。
+- 问题3"应对方式是否有效"：留待 Phase 8 与 recommender（LinUCB）集成。
+
+**过程中修正的 1 处问题**：
+- 均值回复目标错误：原始 Matérn 状态空间 F 把状态回复到 0，但情绪量表中性点是基线（0.5）。中性状态 (0.5,0.5) 前向预测会漂向 (0,0) 使强度从 0 上升、trend 误判 RISING → `predict_forward` 改为偏离空间传播（part1 §5.1 基线=GP 均值函数），TrendPredictor 传入 baseline 作为 mean，修正后中性状态正确预测 STABLE
+
+**Phase 6 完成标准核对**（REFACTOR_PLAN.md §28）：
+
+- [x] 引入状态转移模型（复用 Matérn F(Δt) + control + 编辑）
+- [x] 学习 temporal decay（ℓ → recovery_half_time）
+- [x] 学习 signal sensitivity（OnlineFeatureRegression 多特征岭回归）
+- [x] 学习恢复速度（recovery_estimate + recovery_speed_changing）
+- [x] 学习个人波动范围（volatility = 个人 σ）
+- [x] 预测短期趋势（forecast trend + 轨迹）
+- [x] 对预测结果给出 uncertainty（CI 随 horizon 变宽 + confidence 下降）
+- [x] **模型开始学习"这个用户的情绪是怎么变化的"**
+
+**下一步（Phase 7）**：Lite Runtime / Performance（REFACTOR_PLAN.md §28 Phase 7 + part2 §5.2 Tier）。
+- 新建 `emowave/core/tier.py`：能力档位探测（T0 Embed / T1 Lite / T2 Full），按 CPU/内存/平台/省电模式自动降档（part2 §5.2）。
+- Benchmark：CPU / memory / SQLite 写入；数据降采样（Phase 3 节点网格已就绪）；异步/批量持久化。
+- 验证低配置设备：1Hz 采样 CPU 占用、曲线重算延迟、内存足迹。
+- 目标（§23）：Live state update <20ms，Curve redraw <16ms，内存低百 MB，无 GPU。
+
+---
