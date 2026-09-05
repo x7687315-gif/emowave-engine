@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" width="1200" height="440" role="img" aria-label="心潮 EmoWave · 个人情绪状态引擎">
+  <!-- 构成主义 Banner · 有限色板：纸白 #ECE6DB / 墨黑 #16130F / 一色红 #D6382B -->
+  <defs>
+    <style>
+      .t { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    </style>
+  </defs>
+
+  <!-- 纸白底 -->
+  <rect width="1200" height="440" fill="#ECE6DB"/>
+
+  <!-- 右侧红色楔形（El Lissitzky 红楔），限定在右 40%，不侵入左侧文字区 -->
+  <polygon points="1200,0 1200,440 720,440" fill="#D6382B"/>
+  <!-- 楔上黑对角条（构成主义动态对角线） -->
+  <polygon points="1200,0 1200,120 940,0" fill="#16130F"/>
+
+  <!-- 左上黑圆环 + 红实心焦点（几何呼应） -->
+  <circle cx="250" cy="135" r="74" fill="none" stroke="#16130F" stroke-width="9"/>
+  <circle cx="250" cy="135" r="24" fill="#D6382B"/>
+
+  <!-- 主标题（左，粗黑无衬线，位于纸白，不与任何色块重叠） -->
+  <text class="t" x="60" y="322" fill="#16130F" font-size="90" font-weight="800" letter-spacing="2">心潮</text>
+  <text class="t" x="248" y="322" fill="#16130F" font-size="90" font-weight="800" letter-spacing="6">EMOWAVE</text>
+
+  <!-- 标题下黑色结构线 -->
+  <rect x="62" y="338" width="600" height="6" fill="#16130F"/>
+
+  <!-- 副标题（大写、字距拉开） -->
+  <text class="t" x="62" y="378" fill="#16130F" font-size="24" font-weight="600" letter-spacing="6">PERSONAL EMOTION STATE ENGINE</text>
+
+  <!-- 红方块点缀 + 中文闭环标语 -->
+  <rect x="62" y="398" width="18" height="18" fill="#D6382B"/>
+  <text class="t" x="92" y="414" fill="#16130F" font-size="19" font-weight="500" letter-spacing="3">观测 · 估计 · 修正 · 学习 · 校准 · 循环</text>
+
+  <!-- 右上版本标记（白字压在红楔上） -->
+  <text class="t" x="1176" y="70" fill="#ECE6DB" font-size="26" font-weight="700" letter-spacing="2" text-anchor="end">v2.0</text>
+</svg>

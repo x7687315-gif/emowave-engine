@@ -455,36 +455,46 @@ def test_context_manager(tmp_path):
 
 
 def test_concurrent_writes_thread_safe(tmp_path):
-    """多线程并发写不崩溃（MEDIUM 修复：写串行化锁 + busy_timeout）。
+    """多线程并发读写不崩溃（MEDIUM 修复：读写全部串行化 + busy_timeout）。
 
-    Flet/Electron UI 常在后台线程回调里写库（tier.async_persistence）。
+    Flet/Electron UI 常在后台线程回调里读写库（tier.async_persistence）。
     修复前 check_same_thread=False 的共享连接并发 execute/commit 非线程安全，
-    WAL 下写写冲突会抛 "database is locked"。修复后所有写方法经
-    _synchronized 串行化 + busy_timeout=5000。
+    不仅写写冲突，读写并发在同一连接上同样不安全。修复后所有公共读写方法
+    经 _synchronized 串行化 + PRAGMA busy_timeout=5000。
     """
     import threading
 
     db_path = str(tmp_path / "concurrent.db")
     store = SQLiteStorage(db_path)
-    n_threads = 8
-    per_thread = 25
+    n_writer = 6
+    n_reader = 6
+    per_writer = 25
     errors = []
 
-    def worker(tid):
+    def writer(tid):
         try:
-            for i in range(per_thread):
+            for i in range(per_writer):
                 store.append_observation(
-                    Observation(timestamp=1000.0 + tid * 100 + i, valence=0.5)
+                    Observation(timestamp=1000.0 + tid * 1000 + i, valence=0.5)
                 )
         except Exception as e:  # noqa: BLE001
-            errors.append(e)
+            errors.append(("write", e))
 
-    threads = [threading.Thread(target=worker, args=(t,)) for t in range(n_threads)]
+    def reader(_tid):
+        try:
+            for _ in range(per_writer):
+                store.get_observations(limit=10)
+                store.count_observations()
+        except Exception as e:  # noqa: BLE001
+            errors.append(("read", e))
+
+    threads = [threading.Thread(target=writer, args=(t,)) for t in range(n_writer)]
+    threads += [threading.Thread(target=reader, args=(t,)) for t in range(n_reader)]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
 
-    assert not errors, f"并发写抛异常: {errors}"
-    assert store.count_observations() == n_threads * per_thread
+    assert not errors, f"并发读写抛异常: {errors}"
+    assert store.count_observations() == n_writer * per_writer
     store.close()
