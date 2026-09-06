@@ -37,28 +37,26 @@ class HistoryWindow(QWidget):
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(10)
 
-        # 情绪日历卡片（短星期头，更紧凑）
+        # 情绪日历卡片。注意：祖先一旦有 stylesheet，QCalendarWidget 内部日格
+        # 会切到 QStyleSheetStyle，若无显式 background-color 基色会变黑，
+        # 故这里必须给 widget 与日格视图都显式指定背景。
         cal_card = CardFrame("情绪日历")
         self.calendar = QCalendarWidget()
         self.calendar.setGridVisible(False)
         self.calendar.setHorizontalHeaderFormat(QCalendarWidget.ShortDayNames)
         self.calendar.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader)
+        self.calendar.setMaximumHeight(210)
         self.calendar.setStyleSheet(
-            f"QCalendarWidget QWidget {{ alternate-background-color:"
-            f" {COLORS['surface']}; }}"
-            f"QCalendarWidget QAbstractItemView:enabled"
-            f" {{ color: {COLORS['ink']};"
+            f"QCalendarWidget {{ background-color: {COLORS['surface']}; }}"
+            f"QCalendarWidget QWidget {{ background-color: {COLORS['surface']}; }}"
+            f"QCalendarWidget QAbstractItemView {{ background-color: {COLORS['surface']};"
+            f" color: {COLORS['ink']}; alternate-background-color: {COLORS['surface']};"
             f" selection-background-color: {COLORS['sage_soft']};"
             f" selection-color: {COLORS['ink']}; }}"
-            f"QCalendarWidget QToolButton {{ color: {COLORS['ink']};"
-            f" font-size: 12px; background: transparent;"
-            f" border-radius: 4px; padding: 2px 6px; }}"
-            f"QCalendarWidget QToolButton:hover"
-            f" {{ background-color: {COLORS['rule']}; }}"
-            f"QCalendarWidget #qt_calendar_monthmenu"
-            f" {{ color: {COLORS['ink']}; }}"
-            f"QCalendarWidget QSpinBox"
-            f" {{ color: {COLORS['ink']}; background: {COLORS['surface']}; }}"
+            f"QCalendarWidget QToolButton {{ background-color: {COLORS['surface']};"
+            f" color: {COLORS['ink']}; border: none; padding: 2px 6px; }}"
+            f"QCalendarWidget QSpinBox {{ background-color: {COLORS['surface']};"
+            f" color: {COLORS['ink']}; }}"
         )
         self.calendar.clicked.connect(self._on_date_clicked)
         cal_card.add_widget(self.calendar)

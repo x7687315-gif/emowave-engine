@@ -1,52 +1,24 @@
-"""tests/test_main_app.py — MainWindow 主窗口集成测试"""
+"""tests/test_main_app.py — MainWindow 单页控制台集成测试"""
 import pytest
-import time
-from models import TimeSeriesSample
 
 
-def test_main_window_creates_with_all_pages(qapp, tmp_path):
-    """MainWindow 集成了所有四个功能页面"""
+def test_main_window_creates_with_console(qapp, tmp_path):
+    """MainWindow 创建单页控制台，包含全部八个分区锚点"""
     import main_app
     from db import DatabaseManager
 
     db = DatabaseManager(str(tmp_path / "test.db"))
     win = main_app.MainWindow(db)
 
-    assert win.stack.count() == 4  # 四个页面
-    assert win.dashboard_page is not None
-    assert win.surfing_page is not None
-    assert win.summary_page is not None
-    assert win.history_page is not None
-    db.close()
-
-
-def test_main_window_navigates_between_pages(qapp, tmp_path):
-    """侧边栏按钮可以在四个页面之间切换"""
-    import main_app
-    from db import DatabaseManager
-
-    db = DatabaseManager(str(tmp_path / "test.db"))
-    win = main_app.MainWindow(db)
-
-    # 初始在仪表盘
-    assert win.stack.currentIndex() == 0
-
-    # 切换到情绪冲浪
-    win._switch_to(1)
-    assert win.stack.currentIndex() == 1
-
-    # 切换到事件回顾
-    win._switch_to(2)
-    assert win.stack.currentIndex() == 2
-
-    # 切换到历史记录
-    win._switch_to(3)
-    assert win.stack.currentIndex() == 3
+    assert win.console is not None
+    for key in ["state", "curve", "adjust", "baseline",
+                "model", "correction", "summary", "history"]:
+        assert key in win.console.sections
     db.close()
 
 
 def test_sidebar_toggle_collapses_and_expands(qapp, tmp_path):
-    """侧边栏可折叠：展开 168px ↔ 收起 54px，状态位同步翻转"""
+    """侧边栏可折叠：展开 150px ↔ 收起 54px"""
     import main_app
     from db import DatabaseManager
 
@@ -62,51 +34,76 @@ def test_sidebar_toggle_collapses_and_expands(qapp, tmp_path):
 
     win.toggle_sidebar()
     assert win.sidebar_collapsed is False
-    assert win.sidebar.width() == main_app.SIDEBAR_W
     db.close()
 
 
-def test_switch_to_updates_header_title(qapp, tmp_path):
-    """统一页头标题随页面切换更新"""
+def test_jump_updates_header_title(qapp, tmp_path):
+    """锚点导航更新页头标题"""
     import main_app
     from db import DatabaseManager
 
     db = DatabaseManager(str(tmp_path / "test.db"))
     win = main_app.MainWindow(db)
 
-    win._switch_to(1)
-    assert win.page_title.text() == "情绪冲浪"
-    win._switch_to(3)
+    win._jump(3)
+    assert win.page_title.text() == "基线主权"
+    win._jump(7)
     assert win.page_title.text() == "历史记录"
     db.close()
 
 
-def test_surfing_finish_navigates_to_summary(qapp, tmp_path):
-    """完成情绪记录后自动跳转到事件回顾页面"""
+def test_console_recording_samples_state(qapp, tmp_path):
+    """控制台记录模式：采样喂给 2.0 估计器并更新状态/曲线"""
     import main_app
     from db import DatabaseManager
 
     db = DatabaseManager(str(tmp_path / "test.db"))
     win = main_app.MainWindow(db)
+    console = win.console
 
-    # 切换到冲浪页面
-    win._switch_to(1)
-    surfing = win.surfing_page
+    console._toggle_recording()
+    assert console.recording is True
+    for _ in range(3):
+        console._sample()
+    console._toggle_recording()
+    assert console.recording is False
 
-    # 模拟开始记录
-    surfing._toggle_recording()
-    assert surfing.recording is True
+    assert len(console.observations) == 3
+    assert len(console.states) == 3
+    db.close()
 
-    # 模拟采样
-    now = time.time()
-    for i in range(5):
-        surfing.samples.append(
-            TimeSeriesSample(timestamp=now + i, valence=0.5 - i*0.05, arousal=0.3 + i*0.1)
-        )
 
-    # 完成记录
-    surfing._finish_recording()
+def test_console_baseline_nudge_and_fork(qapp, tmp_path):
+    """基线主权：nudge 改变基线，fork 产生新 regime"""
+    import main_app
+    from db import DatabaseManager
 
-    # 应该跳转到事件回顾页面
-    assert win.stack.currentIndex() == 2
+    db = DatabaseManager(str(tmp_path / "test.db"))
+    win = main_app.MainWindow(db)
+    console = win.console
+
+    before = console.baseline_ctrl.current.valence
+    console._nudge(+0.05)
+    assert console.baseline_ctrl.current.valence == pytest.approx(before + 0.05)
+
+    n_regimes = len(console.baseline_ctrl.regimes)
+    console._fork()
+    assert len(console.baseline_ctrl.regimes) == n_regimes + 1
+    db.close()
+
+
+def test_console_correction_feeds_calibrator(qapp, tmp_path):
+    """纠正：提交后进入 calibrator 数据集"""
+    import main_app
+    from db import DatabaseManager
+
+    db = DatabaseManager(str(tmp_path / "test.db"))
+    win = main_app.MainWindow(db)
+    console = win.console
+
+    console._sample()
+    console.cv_slider.setValue(80)
+    console._submit_correction()
+
+    assert len(console.calibrator.dataset) == 1
     db.close()

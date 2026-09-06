@@ -202,3 +202,118 @@ class StatBlock(QWidget):
 
     def set_value(self, text: str):
         self.value_label.setText(text)
+
+
+class EmotionCurveWidget(QWidget):
+    """2.0 时间序列情绪曲线：置信带 + 模型线 + 基线虚线 + 原始点 + 当前点。
+
+    视觉主角（REFACTOR_PLAN §20：视觉重点是一条情绪曲线）。
+    set_data(timestamps, model_v, model_a, var_v, var_a, baseline_v, raw)
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.timestamps = []
+        self.model_v = []
+        self.model_a = []
+        self.var_v = []
+        self.var_a = []
+        self.baseline_v = 0.5
+        self.raw = []          # [(ts, v)] 原始观察点
+        self.setMinimumSize(320, 180)
+
+    def set_data(self, timestamps, model_v, model_a, var_v, var_a,
+                 baseline_v=0.5, raw=None):
+        self.timestamps = list(timestamps)
+        self.model_v = list(model_v)
+        self.model_a = list(model_a)
+        self.var_v = list(var_v)
+        self.var_a = list(var_a)
+        self.baseline_v = baseline_v
+        self.raw = list(raw or [])
+        self.update()
+
+    def clear(self):
+        self.timestamps = []
+        self.model_v = []
+        self.model_a = []
+        self.var_v = []
+        self.var_a = []
+        self.raw = []
+        self.update()
+
+    def _x(self, ts, t0, span, w):
+        if span <= 0:
+            return w // 2
+        return int((ts - t0) / span * (w - 8)) + 4
+
+    def _y(self, value, h):
+        return int((1 - max(0.0, min(1.0, value))) * (h - 12)) + 6
+
+    def paintEvent(self, event):
+        import math
+        from PyQt5.QtGui import QPolygonF
+        from PyQt5.QtCore import QPointF
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+
+        # 纸面
+        p.fillRect(self.rect(), QColor(COLORS['surface']))
+        if not self.timestamps:
+            p.setPen(QColor(COLORS['muted']))
+            p.setFont(app_font(10))
+            p.drawText(self.rect(), Qt.AlignCenter,
+                       "开始记录后，这里会出现你的情绪曲线")
+            return
+
+        t0, t1 = self.timestamps[0], self.timestamps[-1]
+        span = t1 - t0
+
+        # 基线虚线（雾蓝）
+        p.setPen(QPen(QColor(COLORS['mist']), 1, Qt.DashLine))
+        yb = self._y(self.baseline_v, h)
+        p.drawLine(4, yb, w - 4, yb)
+
+        # ±1σ 置信带（灰绿半透明）
+        if len(self.model_v) >= 2 and len(self.var_v) == len(self.model_v):
+            upper, lower = [], []
+            for i, ts in enumerate(self.timestamps):
+                sd = math.sqrt(max(0.0, self.var_v[i]))
+                x = self._x(ts, t0, span, w)
+                upper.append(QPointF(x, self._y(min(1.0, self.model_v[i] + sd), h)))
+                lower.append(QPointF(x, self._y(max(0.0, self.model_v[i] - sd), h)))
+            poly = QPolygonF(upper + list(reversed(lower)))
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(125, 144, 112, 40))
+            p.drawPolygon(poly)
+
+        # 原始观察点（弱）
+        p.setPen(Qt.NoPen)
+        for ts, v in self.raw:
+            p.setBrush(QColor(156, 150, 138, 120))
+            p.drawEllipse(self._x(ts, t0, span, w) - 2, self._y(v, h) - 2, 4, 4)
+
+        # 模型估计线（灰绿）
+        if len(self.model_v) >= 2:
+            p.setPen(QPen(QColor(COLORS['sage']), 2, Qt.SolidLine, Qt.RoundCap))
+            for i in range(1, len(self.model_v)):
+                x1 = self._x(self.timestamps[i - 1], t0, span, w)
+                y1 = self._y(self.model_v[i - 1], h)
+                x2 = self._x(self.timestamps[i], t0, span, w)
+                y2 = self._y(self.model_v[i], h)
+                p.drawLine(x1, y1, x2, y2)
+
+        # 当前点（朱红）
+        if self.model_v:
+            cx = self._x(self.timestamps[-1], t0, span, w)
+            cy = self._y(self.model_v[-1], h)
+            p.setBrush(QColor(COLORS['sun']))
+            p.setPen(Qt.NoPen)
+            p.drawEllipse(cx - 4, cy - 4, 8, 8)
+
+        # 轴标签
+        p.setPen(QColor(COLORS['muted']))
+        p.setFont(app_font(8))
+        p.drawText(4, 12, "效价")
+        p.drawText(w - 46, h - 4, "时间 →")

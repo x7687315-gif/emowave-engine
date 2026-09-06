@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""心潮 EmoWave 桌面情绪追踪应用入口（禅意紧凑版）
+"""心潮 EmoWave 桌面应用入口（2.0 单页控制台）
 
-单窗口集成四个功能页：今日仪表盘 / 情绪冲浪 / 事件回顾 / 历史记录。
-- 侧边栏可折叠：展开 172px 文字导航 ↔ 收起 54px 日式竖排二字导航
-- 统一页头：当前页名 + 日期，页面内不再重复大标题（紧凑）
-- 纸白 + 灰绿/雾蓝 + 发丝线 + 朱红点睛
+所有内容集中在一个界面（ConsoleWindow）：实时状态 / 情绪曲线 / 实时调节 /
+基线主权 / 个人模型 / 纠正 / 事件回顾 / 历史记录，自上而下单页呈现。
+侧边栏为锚点导航（点击滚动到分区），可折叠为日式竖排二字。
+
+后续由用户决定哪些分区放入隐藏式、哪些保留主界面。
 """
 import sys
 import os
@@ -13,7 +14,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QStackedWidget, QWidget,
+    QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame,
     QFileDialog, QMessageBox, QSizePolicy,
 )
@@ -23,53 +24,48 @@ from PyQt5.QtGui import QFont
 from db import DatabaseManager
 from session import SessionController
 from widgets import COLORS, app_font
-from windows.dashboard_window import DashboardWindow
-from windows.surfing_window import SurfingWindow
-from windows.event_summary_window import EventSummaryWindow
-from windows.history_window import HistoryWindow
+from windows.console_window import ConsoleWindow
 
-# 侧边栏两态宽度
-SIDEBAR_W = 168
+SIDEBAR_W = 150
 SIDEBAR_W_COLLAPSED = 54
 
 STYLE_SHEET = f"""
 QMainWindow {{ background-color: {COLORS['bg']}; }}
-QStackedWidget {{ background-color: transparent; }}
-QListWidget {{ border: none; background: transparent; }}
-QPushButton:hover {{ opacity: 0.88; }}
 QToolTip {{
     background-color: {COLORS['surface']}; color: {COLORS['ink']};
     border: 1px solid {COLORS['rule']}; padding: 4px;
 }}
 """
 
-# (完整名, 收起态竖排二字, 页索引)
+# (完整名, 收起态竖排二字, 锚点 key)
 NAV_ITEMS = [
-    ("今日仪表盘", "仪表", 0),
-    ("情绪冲浪", "冲浪", 1),
-    ("事件回顾", "回顾", 2),
-    ("历史记录", "历史", 3),
+    ("实时状态", "状态", "state"),
+    ("情绪曲线", "曲线", "curve"),
+    ("实时调节", "调节", "adjust"),
+    ("基线主权", "基线", "baseline"),
+    ("个人模型", "学习", "model"),
+    ("纠正", "纠正", "correction"),
+    ("事件回顾", "回顾", "summary"),
+    ("历史记录", "历史", "history"),
 ]
 
 
 class MainWindow(QMainWindow):
-    """主窗口：可折叠侧边栏 + 统一页头 + 四页面栈 + 菜单栏"""
+    """主窗口：可折叠锚点侧栏 + 单页控制台 + 菜单栏"""
 
     def __init__(self, db=None):
         super().__init__()
-        self.setWindowTitle("心潮 EmoWave · 情绪追踪")
-        self.setMinimumSize(860, 560)
-        self.resize(980, 640)
+        self.setWindowTitle("心潮 EmoWave · 个人情绪状态引擎")
+        self.setMinimumSize(880, 620)
+        self.resize(1020, 720)
         self.setStyleSheet(STYLE_SHEET)
         self.sidebar_collapsed = False
 
-        # 初始化数据库和会话
         if db is None:
             db = DatabaseManager()
         self.db = db
         self.session = SessionController(db)
 
-        # 中心区域：侧边栏 | (页头 + 页面栈)
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QHBoxLayout(central)
@@ -83,31 +79,19 @@ class MainWindow(QMainWindow):
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
-
         content_layout.addWidget(self._build_header())
         content_layout.addWidget(self._header_rule())
 
-        # 页面栈
-        self.stack = QStackedWidget()
-        content_layout.addWidget(self.stack, stretch=1)
+        # 单页控制台（全部内容集中于此）
+        self.console = ConsoleWindow(self.session, parent=self)
+        content_layout.addWidget(self.console, stretch=1)
         main_layout.addWidget(content, stretch=1)
 
-        # 创建四个页面（传入 self 作为 parent，使 SurfingWindow 能回调）
-        self.dashboard_page = DashboardWindow(self.session, parent=self)
-        self.surfing_page = SurfingWindow(self.session, parent=self)
-        self.summary_page = EventSummaryWindow(self.session, parent=self)
-        self.history_page = HistoryWindow(self.session, parent=self)
-
-        self.stack.addWidget(self.dashboard_page)
-        self.stack.addWidget(self.surfing_page)
-        self.stack.addWidget(self.summary_page)
-        self.stack.addWidget(self.history_page)
-
         self._setup_menu()
-        self._switch_to(0)
+        self._set_active(0)
 
     # ================================================================
-    # 侧边栏（可折叠）
+    # 侧边栏（锚点导航，可折叠）
     # ================================================================
 
     def _build_sidebar(self):
@@ -122,7 +106,6 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(6, 8, 6, 8)
         layout.setSpacing(2)
 
-        # 折叠开关
         self.btn_toggle = QPushButton("≡")
         self.btn_toggle.setCursor(Qt.PointingHandCursor)
         self.btn_toggle.setFixedSize(38, 30)
@@ -133,20 +116,18 @@ class MainWindow(QMainWindow):
         )
         self.btn_toggle.clicked.connect(self.toggle_sidebar)
         layout.addWidget(self.btn_toggle, 0, Qt.AlignLeft)
-        layout.addSpacing(10)
+        layout.addSpacing(8)
 
-        # 导航按钮
         self.nav_buttons = []
-        for label, short, idx in NAV_ITEMS:
+        for idx, (label, short, key) in enumerate(NAV_ITEMS):
             btn = QPushButton(label)
             btn.setCheckable(True)
             btn.setCursor(Qt.PointingHandCursor)
-            btn.clicked.connect(lambda checked, i=idx: self._switch_to(i))
+            btn.clicked.connect(lambda checked, i=idx: self._jump(i))
             self.nav_buttons.append(btn)
             layout.addWidget(btn)
 
         layout.addStretch()
-
         ver = QLabel("  v2.0")
         ver.setStyleSheet(f"color: {COLORS['muted']}; font-size: 11px;")
         layout.addWidget(ver)
@@ -155,41 +136,48 @@ class MainWindow(QMainWindow):
         return sidebar
 
     def _apply_sidebar_style(self, expanded: bool):
-        """按展开/收起两态套用按钮样式与对齐。"""
-        for (label, short, idx), btn in zip(NAV_ITEMS, self.nav_buttons):
+        for (label, short, key), btn in zip(NAV_ITEMS, self.nav_buttons):
             btn.setText(label if expanded else "\n".join(short))
             if expanded:
-                btn.setFixedHeight(34)
+                btn.setFixedHeight(30)
                 btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
                 btn.setStyleSheet(
                     f"QPushButton {{ text-align: left; padding: 0 12px;"
-                    f" border: none; border-radius: 6px; font-size: 13px;"
+                    f" border: none; border-radius: 6px; font-size: 12px;"
                     f" color: {COLORS['ink_soft']}; background: transparent; }}"
                     f"QPushButton:hover {{ background-color: {COLORS['rule']}; }}"
                     f"QPushButton:checked {{ background-color: {COLORS['sage_soft']};"
                     f" color: {COLORS['ink']}; font-weight: 600; }}"
                 )
             else:
-                btn.setFixedHeight(46)
+                btn.setFixedHeight(42)
                 btn.setStyleSheet(
                     f"QPushButton {{ text-align: center; padding: 2px 0;"
-                    f" border: none; border-radius: 6px; font-size: 12px;"
-                    f" color: {COLORS['ink_soft']};"
-                    f" background: transparent; }}"
+                    f" border: none; border-radius: 6px; font-size: 11px;"
+                    f" color: {COLORS['ink_soft']}; background: transparent; }}"
                     f"QPushButton:hover {{ background-color: {COLORS['rule']}; }}"
                     f"QPushButton:checked {{ background-color: {COLORS['sage_soft']};"
                     f" color: {COLORS['ink']}; font-weight: 600; }}"
                 )
 
     def toggle_sidebar(self):
-        """折叠 / 展开侧边栏：文字导航 ↔ 日式竖排二字导航。"""
         self.sidebar_collapsed = not self.sidebar_collapsed
         expanded = not self.sidebar_collapsed
         self.sidebar.setFixedWidth(SIDEBAR_W if expanded else SIDEBAR_W_COLLAPSED)
         self._apply_sidebar_style(expanded=expanded)
 
+    def _jump(self, index):
+        """锚点导航：滚动单页到对应分区并高亮侧栏项。"""
+        self._set_active(index)
+        self.console.scroll_to(NAV_ITEMS[index][2])
+
+    def _set_active(self, index):
+        for i, btn in enumerate(self.nav_buttons):
+            btn.setChecked(i == index)
+        self.page_title.setText(NAV_ITEMS[index][0])
+
     # ================================================================
-    # 统一页头
+    # 页头
     # ================================================================
 
     def _build_header(self):
@@ -198,7 +186,7 @@ class MainWindow(QMainWindow):
         layout = QHBoxLayout(header)
         layout.setContentsMargins(14, 0, 14, 0)
 
-        self.page_title = QLabel("今日仪表盘")
+        self.page_title = QLabel("实时状态")
         self.page_title.setStyleSheet(
             f"color: {COLORS['ink']}; font-size: 15px; font-weight: 600;"
         )
@@ -211,7 +199,6 @@ class MainWindow(QMainWindow):
         self.header_date = QLabel(date_text)
         self.header_date.setStyleSheet(f"color: {COLORS['muted']}; font-size: 11px;")
         layout.addWidget(self.header_date)
-
         return header
 
     @staticmethod
@@ -223,50 +210,22 @@ class MainWindow(QMainWindow):
         return line
 
     # ================================================================
-    # 导航
+    # 菜单
     # ================================================================
-
-    def _switch_to(self, index):
-        """切换到指定页面并刷新数据"""
-        self.stack.setCurrentIndex(index)
-        for i, btn in enumerate(self.nav_buttons):
-            btn.setChecked(i == index)
-        self.page_title.setText(NAV_ITEMS[index][0])
-        page = self.stack.widget(index)
-        if hasattr(page, 'refresh'):
-            page.refresh()
 
     def _setup_menu(self):
         bar = self.menuBar()
-
         file_menu = bar.addMenu("文件(&F)")
         file_menu.addAction("导出数据", self._export_data)
         file_menu.addAction("退出", self.close)
 
         view_menu = bar.addMenu("视图(&V)")
         view_menu.addAction("折叠侧边栏", self.toggle_sidebar)
-        view_menu.addAction("今日仪表盘", lambda: self._switch_to(0))
-        view_menu.addAction("情绪冲浪", lambda: self._switch_to(1))
-        view_menu.addAction("事件回顾", lambda: self._switch_to(2))
-        view_menu.addAction("历史记录", lambda: self._switch_to(3))
+        for i, (label, short, key) in enumerate(NAV_ITEMS):
+            view_menu.addAction(label, lambda i=i: self._jump(i))
 
         help_menu = bar.addMenu("帮助(&H)")
         help_menu.addAction("关于", self._show_about)
-
-    # ================================================================
-    # SurfingWindow 回调：完成记录后跳转到事件回顾
-    # ================================================================
-
-    def on_surfing_finished(self, result):
-        """情绪冲浪完成后的回调，跳转到事件回顾页面"""
-        event_id = result.get('event_id') if isinstance(result, dict) else None
-        if event_id:
-            self.summary_page.show_event(event_id)
-        self._switch_to(2)
-
-    # ================================================================
-    # 菜单动作
-    # ================================================================
 
     def _export_data(self):
         path, _ = QFileDialog.getSaveFileName(
@@ -290,7 +249,6 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event):
-        """关闭时清理数据库连接"""
         if hasattr(self, 'db') and self.db:
             self.db.close()
         super().closeEvent(event)
