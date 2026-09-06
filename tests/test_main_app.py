@@ -45,6 +45,42 @@ def test_main_window_navigates_between_pages(qapp, tmp_path):
     db.close()
 
 
+def test_sidebar_toggle_collapses_and_expands(qapp, tmp_path):
+    """侧边栏可折叠：展开 168px ↔ 收起 54px，状态位同步翻转"""
+    import main_app
+    from db import DatabaseManager
+
+    db = DatabaseManager(str(tmp_path / "test.db"))
+    win = main_app.MainWindow(db)
+
+    assert win.sidebar_collapsed is False
+    assert win.sidebar.width() == main_app.SIDEBAR_W
+
+    win.toggle_sidebar()
+    assert win.sidebar_collapsed is True
+    assert win.sidebar.width() == main_app.SIDEBAR_W_COLLAPSED
+
+    win.toggle_sidebar()
+    assert win.sidebar_collapsed is False
+    assert win.sidebar.width() == main_app.SIDEBAR_W
+    db.close()
+
+
+def test_switch_to_updates_header_title(qapp, tmp_path):
+    """统一页头标题随页面切换更新"""
+    import main_app
+    from db import DatabaseManager
+
+    db = DatabaseManager(str(tmp_path / "test.db"))
+    win = main_app.MainWindow(db)
+
+    win._switch_to(1)
+    assert win.page_title.text() == "情绪冲浪"
+    win._switch_to(3)
+    assert win.page_title.text() == "历史记录"
+    db.close()
+
+
 def test_surfing_finish_navigates_to_summary(qapp, tmp_path):
     """完成情绪记录后自动跳转到事件回顾页面"""
     import main_app

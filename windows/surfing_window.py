@@ -1,8 +1,8 @@
-"""windows/surfing_window.py — 心潮 EmoWave 情绪冲浪记录窗口
+"""windows/surfing_window.py — 心潮 EmoWave 情绪冲浪记录窗口（禅意紧凑版）
 
 提供情绪冲浪记录界面：
-  - 实时滑动条调节效价 / 唤醒度
-  - 多选触发标签
+  - 滑条行式布局（标签同行，纵向更省）
+  - 触发标签 3 列网格
   - 开始/结束记录，定时采样并绘制情绪轨迹
   - 结束时调用 SessionController 处理事件并通知父窗口
 """
@@ -10,10 +10,11 @@ import time
 
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider, QCheckBox, QPushButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider, QCheckBox,
+    QPushButton, QGridLayout,
 )
 
-from widgets import EmotionCanvas, CardFrame
+from widgets import EmotionCanvas, CardFrame, COLORS
 from models import TimeSeriesSample
 
 
@@ -22,6 +23,15 @@ TRIGGER_TAGS = [
     '工作压力', '人际冲突', '健康担忧',
     '财务问题', '回忆触发', '未知',
 ]
+
+_SLIDER_QSS = (
+    f"QSlider::groove:horizontal {{ height: 3px; background: {COLORS['rule']};"
+    f" border-radius: 1px; }}"
+    f"QSlider::handle:horizontal {{ width: 14px; margin: -6px 0;"
+    f" border-radius: 7px; background: {COLORS['sage']}; }}"
+    f"QSlider::sub-page:horizontal {{ background: {COLORS['sage']};"
+    f" border-radius: 1px; }}"
+)
 
 
 class SurfingWindow(QWidget):
@@ -48,75 +58,103 @@ class SurfingWindow(QWidget):
     # ================================================================
 
     def _setup_ui(self):
+        self.setObjectName('SurfingPage')
+        self.setStyleSheet("QWidget#SurfingPage { background-color: {COLORS['bg']}; }")
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(10)
 
-        # 标题
-        title = QLabel("情绪冲浪")
-        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2d2a26;")
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
-
-        # 情绪画布
+        # 情绪画布（限高，紧凑）
         self.canvas = EmotionCanvas()
-        self.canvas.setMinimumHeight(280)
-        layout.addWidget(self.canvas)
+        self.canvas.setMinimumHeight(210)
+        layout.addWidget(self.canvas, 1)
 
-        # 实时调节卡片
-        adjust_card = CardFrame("实时调节")
+        # 实时调节卡片：标签与滑条同行，两行搞定
+        adjust_card = CardFrame(title="实时调节")
 
-        self.valence_label = QLabel("效价：60")
+        row_v = QHBoxLayout()
+        row_v.setSpacing(10)
+        self.valence_label = QLabel("效价 60")
+        self.valence_label.setFixedWidth(58)
+        self.valence_label.setStyleSheet(
+            f"color: {COLORS['ink_soft']}; font-size: 12px;"
+        )
         self.valence_slider = QSlider(Qt.Horizontal)
         self.valence_slider.setRange(0, 100)
         self.valence_slider.setValue(60)
+        self.valence_slider.setStyleSheet(_SLIDER_QSS)
         self.valence_slider.valueChanged.connect(
-            lambda v: self.valence_label.setText(f"效价：{v}")
+            lambda v: self.valence_label.setText(f"效价 {v}")
         )
-        adjust_card.add_widget(self.valence_label)
-        adjust_card.add_widget(self.valence_slider)
+        row_v.addWidget(self.valence_label)
+        row_v.addWidget(self.valence_slider, 1)
+        adjust_card._content_layout.addLayout(row_v)
 
-        self.arousal_label = QLabel("唤醒：30")
+        row_a = QHBoxLayout()
+        row_a.setSpacing(10)
+        self.arousal_label = QLabel("唤醒 30")
+        self.arousal_label.setFixedWidth(58)
+        self.arousal_label.setStyleSheet(
+            f"color: {COLORS['ink_soft']}; font-size: 12px;"
+        )
         self.arousal_slider = QSlider(Qt.Horizontal)
         self.arousal_slider.setRange(0, 100)
         self.arousal_slider.setValue(30)
+        self.arousal_slider.setStyleSheet(_SLIDER_QSS)
         self.arousal_slider.valueChanged.connect(
-            lambda v: self.arousal_label.setText(f"唤醒：{v}")
+            lambda v: self.arousal_label.setText(f"唤醒 {v}")
         )
-        adjust_card.add_widget(self.arousal_label)
-        adjust_card.add_widget(self.arousal_slider)
+        row_a.addWidget(self.arousal_label)
+        row_a.addWidget(self.arousal_slider, 1)
+        adjust_card._content_layout.addLayout(row_a)
 
         layout.addWidget(adjust_card)
 
-        # 标签卡片
-        tag_card = CardFrame("标签（可多选）")
+        # 标签卡片：3 列网格，纵向省一半
+        tag_card = CardFrame(title="标签（可多选）")
+        grid = QGridLayout()
+        grid.setContentsMargins(2, 0, 2, 0)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(4)
         self.trigger_checks = []
-        for tag in TRIGGER_TAGS:
+        for i, tag in enumerate(TRIGGER_TAGS):
             cb = QCheckBox(tag)
+            cb.setStyleSheet(f"QCheckBox {{ color: {COLORS['ink_soft']}; font-size: 12px; }}")
             self.trigger_checks.append(cb)
-            tag_card.add_widget(cb)
+            grid.addWidget(cb, i // 3, i % 3)
+        tag_card._content_layout.addLayout(grid)
         layout.addWidget(tag_card)
 
         # 操作按钮
         btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
 
         self.start_btn = QPushButton("开始记录")
+        self.start_btn.setCursor(self.cursor())
         self.start_btn.setStyleSheet(
-            "QPushButton { background-color: #2cb69a; color: white; "
-            "border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: bold; }"
+            f"QPushButton {{ background-color: {COLORS['sage']}; color: #FFFFFF;"
+            f" border: none; border-radius: 8px; padding: 8px 18px;"
+            f" font-size: 13px; font-weight: 600; }}"
+            f"QPushButton:hover {{ background-color: #6F8263; }}"
         )
         self.start_btn.clicked.connect(self._toggle_recording)
         btn_row.addWidget(self.start_btn)
 
         self.finish_btn = QPushButton("已平静")
         self.finish_btn.setEnabled(False)
+        self.finish_btn.setCursor(self.cursor())
         self.finish_btn.setStyleSheet(
-            "QPushButton { background-color: #e8a838; color: white; "
-            "border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: bold; }"
-            "QPushButton:disabled { background-color: #d5d0c8; color: #9a958e; }"
+            f"QPushButton {{ background-color: transparent; color: {COLORS['amber']};"
+            f" border: 1px solid {COLORS['amber']}; border-radius: 8px;"
+            f" padding: 8px 18px; font-size: 13px; font-weight: 600; }}"
+            f"QPushButton:disabled {{ color: {COLORS['muted']};"
+            f" border-color: {COLORS['rule']}; }}"
+            f"QPushButton:hover:!disabled {{ background-color: #F4EAD8; }}"
         )
         self.finish_btn.clicked.connect(self._finish_recording)
         btn_row.addWidget(self.finish_btn)
+        btn_row.addStretch(1)
 
         layout.addLayout(btn_row)
 

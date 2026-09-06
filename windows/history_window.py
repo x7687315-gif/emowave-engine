@@ -1,6 +1,7 @@
-"""windows/history_window.py — 历史记录窗口
+"""windows/history_window.py — 历史记录窗口（禅意紧凑版）
 
 按日期浏览情绪事件：情绪日历 + 事件列表 + 导出按钮。
+有记录的日期以灰绿浅底标注（替代原琥珀重色），观感更安静。
 """
 import json
 from datetime import datetime
@@ -13,7 +14,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QDate, Qt
 from PyQt5.QtGui import QTextCharFormat, QColor, QFont
 
-from widgets import CardFrame, COLORS
+from widgets import CardFrame, COLORS, app_font
 
 
 class HistoryWindow(QWidget):
@@ -29,25 +30,35 @@ class HistoryWindow(QWidget):
     # UI 构建
     # ----------------------------------------------------------------
     def _setup_ui(self):
+        self.setObjectName('HistoryPage')
+        self.setStyleSheet("QWidget#HistoryPage { background-color: {COLORS['bg']}; }")
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(10)
 
-        title = QLabel("历史记录")
-        title.setStyleSheet(
-            f"color: {COLORS['ink']}; font-size: 20px; font-weight: bold;"
-        )
-        layout.addWidget(title)
-
-        # 情绪日历卡片
+        # 情绪日历卡片（短星期头，更紧凑）
         cal_card = CardFrame("情绪日历")
         self.calendar = QCalendarWidget()
-        self.calendar.setGridVisible(True)
-        self.calendar.setHorizontalHeaderFormat(
-            QCalendarWidget.LongDayNames
-        )
-        self.calendar.setVerticalHeaderFormat(
-            QCalendarWidget.NoVerticalHeader
+        self.calendar.setGridVisible(False)
+        self.calendar.setHorizontalHeaderFormat(QCalendarWidget.ShortDayNames)
+        self.calendar.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader)
+        self.calendar.setStyleSheet(
+            f"QCalendarWidget QWidget {{ alternate-background-color:"
+            f" {COLORS['surface']}; }}"
+            f"QCalendarWidget QAbstractItemView:enabled"
+            f" {{ color: {COLORS['ink']};"
+            f" selection-background-color: {COLORS['sage_soft']};"
+            f" selection-color: {COLORS['ink']}; }}"
+            f"QCalendarWidget QToolButton {{ color: {COLORS['ink']};"
+            f" font-size: 12px; background: transparent;"
+            f" border-radius: 4px; padding: 2px 6px; }}"
+            f"QCalendarWidget QToolButton:hover"
+            f" {{ background-color: {COLORS['rule']}; }}"
+            f"QCalendarWidget #qt_calendar_monthmenu"
+            f" {{ color: {COLORS['ink']}; }}"
+            f"QCalendarWidget QSpinBox"
+            f" {{ color: {COLORS['ink']}; background: {COLORS['surface']}; }}"
         )
         self.calendar.clicked.connect(self._on_date_clicked)
         cal_card.add_widget(self.calendar)
@@ -62,19 +73,35 @@ class HistoryWindow(QWidget):
         self.events_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.events_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.events_table.verticalHeader().setVisible(False)
+        self.events_table.setStyleSheet(
+            f"QTableWidget {{ background-color: {COLORS['surface']};"
+            f" color: {COLORS['ink']}; font-size: 12px;"
+            f" border: none; gridline-color: {COLORS['rule']}; }}"
+            f"QTableWidget::item {{ padding: 3px 4px; }}"
+            f"QTableWidget::item:selected"
+            f" {{ background-color: {COLORS['sage_soft']}; color: {COLORS['ink']}; }}"
+            f"QHeaderView::section {{ background-color: transparent;"
+            f" color: {COLORS['muted']}; font-size: 11px; border: none;"
+            f" border-bottom: 1px solid {COLORS['rule']}; padding: 3px 4px; }}"
+        )
         header = self.events_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
+        self.events_table.setMaximumHeight(170)
         list_card.add_widget(self.events_table)
 
-        # 导出按钮（右对齐）
+        # 导出按钮（描边式，右对齐）
         export_container = QWidget()
         export_layout = QHBoxLayout(export_container)
         export_layout.setContentsMargins(0, 0, 0, 0)
         export_layout.addStretch(1)
         self.export_btn = QPushButton("导出")
+        self.export_btn.setCursor(self.cursor())
         self.export_btn.setStyleSheet(
-            f"background-color: {COLORS['calm']}; color: white;"
-            f"padding: 6px 16px; border-radius: 6px;"
+            f"QPushButton {{ background-color: transparent;"
+            f" color: {COLORS['ink_soft']}; border: 1px solid {COLORS['rule']};"
+            f" border-radius: 6px; padding: 5px 16px; font-size: 12px; }}"
+            f"QPushButton:hover {{ border-color: {COLORS['sage']};"
+            f" color: {COLORS['sage']}; }}"
         )
         export_layout.addWidget(self.export_btn)
         list_card.add_widget(export_container)
@@ -117,11 +144,11 @@ class HistoryWindow(QWidget):
     # 辅助方法
     # ----------------------------------------------------------------
     def _highlight_dates(self, date_strs):
-        """在日历上高亮有事件记录的日期。"""
+        """在日历上以灰绿浅底标注有事件记录的日期。"""
         fmt = QTextCharFormat()
-        fmt.setBackground(QColor(COLORS['warm']))
-        fmt.setForeground(QColor('#ffffff'))
-        fmt.setFontWeight(QFont.Bold)
+        fmt.setBackground(QColor('#DFE7D8'))          # 灰绿浅底
+        fmt.setForeground(QColor(COLORS['ink']))
+        fmt.setFontWeight(QFont.DemiBold)
         for ds in date_strs:
             qd = QDate.fromString(ds, 'yyyy-MM-dd')
             if qd.isValid():
