@@ -1,14 +1,15 @@
-"""windows/event_summary_window.py — 事件回顾窗口
+"""windows/event_summary_window.py — 事件回顾窗口（禅意紧凑版）
 
 展示单次情绪事件的概况、情绪曲线与躯体症状。
+曲线：雾蓝折线 + 朱红端点（与全局设计语言一致）。
 """
 import json
 
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPainter, QPen, QColor, QFont
+from PyQt5.QtGui import QPainter, QPen, QColor
 
-from widgets import CardFrame, COLORS
+from widgets import CardFrame, COLORS, app_font
 
 
 class EventSummaryWindow(QWidget):
@@ -24,15 +25,12 @@ class EventSummaryWindow(QWidget):
     # UI 构建
     # ----------------------------------------------------------------
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        self.setObjectName('SummaryPage')
+        self.setStyleSheet("QWidget#SummaryPage { background-color: {COLORS['bg']}; }")
 
-        title = QLabel("事件回顾")
-        title.setStyleSheet(
-            f"color: {COLORS['ink']}; font-size: 20px; font-weight: bold;"
-        )
-        layout.addWidget(title)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(10)
 
         # 事件概况卡片
         profile_card = CardFrame("事件概况")
@@ -40,7 +38,7 @@ class EventSummaryWindow(QWidget):
         self.profile_label.setWordWrap(True)
         self.profile_label.setTextFormat(Qt.PlainText)
         self.profile_label.setStyleSheet(
-            f"color: {COLORS['ink_soft']}; font-size: 13px;"
+            f"color: {COLORS['ink_soft']}; font-size: 12px;"
         )
         profile_card.add_widget(self.profile_label)
         layout.addWidget(profile_card)
@@ -57,7 +55,7 @@ class EventSummaryWindow(QWidget):
         self.body_label.setWordWrap(True)
         self.body_label.setTextFormat(Qt.PlainText)
         self.body_label.setStyleSheet(
-            f"color: {COLORS['ink_soft']}; font-size: 13px;"
+            f"color: {COLORS['ink_soft']}; font-size: 12px;"
         )
         body_card.add_widget(self.body_label)
         layout.addWidget(body_card)
@@ -147,7 +145,7 @@ class EventSummaryWindow(QWidget):
         return f"{f:.2f}"
 
     # ================================================================
-    # 内部类：情绪曲线画布
+    # 内部类：情绪曲线画布（雾蓝折线 + 朱红端点）
     # ================================================================
     class _CurveCanvas(QWidget):
         """根据采样点绘制折线的情绪曲线画布。"""
@@ -155,7 +153,7 @@ class EventSummaryWindow(QWidget):
         def __init__(self, parent=None):
             super().__init__(parent)
             self.points = []
-            self.setMinimumHeight(180)
+            self.setMinimumHeight(150)
 
         def set_data(self, points):
             self.points = [float(p) for p in (points or [])]
@@ -166,7 +164,7 @@ class EventSummaryWindow(QWidget):
             p.setRenderHint(QPainter.Antialiasing)
             w, h = self.width(), self.height()
 
-            # 背景
+            # 纸面
             p.fillRect(self.rect(), QColor(COLORS['surface']))
 
             # 中线网格
@@ -175,22 +173,22 @@ class EventSummaryWindow(QWidget):
 
             # 轴标签
             p.setPen(QColor(COLORS['muted']))
-            p.setFont(QFont("PingFang SC", 9))
-            p.drawText(4, 14, "↑唤醒度")
+            p.setFont(app_font(8))
+            p.drawText(4, 13, "↑ 唤醒度")
 
             n = len(self.points)
             if n < 2:
                 # 单点时画一个圆点
                 if n == 1:
                     x, y = w // 2, int((1 - self.points[0]) * h)
-                    p.setBrush(QColor(COLORS['danger']))
+                    p.setBrush(QColor(COLORS['sun']))
                     p.setPen(Qt.NoPen)
-                    p.drawEllipse(x - 5, y - 5, 10, 10)
+                    p.drawEllipse(x - 4, y - 4, 8, 8)
                 return
 
-            # 折线
+            # 折线：雾蓝
             p.setPen(
-                QPen(QColor(COLORS['danger']), 2, Qt.SolidLine, Qt.RoundCap)
+                QPen(QColor(COLORS['mist']), 2, Qt.SolidLine, Qt.RoundCap)
             )
             for i in range(1, n):
                 x1 = int((i - 1) / (n - 1) * w)
@@ -199,9 +197,9 @@ class EventSummaryWindow(QWidget):
                 y2 = int((1 - self.points[i]) * h)
                 p.drawLine(x1, y1, x2, y2)
 
-            # 末端高亮点
+            # 末端朱红高亮点
             x_last = w - 1
             y_last = int((1 - self.points[-1]) * h)
-            p.setBrush(QColor(COLORS['danger']))
+            p.setBrush(QColor(COLORS['sun']))
             p.setPen(Qt.NoPen)
-            p.drawEllipse(x_last - 5, y_last - 5, 10, 10)
+            p.drawEllipse(x_last - 4, y_last - 4, 8, 8)
