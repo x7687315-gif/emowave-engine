@@ -61,6 +61,50 @@ _BTN_OUTLINE = (
 )
 
 
+class CollapsibleSection(QWidget):
+    """可折叠分区：▸/▾ 标题行 + 可隐藏内容区（默认收起）。
+
+    用于把低频分区（基线主权 / 个人模型 / 回顾历史）放入隐藏式，
+    主界面只保留核心闭环（状态 / 曲线 / 调节 / 纠正）。
+    """
+
+    def __init__(self, title, content, parent=None, expanded=False):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.header = QPushButton(("▾  " if expanded else "▸  ") + title)
+        self.header.setCursor(Qt.PointingHandCursor)
+        self.header.setStyleSheet(
+            f"QPushButton {{ text-align: left; background: transparent;"
+            f" border: none; border-bottom: 1px solid {COLORS['rule']};"
+            f" color: {COLORS['ink_soft']}; font-size: 12px;"
+            f" padding: 8px 4px; letter-spacing: 1px; }}"
+            f"QPushButton:hover {{ color: {COLORS['sage']}; }}"
+        )
+        self.header.clicked.connect(self.toggle)
+        layout.addWidget(self.header)
+
+        self.content = content
+        self.content.setVisible(expanded)
+        layout.addWidget(content)
+
+        self._title = title
+        self._expanded = expanded
+
+    def toggle(self):
+        self.set_expanded(not self._expanded)
+
+    def set_expanded(self, expanded):
+        self._expanded = expanded
+        self.content.setVisible(expanded)
+        self.header.setText(("▾  " if expanded else "▸  ") + self._title)
+
+    def is_expanded(self):
+        return self._expanded
+
+
 class ConsoleWindow(QWidget):
     """2.0 单页控制台：全部内容集中一页。"""
 
@@ -117,10 +161,18 @@ class ConsoleWindow(QWidget):
         layout.addWidget(self._section_state())
         layout.addWidget(self._section_curve())
         layout.addWidget(self._section_adjust())
-        layout.addWidget(self._section_baseline())
-        layout.addWidget(self._section_model())
         layout.addWidget(self._section_correction())
-        layout.addWidget(self._section_legacy())
+
+        # 隐藏式分区（默认折叠，按需展开）
+        self.collapsibles = {}
+        for key, title, content in [
+            ("baseline", "基线主权 · 这是我的『正常』", self._section_baseline()),
+            ("model", "个人模型 · 越用越懂你", self._section_model()),
+            ("legacy", "回顾与历史", self._section_legacy()),
+        ]:
+            sec = CollapsibleSection(title, content, expanded=False)
+            self.collapsibles[key] = sec
+            layout.addWidget(sec)
         layout.addStretch(1)
 
         scroll.setWidget(body)
@@ -322,6 +374,11 @@ class ConsoleWindow(QWidget):
     # ================================================================
 
     def scroll_to(self, name):
+        # 若目标在折叠分区内，先展开
+        key = {"summary": "legacy", "history": "legacy"}.get(name, name)
+        sec = self.collapsibles.get(key)
+        if sec is not None and not sec.is_expanded():
+            sec.set_expanded(True)
         w = self.sections.get(name)
         if w is None:
             return

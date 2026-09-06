@@ -107,3 +107,39 @@ def test_console_correction_feeds_calibrator(qapp, tmp_path):
 
     assert len(console.calibrator.dataset) == 1
     db.close()
+
+
+def test_hidden_sections_default_collapsed(qapp, tmp_path):
+    """隐藏式分区（基线/模型/回顾历史）默认折叠"""
+    import main_app
+    from db import DatabaseManager
+
+    db = DatabaseManager(str(tmp_path / "test.db"))
+    win = main_app.MainWindow(db)
+    console = win.console
+
+    for key in ["baseline", "model", "legacy"]:
+        assert key in console.collapsibles
+        assert console.collapsibles[key].is_expanded() is False
+    db.close()
+
+
+def test_collapsible_toggle_and_scroll_auto_expand(qapp, tmp_path):
+    """折叠可手动展开；锚点跳转到折叠分区时自动展开"""
+    import main_app
+    from db import DatabaseManager
+
+    db = DatabaseManager(str(tmp_path / "test.db"))
+    win = main_app.MainWindow(db)
+    console = win.console
+
+    # 手动展开/收起
+    console.collapsibles["model"].toggle()
+    assert console.collapsibles["model"].is_expanded() is True
+    console.collapsibles["model"].toggle()
+    assert console.collapsibles["model"].is_expanded() is False
+
+    # 锚点跳转到折叠内的 history 会自动展开 legacy
+    win._jump(7)  # 历史记录
+    assert console.collapsibles["legacy"].is_expanded() is True
+    db.close()
