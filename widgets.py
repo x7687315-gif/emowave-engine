@@ -1,13 +1,16 @@
-"""widgets.py — 心潮 EmoWave 共享自定义控件（禅意重构版）
+"""widgets.py — 心潮 EmoWave 共享自定义控件（精密仪器版）
 
-设计语言：纸白底 + 灰绿/雾蓝 + 发丝线 + 朱红点睛。
-克制、安静、留白有度——参考「山间呼吸 / 叶中一室 / 日式海报」的观感。
+设计语言：EmoWave = 精密情绪科学仪器（Linear × Raycast × macOS × Vercel × Arc）。
+暖白底 / 白面 / 近黑字 / 中性灰次级 / 极细灰边 / 克制蓝主色 / 淡青次色。
+颜色只用于传达状态或交互，不用于装饰。曲线是视觉中心。
+不做：心理健康 App 审美、AI Dashboard 卡片堆、渐变/玻璃/大圆角/emoji/彩虹色。
 
 提供控件：
-  - RiskRingWidget: 圆形风险进度环（细环 · 柔和色阶）
-  - EmotionCanvas:  2D 效价-唤醒情绪平面画布（雾蓝轨迹 · 朱红当前点）
-  - CardFrame:      发丝线卡片容器（去重装饰，只留必要层级）
-  - StatBlock:      紧凑数据块（弱标签 + 轻数值）
+  - RiskRingWidget: 状态环（细环 · 状态色：蓝/琥珀/砖红）
+  - EmotionCanvas:  2D 效价-唤醒平面（蓝轨迹 · 蓝当前点）
+  - EmotionCurveWidget: 时间序列曲线（模型线+置信带+基线+原始点）
+  - CardFrame:      极细边分组容器
+  - StatBlock:      仪器数据块（极小大写标签 + 等宽大数值）
   - hline():        发丝水平分隔线
 """
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame
@@ -15,29 +18,40 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPainter, QPen, QColor, QFont
 
 # ================================================================
-# 设计系统：色板（自然 muted，日式留白）
+# 设计系统：精密仪器色板（Linear × Raycast × macOS × Vercel × Arc）
+#   颜色只用于传达状态或交互，不用于装饰。
 # ================================================================
 COLORS = {
-    'bg':       '#F5F3ED',   # 暖纸底
-    'surface':  '#FBFAF6',   # 卡片近白
-    'ink':      '#3A3730',   # 深炭（主文字）
-    'ink_soft': '#6C675C',   # 次级文字
-    'muted':    '#9C968A',   # 弱文字
-    'rule':     '#E6E1D5',   # 发丝线
-    'track':    '#ECE8DD',   # 环轨道
-    'sage':     '#7D9070',   # 主色 · 灰绿（草坡）
-    'sage_soft':'#EAF0E2',   # 灰绿浅底（选中/悬停）
-    'mist':     '#8FA9BD',   # 雾蓝（山与天空，次级色）
-    'mist_soft':'#E9EFF4',
-    'amber':    '#D2A45F',   # 柔和琥珀（警示中间档）
-    'danger':   '#C06B5C',   # 陶土红（高风险）
-    'sun':      '#BC5548',   # 朱红一点（当前点/焦点，极小面积）
+    'bg':        '#FAFAF9',   # 暖白 / 极浅灰（页面底）
+    'surface':   '#FFFFFF',   # 白（卡面 / 画布）
+    'ink':       '#171716',   # 近黑（主文字 / 数值）
+    'ink_soft':  '#555552',   # 次级文字
+    'muted':     '#8A8A86',   # 中性灰（弱文字 / 原始点）
+    'rule':      '#E6E6E3',   # 极细灰边（发丝线）
+    'track':     '#EFEFEC',   # 滑轨 / 环轨道
+    'accent':    '#1E40AF',   # 克制蓝（主强调 / 模型线 / 当前点）
+    'accent_soft': '#E8EDF8', # 蓝浅底（选中 / 悬停 / 置信带）
+    'accent_hover': '#17337F', # 蓝 hover（深一档）
+    'accent_press': '#142A66', # 蓝 pressed（再深一档，按压反馈）
+    'cyan':      '#7FA6C4',   # 淡青（次强调 / 基线参考）
+    'warn':      '#B45309',   # 状态色：警示（琥珀深）
+    'danger':    '#B4231F',   # 状态色：危险（砖红深）
+    'ok':        '#3F6212',   # 状态色：平稳（橄榄深，极克制）
 }
 
 
 def app_font(size: int = 10, weight: int = QFont.Normal) -> QFont:
-    """跨平台应用字体：Windows 用微软雅黑 UI。"""
-    return QFont("Microsoft YaHei UI", size, weight)
+    """界面字体：系统无衬线（Segoe UI / 微软雅黑回退）。"""
+    f = QFont("Segoe UI", size, weight)
+    f.setStyleHint(QFont.SansSerif)
+    return f
+
+
+def app_font_num(size: int = 18, weight: int = QFont.Light) -> QFont:
+    """仪器数值字体：等宽技术面（Cascadia Code → Consolas 回退），tabular 感。"""
+    f = QFont("Cascadia Code", size, weight)
+    f.setStyleHint(QFont.Monospace)
+    return f
 
 
 def hline() -> QFrame:
@@ -64,9 +78,9 @@ class RiskRingWidget(QWidget):
 
     def _color_for_value(self):
         if self.value < 0.4:
-            return QColor(COLORS['sage'])
+            return QColor(COLORS['accent'])
         elif self.value < 0.7:
-            return QColor(COLORS['amber'])
+            return QColor(COLORS['warn'])
         return QColor(COLORS['danger'])
 
     def paintEvent(self, event):
@@ -86,15 +100,14 @@ class RiskRingWidget(QWidget):
             span = int(-self.value * 360 * 16)
             p.drawArc(cx - r, cy - r, r * 2, r * 2, 90 * 16, span)
 
-        # 中心轻数值
+        # 中心数值（等宽仪器字体）
         p.setPen(QColor(COLORS['ink']))
-        font = app_font(20, QFont.Light)
-        p.setFont(font)
+        p.setFont(app_font_num(20, QFont.Light))
         p.drawText(self.rect(), Qt.AlignCenter, str(int(self.value * 100)))
 
 
 class EmotionCanvas(QWidget):
-    """2D 效价-唤醒情绪平面：发丝轴 + 雾蓝轨迹 + 朱红当前点。"""
+    """2D 效价-唤醒情绪平面：发丝轴 + 蓝轨迹 + 蓝当前点。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -116,7 +129,7 @@ class EmotionCanvas(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
 
-        # 纸面
+        # 白面
         p.fillRect(self.rect(), QColor(COLORS['surface']))
 
         # 发丝中轴
@@ -130,7 +143,7 @@ class EmotionCanvas(QWidget):
         p.drawText(w - 42, h - 5, "效价 →")
         p.drawText(5, 14, "↑ 唤醒")
 
-        # 轨迹：雾蓝，越新越实
+        # 轨迹：克制蓝，越新越实
         if len(self.trail) >= 2:
             for i in range(1, len(self.trail)):
                 v1, a1 = self.trail[i - 1]
@@ -138,28 +151,28 @@ class EmotionCanvas(QWidget):
                 x1, y1 = int(v1 * w), int((1 - a1) * h)
                 x2, y2 = int(v2 * w), int((1 - a2) * h)
                 alpha = int(90 + 150 * (i / len(self.trail)))
-                p.setPen(QPen(QColor(143, 169, 189, alpha), 2,
+                p.setPen(QPen(QColor(30, 64, 175, alpha), 2,
                               Qt.SolidLine, Qt.RoundCap))
                 p.drawLine(x1, y1, x2, y2)
 
-        # 当前点：朱红（红日点睛）
+        # 当前点：克制蓝
         if self.trail:
             v, a = self.trail[-1]
             x, y = int(v * w), int((1 - a) * h)
-            p.setBrush(QColor(COLORS['sun']))
+            p.setBrush(QColor(COLORS['accent']))
             p.setPen(Qt.NoPen)
             p.drawEllipse(x - 5, y - 5, 10, 10)
 
 
 class CardFrame(QFrame):
-    """发丝线卡片：近白面 + 1px 细边 + 弱标题，紧凑内距。"""
+    """极细边分组容器：白面 + 1px 极细灰边 + 极小大写标签。"""
 
     def __init__(self, title="", parent=None):
         super().__init__(parent)
         self.setFrameShape(QFrame.NoFrame)
         self.setStyleSheet(
             f"CardFrame {{ background-color: {COLORS['surface']};"
-            f" border-radius: 8px; border: 1px solid {COLORS['rule']}; }}"
+            f" border-radius: 6px; border: 1px solid {COLORS['rule']}; }}"
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 9, 12, 10)
@@ -167,8 +180,8 @@ class CardFrame(QFrame):
 
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet(
-            f"color: {COLORS['ink_soft']}; font-size: 12px;"
-            " letter-spacing: 1px;"
+            f"color: {COLORS['ink_soft']}; font-size: 10px;"
+            " letter-spacing: 2px; text-transform: uppercase;"
         )
         layout.addWidget(self.title_label)
 
@@ -179,22 +192,23 @@ class CardFrame(QFrame):
 
 
 class StatBlock(QWidget):
-    """紧凑数据块：弱标签在上，轻数值在下（仪表盘概览用）。"""
+    """仪器读数块：极小大写标签在上 + 等宽大数值在下（强字阶）。"""
 
     def __init__(self, label="", parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(1)
+        layout.setSpacing(2)
 
-        self.caption = QLabel(label)
-        self.caption.setStyleSheet(f"color: {COLORS['muted']}; font-size: 11px;")
+        self.caption = QLabel(label.upper())
+        self.caption.setStyleSheet(
+            f"color: {COLORS['ink_soft']}; font-size: 9px; letter-spacing: 1.5px;"
+        )
         self.caption.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         self.value_label = QLabel("—")
-        self.value_label.setStyleSheet(
-            f"color: {COLORS['ink']}; font-size: 18px; font-weight: 300;"
-        )
+        self.value_label.setFont(app_font_num(20, QFont.Light))
+        self.value_label.setStyleSheet(f"color: {COLORS['ink']};")
         self.value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         layout.addWidget(self.caption)
@@ -271,7 +285,7 @@ class EmotionCurveWidget(QWidget):
         span = t1 - t0
 
         # 基线虚线（雾蓝）
-        p.setPen(QPen(QColor(COLORS['mist']), 1, Qt.DashLine))
+        p.setPen(QPen(QColor(COLORS['cyan']), 1, Qt.DashLine))
         yb = self._y(self.baseline_v, h)
         p.drawLine(4, yb, w - 4, yb)
 
@@ -285,7 +299,7 @@ class EmotionCurveWidget(QWidget):
                 lower.append(QPointF(x, self._y(max(0.0, self.model_v[i] - sd), h)))
             poly = QPolygonF(upper + list(reversed(lower)))
             p.setPen(Qt.NoPen)
-            p.setBrush(QColor(125, 144, 112, 40))
+            p.setBrush(QColor(30, 64, 175, 26))
             p.drawPolygon(poly)
 
         # 原始观察点（弱）
@@ -296,7 +310,7 @@ class EmotionCurveWidget(QWidget):
 
         # 模型估计线（灰绿）
         if len(self.model_v) >= 2:
-            p.setPen(QPen(QColor(COLORS['sage']), 2, Qt.SolidLine, Qt.RoundCap))
+            p.setPen(QPen(QColor(COLORS['accent']), 2, Qt.SolidLine, Qt.RoundCap))
             for i in range(1, len(self.model_v)):
                 x1 = self._x(self.timestamps[i - 1], t0, span, w)
                 y1 = self._y(self.model_v[i - 1], h)
@@ -308,7 +322,7 @@ class EmotionCurveWidget(QWidget):
         if self.model_v:
             cx = self._x(self.timestamps[-1], t0, span, w)
             cy = self._y(self.model_v[-1], h)
-            p.setBrush(QColor(COLORS['sun']))
+            p.setBrush(QColor(COLORS['accent']))
             p.setPen(Qt.NoPen)
             p.drawEllipse(cx - 4, cy - 4, 8, 8)
 

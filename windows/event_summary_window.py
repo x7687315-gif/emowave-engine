@@ -181,14 +181,14 @@ class EventSummaryWindow(QWidget):
                 # 单点时画一个圆点
                 if n == 1:
                     x, y = w // 2, int((1 - self.points[0]) * h)
-                    p.setBrush(QColor(COLORS['sun']))
+                    p.setBrush(QColor(COLORS['accent']))
                     p.setPen(Qt.NoPen)
                     p.drawEllipse(x - 4, y - 4, 8, 8)
                 return
 
             # 折线：雾蓝
             p.setPen(
-                QPen(QColor(COLORS['mist']), 2, Qt.SolidLine, Qt.RoundCap)
+                QPen(QColor(COLORS['cyan']), 2, Qt.SolidLine, Qt.RoundCap)
             )
             for i in range(1, n):
                 x1 = int((i - 1) / (n - 1) * w)
@@ -200,6 +200,6 @@ class EventSummaryWindow(QWidget):
             # 末端朱红高亮点
             x_last = w - 1
             y_last = int((1 - self.points[-1]) * h)
-            p.setBrush(QColor(COLORS['sun']))
+            p.setBrush(QColor(COLORS['accent']))
             p.setPen(Qt.NoPen)
             p.drawEllipse(x_last - 4, y_last - 4, 8, 8)

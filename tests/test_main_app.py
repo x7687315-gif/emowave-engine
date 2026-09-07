@@ -38,17 +38,17 @@ def test_sidebar_toggle_collapses_and_expands(qapp, tmp_path):
 
 
 def test_jump_updates_header_title(qapp, tmp_path):
-    """锚点导航更新页头标题"""
+    """锚点导航更新页头标题（7 锚点）"""
     import main_app
     from db import DatabaseManager
 
     db = DatabaseManager(str(tmp_path / "test.db"))
     win = main_app.MainWindow(db)
 
-    win._jump(3)
+    win._jump(4)
     assert win.page_title.text() == "基线主权"
-    win._jump(7)
-    assert win.page_title.text() == "历史记录"
+    win._jump(6)
+    assert win.page_title.text() == "回顾与历史"
     db.close()
 
 
@@ -139,7 +139,7 @@ def test_collapsible_toggle_and_scroll_auto_expand(qapp, tmp_path):
     console.collapsibles["model"].toggle()
     assert console.collapsibles["model"].is_expanded() is False
 
-    # 锚点跳转到折叠内的 history 会自动展开 legacy
-    win._jump(7)  # 历史记录
+    # 锚点跳转到折叠内的「回顾与历史」会自动展开 legacy
+    win._jump(6)
     assert console.collapsibles["legacy"].is_expanded() is True
     db.close()

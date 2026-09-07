@@ -39,25 +39,29 @@ from windows.event_summary_window import EventSummaryWindow
 from windows.history_window import HistoryWindow
 
 _SLIDER_QSS = (
-    f"QSlider::groove:horizontal {{ height: 3px; background: {COLORS['rule']};"
+    f"QSlider::groove:horizontal {{ height: 2px; background: {COLORS['rule']};"
     f" border-radius: 1px; }}"
-    f"QSlider::handle:horizontal {{ width: 14px; margin: -6px 0;"
-    f" border-radius: 7px; background: {COLORS['sage']}; }}"
-    f"QSlider::sub-page:horizontal {{ background: {COLORS['sage']};"
+    f"QSlider::handle:horizontal {{ width: 12px; margin: -5px 0;"
+    f" border-radius: 6px; background: {COLORS['accent']}; }}"
+    f"QSlider::handle:horizontal:pressed {{ background: {COLORS['accent_hover']}; }}"
+    f"QSlider::sub-page:horizontal {{ background: {COLORS['accent']};"
     f" border-radius: 1px; }}"
 )
 
 _BTN_PRIMARY = (
-    f"QPushButton {{ background-color: {COLORS['sage']}; color: #FFFFFF;"
-    f" border: none; border-radius: 7px; padding: 7px 14px;"
+    f"QPushButton {{ background-color: {COLORS['accent']}; color: #FFFFFF;"
+    f" border: none; border-radius: 6px; padding: 7px 14px;"
     f" font-size: 12px; font-weight: 600; }}"
-    f"QPushButton:hover {{ background-color: #6F8263; }}"
+    f"QPushButton:hover {{ background-color: {COLORS['accent_hover']}; }}"
+    f"QPushButton:pressed {{ background-color: {COLORS['accent_press']}; padding: 8px 14px 6px 14px; }}"
 )
 _BTN_OUTLINE = (
     f"QPushButton {{ background-color: transparent; color: {COLORS['ink_soft']};"
-    f" border: 1px solid {COLORS['rule']}; border-radius: 7px;"
+    f" border: 1px solid {COLORS['rule']}; border-radius: 6px;"
     f" padding: 7px 14px; font-size: 12px; }}"
-    f"QPushButton:hover {{ border-color: {COLORS['sage']}; color: {COLORS['sage']}; }}"
+    f"QPushButton:hover {{ border-color: {COLORS['accent']}; color: {COLORS['accent']}; }}"
+    f"QPushButton:pressed {{ background-color: {COLORS['accent_soft']};"
+    f" padding: 8px 14px 6px 14px; }}"
 )
 
 
@@ -81,7 +85,7 @@ class CollapsibleSection(QWidget):
             f" border: none; border-bottom: 1px solid {COLORS['rule']};"
             f" color: {COLORS['ink_soft']}; font-size: 12px;"
             f" padding: 8px 4px; letter-spacing: 1px; }}"
-            f"QPushButton:hover {{ color: {COLORS['sage']}; }}"
+            f"QPushButton:hover {{ color: {COLORS['accent']}; }}"
         )
         self.header.clicked.connect(self.toggle)
         layout.addWidget(self.header)
@@ -180,37 +184,67 @@ class ConsoleWindow(QWidget):
         self._scroll = scroll
         self._body = body
 
-    # ---------- ① 实时状态 ----------
+    # ---------- ① 实时状态（裸读数条，无重卡片） ----------
     def _section_state(self):
-        card = CardFrame("实时状态 · LIVE STATE")
+        strip = QWidget()
+        strip.setStyleSheet("background: transparent;")
+        lay = QVBoxLayout(strip)
+        lay.setContentsMargins(2, 2, 2, 8)
+        lay.setSpacing(6)
+
         row = QHBoxLayout()
-        row.setSpacing(18)
-        self.st_v = StatBlock("效价 Valence")
-        self.st_a = StatBlock("唤醒 Arousal")
-        self.st_i = StatBlock("强度 Intensity")
-        self.st_s = StatBlock("稳定 Stability")
-        self.st_c = StatBlock("置信 Confidence")
-        self.st_t = StatBlock("趋势 Trend")
+        row.setSpacing(26)
+        self.st_v = StatBlock("Valence 效价")
+        self.st_a = StatBlock("Arousal 唤醒")
+        self.st_i = StatBlock("Intensity 强度")
+        self.st_s = StatBlock("Stability 稳定")
+        self.st_c = StatBlock("Confidence 置信")
+        self.st_t = StatBlock("Trend 趋势")
         for b in [self.st_v, self.st_a, self.st_i, self.st_s, self.st_c, self.st_t]:
             row.addWidget(b)
         row.addStretch(1)
-        card._content_layout.addLayout(row)
+        lay.addLayout(row)
 
         self.ci_label = QLabel("置信区间 —")
-        self.ci_label.setStyleSheet(f"color: {COLORS['muted']}; font-size: 11px;")
-        card._content_layout.addWidget(self.ci_label)
+        self.ci_label.setStyleSheet(
+            f"color: {COLORS['ink_soft']}; font-size: 10px; letter-spacing: 0.5px;"
+        )
+        lay.addWidget(self.ci_label)
+        lay.addWidget(hline())
 
-        self.sections['state'] = card
-        return card
+        self.sections['state'] = strip
+        return strip
 
-    # ---------- ② 情绪曲线 ----------
+    # ---------- ② 情绪曲线（视觉中心） ----------
     def _section_curve(self):
-        card = CardFrame("情绪曲线 · 模型估计 + 置信带 + 基线")
+        panel = QFrame()
+        panel.setObjectName("CurvePanel")
+        panel.setStyleSheet(
+            f"QFrame#CurvePanel {{ background-color: {COLORS['surface']};"
+            f" border: 1px solid {COLORS['rule']}; border-radius: 6px; }}"
+        )
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(14, 10, 14, 12)
+        lay.setSpacing(6)
+
+        cap = QHBoxLayout()
+        left = QLabel("EMOTION CURVE · 模型估计")
+        left.setStyleSheet(
+            f"color: {COLORS['ink_soft']}; font-size: 10px; letter-spacing: 2px;"
+        )
+        legend = QLabel("— 模型   ░ ±1σ 置信带   ┄ 基线   · 原始")
+        legend.setStyleSheet(f"color: {COLORS['ink_soft']}; font-size: 9px;")
+        cap.addWidget(left)
+        cap.addStretch(1)
+        cap.addWidget(legend)
+        lay.addLayout(cap)
+
         self.curve = EmotionCurveWidget()
-        self.curve.setMinimumHeight(190)
-        card._content_layout.addWidget(self.curve)
-        self.sections['curve'] = card
-        return card
+        self.curve.setMinimumHeight(240)
+        lay.addWidget(self.curve)
+
+        self.sections['curve'] = panel
+        return panel
 
     # ---------- ③ 实时调节 ----------
     def _section_adjust(self):
@@ -331,13 +365,19 @@ class ConsoleWindow(QWidget):
         self.cv_slider.valueChanged.connect(
             lambda v: self.cv_val.setText(f"{v/100:.2f}"))
         self.btn_correct = QPushButton("提交纠正")
-        self.btn_correct.setStyleSheet(_BTN_PRIMARY)
+        self.btn_correct.setStyleSheet(_BTN_OUTLINE)
         self.btn_correct.clicked.connect(self._submit_correction)
         row.addWidget(self.cv_label)
         row.addWidget(self.cv_slider, 1)
         row.addWidget(self.cv_val)
         row.addWidget(self.btn_correct)
         card._content_layout.addLayout(row)
+
+        self.correct_hint = QLabel("")
+        self.correct_hint.setStyleSheet(
+            f"color: {COLORS['warn']}; font-size: 11px;"
+        )
+        card._content_layout.addWidget(self.correct_hint)
 
         self.correction_list = QListWidget()
         self.correction_list.setFixedHeight(72)
@@ -347,6 +387,11 @@ class ConsoleWindow(QWidget):
             f"QListWidget::item {{ padding: 3px 2px; }}"
         )
         card._content_layout.addWidget(self.correction_list)
+        self.correction_empty = QLabel("还没有纠正记录 —— 记录后若模型不准，在这里提交你的判断")
+        self.correction_empty.setStyleSheet(
+            f"color: {COLORS['ink_soft']}; font-size: 11px; padding: 6px 2px;"
+        )
+        card._content_layout.addWidget(self.correction_empty)
 
         self.sections['correction'] = card
         return card
@@ -375,14 +420,16 @@ class ConsoleWindow(QWidget):
 
     def scroll_to(self, name):
         # 若目标在折叠分区内，先展开
-        key = {"summary": "legacy", "history": "legacy"}.get(name, name)
+        key = {"summary": "legacy", "history": "legacy", "legacy": "legacy"}.get(name, name)
         sec = self.collapsibles.get(key)
         if sec is not None and not sec.is_expanded():
             sec.set_expanded(True)
-        w = self.sections.get(name)
-        if w is None:
+        target = self.sections.get(name)
+        if target is None and key == "legacy":
+            target = self.sections.get("summary")
+        if target is None:
             return
-        self._scroll.ensureWidgetVisible(w, 20, 20)
+        self._scroll.ensureWidgetVisible(target, 20, 20)
 
     def _toggle_recording(self):
         self.recording = not self.recording
@@ -460,6 +507,13 @@ class ConsoleWindow(QWidget):
         self._refresh_readouts()
 
     def _reset_baseline(self):
+        from PyQt5.QtWidgets import QMessageBox
+        ok = QMessageBox.question(
+            self, "重置基线",
+            "重置会清空个人基线与 regime，回到群体先验。此操作不可撤销，继续？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if ok != QMessageBox.Yes:
+            return
         self.baseline_ctrl.reset()
         self.estimator.baseline = self.baseline_ctrl.current
         self._refresh_readouts()
@@ -473,7 +527,9 @@ class ConsoleWindow(QWidget):
     # ---- 纠正 ----
     def _submit_correction(self):
         if not self.states:
+            self.correct_hint.setText("先点「开始记录」采集数据，才能提交纠正。")
             return
+        self.correct_hint.setText("")
         ts, st = self.states[-1]
         corrected_v = self.cv_slider.value() / 100.0
         corr = UserCorrection(
@@ -488,5 +544,7 @@ class ConsoleWindow(QWidget):
         self.correction_list.insertItem(
             0, f"模型 {st.valence:.2f} → 你 {corrected_v:.2f}"
         )
+        self.correction_empty.setVisible(False)
+        self.correction_list.setVisible(True)
         if self.correction_list.count() > 20:
             self.correction_list.takeItem(self.correction_list.count() - 1)
