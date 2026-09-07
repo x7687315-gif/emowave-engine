@@ -37,16 +37,15 @@ QToolTip {{
 }}
 """
 
-# (完整名, 收起态竖排二字, 锚点 key)
+# (完整名, 收起态竖排二字, 锚点 key) — 7 项（≤7 导航 guideline），顺序同页面布局
 NAV_ITEMS = [
     ("实时状态", "状态", "state"),
     ("情绪曲线", "曲线", "curve"),
     ("实时调节", "调节", "adjust"),
+    ("纠正", "纠正", "correction"),
     ("基线主权", "基线", "baseline"),
     ("个人模型", "学习", "model"),
-    ("纠正", "纠正", "correction"),
-    ("事件回顾", "回顾", "summary"),
-    ("历史记录", "历史", "history"),
+    ("回顾与历史", "回顾", "legacy"),
 ]
 
 
@@ -99,7 +98,7 @@ class MainWindow(QMainWindow):
         sidebar.setObjectName("Sidebar")
         sidebar.setFixedWidth(SIDEBAR_W)
         sidebar.setStyleSheet(
-            f"QFrame#Sidebar {{ background-color: {COLORS['surface']};"
+            f"QFrame#Sidebar {{ background-color: {COLORS['bg']};"
             f" border: none; border-right: 1px solid {COLORS['rule']}; }}"
         )
         layout = QVBoxLayout(sidebar)
@@ -111,8 +110,9 @@ class MainWindow(QMainWindow):
         self.btn_toggle.setFixedSize(38, 30)
         self.btn_toggle.setStyleSheet(
             f"QPushButton {{ background: transparent; border: none;"
-            f" color: {COLORS['ink_soft']}; font-size: 15px; border-radius: 6px; }}"
-            f"QPushButton:hover {{ background-color: {COLORS['sage_soft']}; }}"
+            f" color: {COLORS['muted']}; font-size: 15px; border-radius: 6px; }}"
+            f"QPushButton:hover {{ background-color: {COLORS['accent_soft']};"
+            f" color: {COLORS['accent']}; }}"
         )
         self.btn_toggle.clicked.connect(self.toggle_sidebar)
         layout.addWidget(self.btn_toggle, 0, Qt.AlignLeft)
@@ -129,7 +129,7 @@ class MainWindow(QMainWindow):
 
         layout.addStretch()
         ver = QLabel("  v2.0")
-        ver.setStyleSheet(f"color: {COLORS['muted']}; font-size: 11px;")
+        ver.setStyleSheet(f"color: {COLORS['ink_soft']}; font-size: 10px;")
         layout.addWidget(ver)
 
         self._apply_sidebar_style(expanded=True)
@@ -139,14 +139,17 @@ class MainWindow(QMainWindow):
         for (label, short, key), btn in zip(NAV_ITEMS, self.nav_buttons):
             btn.setText(label if expanded else "\n".join(short))
             if expanded:
-                btn.setFixedHeight(30)
+                btn.setFixedHeight(28)
                 btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
                 btn.setStyleSheet(
-                    f"QPushButton {{ text-align: left; padding: 0 12px;"
-                    f" border: none; border-radius: 6px; font-size: 12px;"
+                    f"QPushButton {{ text-align: left; padding: 0 10px;"
+                    f" border: none; border-left: 2px solid transparent;"
+                    f" border-radius: 4px; font-size: 11px;"
                     f" color: {COLORS['ink_soft']}; background: transparent; }}"
-                    f"QPushButton:hover {{ background-color: {COLORS['rule']}; }}"
-                    f"QPushButton:checked {{ background-color: {COLORS['sage_soft']};"
+                    f"QPushButton:hover {{ background-color: {COLORS['accent_soft']};"
+                    f" color: {COLORS['ink']}; }}"
+                    f"QPushButton:checked {{ background-color: {COLORS['accent_soft']};"
+                    f" border-left: 2px solid {COLORS['accent']};"
                     f" color: {COLORS['ink']}; font-weight: 600; }}"
                 )
             else:
@@ -156,7 +159,7 @@ class MainWindow(QMainWindow):
                     f" border: none; border-radius: 6px; font-size: 11px;"
                     f" color: {COLORS['ink_soft']}; background: transparent; }}"
                     f"QPushButton:hover {{ background-color: {COLORS['rule']}; }}"
-                    f"QPushButton:checked {{ background-color: {COLORS['sage_soft']};"
+                    f"QPushButton:checked {{ background-color: {COLORS['accent_soft']};"
                     f" color: {COLORS['ink']}; font-weight: 600; }}"
                 )
 

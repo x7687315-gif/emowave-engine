@@ -1,0 +1,82 @@
+{
+  "skill": "check",
+  "generated_at": "2026-09-07T22:19:41.299638",
+  "project_name": "EmoWave Instrument",
+  "target": [
+    "windows/console_window.py",
+    "widgets.py",
+    "main_app.py"
+  ],
+  "findings": [
+    {
+      "category": "accessibility",
+      "severity": "major",
+      "description": "极小标签(9-10px)用 muted #8A8A86，对比度约3.4:1 低于4.5:1",
+      "suggestion": "小字改用 ink_soft #555552（约7:1）",
+      "location": "widgets.py StatBlock/CardFrame, console cap/legend/ci",
+      "fixed": true
+    },
+    {
+      "category": "feedback",
+      "severity": "major",
+      "description": "基线 reset 为不可逆操作但无二次确认",
+      "suggestion": "QMessageBox.question 确认后再 reset",
+      "location": "console_window._reset_baseline",
+      "fixed": true
+    },
+    {
+      "category": "feedback",
+      "severity": "major",
+      "description": "无记录时点「提交纠正」静默无反馈",
+      "suggestion": "显示可行动提示「先开始记录」",
+      "location": "console_window._submit_correction",
+      "fixed": true
+    },
+    {
+      "category": "ia",
+      "severity": "minor",
+      "description": "侧栏 8 锚点超过 Web ≤7 guideline",
+      "suggestion": "合并 事件回顾+历史记录 为「回顾与历史」→7 项",
+      "location": "main_app.NAV_ITEMS",
+      "fixed": true
+    },
+    {
+      "category": "components",
+      "severity": "minor",
+      "description": "QSS 中硬编码蓝 hex（#17337F/#142A66）未走 token",
+      "suggestion": "新增 accent_hover/accent_press token 并替换",
+      "location": "console/surfing/dashboard QSS",
+      "fixed": true
+    },
+    {
+      "category": "visual-hierarchy",
+      "severity": "minor",
+      "description": "同屏两个 primary（开始记录+提交纠正）",
+      "suggestion": "提交纠正改 outline，保留单一 primary",
+      "location": "console._section_correction",
+      "fixed": true
+    },
+    {
+      "category": "edge-states",
+      "severity": "minor",
+      "description": "纠正列表无空状态文案",
+      "suggestion": "增加空状态 label，提交后隐藏",
+      "location": "console._section_correction",
+      "fixed": true
+    },
+    {
+      "category": "feedback",
+      "severity": "minor",
+      "description": "折叠分区展开/收起为瞬时切换，无过渡",
+      "suggestion": "可选：150ms ease-out 高度过渡（PyQt QPropertyAnimation）；按 emil 原则低频操作可不动画，列为机会项",
+      "location": "console CollapsibleSection",
+      "fixed": false
+    }
+  ],
+  "summary": {
+    "blocker": 0,
+    "major": 3,
+    "minor": 5,
+    "pass": 4
+  }
+}

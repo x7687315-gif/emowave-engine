@@ -51,7 +51,7 @@ class HistoryWindow(QWidget):
             f"QCalendarWidget QWidget {{ background-color: {COLORS['surface']}; }}"
             f"QCalendarWidget QAbstractItemView {{ background-color: {COLORS['surface']};"
             f" color: {COLORS['ink']}; alternate-background-color: {COLORS['surface']};"
-            f" selection-background-color: {COLORS['sage_soft']};"
+            f" selection-background-color: {COLORS['accent_soft']};"
             f" selection-color: {COLORS['ink']}; }}"
             f"QCalendarWidget QToolButton {{ background-color: {COLORS['surface']};"
             f" color: {COLORS['ink']}; border: none; padding: 2px 6px; }}"
@@ -77,7 +77,7 @@ class HistoryWindow(QWidget):
             f" border: none; gridline-color: {COLORS['rule']}; }}"
             f"QTableWidget::item {{ padding: 3px 4px; }}"
             f"QTableWidget::item:selected"
-            f" {{ background-color: {COLORS['sage_soft']}; color: {COLORS['ink']}; }}"
+            f" {{ background-color: {COLORS['accent_soft']}; color: {COLORS['ink']}; }}"
             f"QHeaderView::section {{ background-color: transparent;"
             f" color: {COLORS['muted']}; font-size: 11px; border: none;"
             f" border-bottom: 1px solid {COLORS['rule']}; padding: 3px 4px; }}"
@@ -98,8 +98,8 @@ class HistoryWindow(QWidget):
             f"QPushButton {{ background-color: transparent;"
             f" color: {COLORS['ink_soft']}; border: 1px solid {COLORS['rule']};"
             f" border-radius: 6px; padding: 5px 16px; font-size: 12px; }}"
-            f"QPushButton:hover {{ border-color: {COLORS['sage']};"
-            f" color: {COLORS['sage']}; }}"
+            f"QPushButton:hover {{ border-color: {COLORS['accent']};"
+            f" color: {COLORS['accent']}; }}"
         )
         export_layout.addWidget(self.export_btn)
         list_card.add_widget(export_container)

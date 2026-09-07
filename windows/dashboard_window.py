@@ -67,7 +67,7 @@ class DashboardWindow(QWidget):
             f"QListWidget {{ background-color: {COLORS['surface']}; border: none;"
             f" color: {COLORS['ink']}; font-size: 12px; }}"
             f"QListWidget::item {{ padding: 4px 2px; }}"
-            f"QListWidget::item:selected {{ background-color: {COLORS['sage_soft']}; }}"
+            f"QListWidget::item:selected {{ background-color: {COLORS['accent_soft']}; }}"
         )
         self.recent_events_list.setFixedHeight(118)
         events_card.add_widget(self.recent_events_list)
@@ -84,10 +84,10 @@ class DashboardWindow(QWidget):
         self.btn_record = QPushButton("开始记录情绪")
         self.btn_record.setCursor(self.cursor())
         self.btn_record.setStyleSheet(
-            f"QPushButton {{ background-color: {COLORS['sage']}; color: #FFFFFF;"
+            f"QPushButton {{ background-color: {COLORS['accent']}; color: #FFFFFF;"
             f" border: none; border-radius: 8px; padding: 9px 16px;"
             f" font-size: 13px; font-weight: 600; }}"
-            f"QPushButton:hover {{ background-color: #6F8263; }}"
+            f"QPushButton:hover {{ background-color: {COLORS['accent_hover']}; }}"
         )
         root.addWidget(self.btn_record)
         root.addStretch(1)

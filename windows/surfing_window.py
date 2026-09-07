@@ -28,8 +28,8 @@ _SLIDER_QSS = (
     f"QSlider::groove:horizontal {{ height: 3px; background: {COLORS['rule']};"
     f" border-radius: 1px; }}"
     f"QSlider::handle:horizontal {{ width: 14px; margin: -6px 0;"
-    f" border-radius: 7px; background: {COLORS['sage']}; }}"
-    f"QSlider::sub-page:horizontal {{ background: {COLORS['sage']};"
+    f" border-radius: 7px; background: {COLORS['accent']}; }}"
+    f"QSlider::sub-page:horizontal {{ background: {COLORS['accent']};"
     f" border-radius: 1px; }}"
 )
 
@@ -133,10 +133,10 @@ class SurfingWindow(QWidget):
         self.start_btn = QPushButton("开始记录")
         self.start_btn.setCursor(self.cursor())
         self.start_btn.setStyleSheet(
-            f"QPushButton {{ background-color: {COLORS['sage']}; color: #FFFFFF;"
+            f"QPushButton {{ background-color: {COLORS['accent']}; color: #FFFFFF;"
             f" border: none; border-radius: 8px; padding: 8px 18px;"
             f" font-size: 13px; font-weight: 600; }}"
-            f"QPushButton:hover {{ background-color: #6F8263; }}"
+            f"QPushButton:hover {{ background-color: {COLORS['accent_hover']}; }}"
         )
         self.start_btn.clicked.connect(self._toggle_recording)
         btn_row.addWidget(self.start_btn)
@@ -145,8 +145,8 @@ class SurfingWindow(QWidget):
         self.finish_btn.setEnabled(False)
         self.finish_btn.setCursor(self.cursor())
         self.finish_btn.setStyleSheet(
-            f"QPushButton {{ background-color: transparent; color: {COLORS['amber']};"
-            f" border: 1px solid {COLORS['amber']}; border-radius: 8px;"
+            f"QPushButton {{ background-color: transparent; color: {COLORS['warn']};"
+            f" border: 1px solid {COLORS['warn']}; border-radius: 8px;"
             f" padding: 8px 18px; font-size: 13px; font-weight: 600; }}"
             f"QPushButton:disabled {{ color: {COLORS['muted']};"
             f" border-color: {COLORS['rule']}; }}"
