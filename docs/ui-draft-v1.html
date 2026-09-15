@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>EmoWave UI 设计初稿 v1 · 构成骨架 + 暖色板</title>
+<style>
+  :root{
+    /* ---- 色板：单一暖色相 + 暖中性（色彩统一，低饱和）----
+       文字色经 WCAG 实测：ink 14.6 / ink-2 7.8 / muted 5.1 / accent-ink 5.1（对 surface）
+       全部 ≥4.5，9.5px 极小标签也达标。 */
+    --paper:      #F2ECE1;   /* 暖黄纸底 */
+    --paper-2:    #E9E1D3;   /* 次级块面 */
+    --surface:    #FCFAF6;   /* 曲线纸面（比底亮，靠明度分层而非描边） */
+    --ink:        #2B251C;   /* 暖黑            14.6:1 */
+    --ink-2:      #574E40;   /* 次级正文        7.8:1  */
+    --muted:      #746A5A;   /* 极小标签        5.1:1  （原 #9E9384 仅 2.89 已弃用） */
+    --rule:       #DFD6C6;   /* 暖边（唯一线条色，非文字） */
+    --grid:       #E6DED0;   /* 网格线（非文字，更淡） */
+    --accent:     #BE5E38;   /* 陶土赭红 · 图形与大号数字（3:1 图形阈值达标） */
+    --accent-ink: #A95230;   /* 陶土赭红 · 小号文字专用 5.1:1（原直接用 accent 仅 4.16 不合格） */
+    --accent-soft:#F1E0D5;   /* 强调·浅底 */
+    --danger:     #8C3A1E;   /* 危险操作（重置）——同色相加深，不引入新色相 7.4:1 */
+    --wash:       rgba(190,94,56,.10); /* 置信带 */
+    --font: 'Bahnschrift','DIN Alternate','Segoe UI',sans-serif;
+    --mono: 'Cascadia Code','Consolas',monospace;
+
+    /* ---- 动效：统一指数缓动，绝不回弹 ---- */
+    --ease-out: cubic-bezier(.165,.84,.44,1);   /* ease-out-quart */
+    --t-fast: 130ms;
+    --t-mid:  220ms;
+    --t-slow: 320ms;
+
+    /* ---- 语义化 z-index 层级（不用 9999） ---- */
+    --z-drawer:  50;
+    --z-scrim:   40;
+    --z-sheet:   70;
+    --z-scrim-2: 60;
+    --z-tip:     80;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;border-radius:0}
+
+  /* ================= 全局交互层 ================= */
+  /* 焦点：鼠标不显示，键盘显示 —— 绝不 outline:none 而不给替代 */
+  button:focus,input:focus{outline:none}
+  button:focus-visible,input:focus-visible,
+  [tabindex]:focus-visible{
+    outline:2px solid var(--accent-ink);
+    outline-offset:2px;
+  }
+  /* 所有可交互元素：按下有反馈，过渡统一指数缓动（不回弹） */
+  button,input,.rail i,.icon-btn,.tog,.corr,.mini,.btn-rec,
+  .btn-main,.btn-ghost{transition:background-color var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out),border-color var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out)}
+  button:active:not(:disabled),
+  .icon-btn:active,.tog:active,.corr:active,.mini:active,
+  .btn-rec:active,.btn-main:active,.btn-ghost:active{transform:translateY(1px)}
+  /* 禁用态 */
+  :disabled{opacity:.42;pointer-events:none}
+  /* 尊重系统「减少动态效果」 */
+  @media (prefers-reduced-motion:reduce){
+    *{transition-duration:.01ms !important;animation-duration:.01ms !important}
+  }
+  body{
+    background:#DED8CC; font-family:var(--font); color:var(--ink);
+    padding:40px 32px 80px; -webkit-font-smoothing:antialiased;
+  }
+  .stage{max-width:1200px;margin:0 auto}
+  h1{font-size:15px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px}
+  .sub{font-size:12.5px;color:var(--ink-2);margin-bottom:22px;line-height:1.7}
+  .cap{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2);
+       margin:52px 0 12px;padding-bottom:8px;border-bottom:1px solid #C9C0AE;font-weight:600}
+
+  /* ============ 窗口外壳 ============ */
+  .win{
+    width:1160px;height:748px;background:var(--paper);
+    box-shadow:0 18px 48px rgba(43,37,28,.20);
+    display:flex;flex-direction:column;overflow:hidden;position:relative;
+  }
+  .win.dim{}
+
+  /* ---- 极简页头 ---- */
+  .topbar{height:46px;display:flex;align-items:center;padding:0 18px;gap:14px;flex:none}
+  .brand{display:flex;align-items:baseline;gap:9px}
+  .brand b{font-size:14px;font-weight:700;letter-spacing:.20em;text-transform:uppercase}
+  .brand span{font-size:11px;color:var(--muted);letter-spacing:.08em}
+  .topbar .sp{flex:1}
+  .date{font-size:11.5px;color:var(--ink-2);letter-spacing:.04em}
+  .icon-btn{width:26px;height:26px;border:1px solid var(--rule);background:transparent;
+    display:grid;place-items:center;cursor:pointer}
+  .icon-btn:hover{background:var(--accent-soft);border-color:var(--accent)}
+  .icon-btn svg{display:block}
+
+  .body{flex:1;display:flex;min-height:0}
+
+  /* ---- 图标列（侧栏简化） ---- */
+  .rail{width:56px;background:var(--paper-2);flex:none;display:flex;flex-direction:column;
+        align-items:center;padding:14px 0;gap:6px;border-right:1px solid var(--rule)}
+  .rail button{width:30px;height:30px;display:grid;place-items:center;cursor:pointer;
+    background:transparent;border:none;padding:0}
+  .rail button svg{display:block}
+  .rail button.on{background:var(--accent);}
+  .rail button.on svg *{fill:var(--paper)}
+  .rail .gap{flex:1}
+  .rail .ver{font-size:9px;color:var(--muted);letter-spacing:.1em}
+
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+
+  /* ---- 入场动效：只对"出现的组件"做，不做装饰性动画 ---- */
+  @keyframes sheet-up{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  @keyframes drawer-in{from{transform:translateX(100%)}to{transform:translateX(0)}}
+  @keyframes fade-in{from{opacity:0}to{opacity:1}}
+  .sheet{animation:sheet-up var(--t-slow) var(--ease-out) both}
+  .drawer{animation:drawer-in var(--t-slow) var(--ease-out) both}
+  .scrim,.scrim-up{animation:fade-in var(--t-mid) var(--ease-out) both}
+
+  /* ---- ⓪ 当前情绪状况 + 参数说明下拉条 ---- */
+  .status{flex:none;border-bottom:1px solid var(--rule)}
+  .status-hd{height:48px;display:flex;align-items:center;padding:0 22px;gap:12px}
+  .status-hd .t{font-size:13.5px;font-weight:600;letter-spacing:.01em}
+  .status-hd .t em{font-style:normal;color:var(--accent)}
+  .tog{display:flex;align-items:center;gap:7px;font-family:var(--font);
+    font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;
+    color:var(--ink-2);background:transparent;border:1px solid var(--rule);
+    padding:6px 10px;cursor:pointer}
+  .tog:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .tog .ar{display:inline-block;transition:transform .16s;font-size:9px}
+  .tog.open{border-color:var(--accent);color:var(--accent)}
+  .tog.open .ar{transform:rotate(180deg)}
+  .status .explain{max-height:220px;overflow:hidden;
+    transition:max-height var(--t-mid) var(--ease-out),opacity var(--t-mid) var(--ease-out)}
+  .status.collapsed .explain{max-height:0;opacity:0}
+  /* 4 栏块面，1px 间隙 + rule 底色 = 发丝分隔（不用描边） */
+  .explain{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);
+           border-top:1px solid var(--rule)}
+  .ex{background:var(--surface);padding:13px 16px 15px}
+  .ex .k{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .ex .k i{font-style:normal;letter-spacing:.03em;text-transform:none;font-weight:400;margin-left:5px}
+  .ex .v{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1;
+         margin:5px 0 7px;color:var(--ink)}
+  .ex.hi .v{color:var(--accent)}
+  .ex .d{font-size:11px;color:var(--ink-2);line-height:1.65}
+  .ex .c{font-size:11px;color:var(--accent-ink);line-height:1.65;margin-top:8px;
+         padding-top:8px;border-top:1px solid var(--rule)}
+  .ex .c b{font-weight:600;font-variant-numeric:tabular-nums}
+  /* 「情绪有误，点这里纠正」入口：小圆点 + 发丝框，无下划线 */
+  .corr{display:flex;align-items:center;gap:7px;background:transparent;
+    border:1px solid var(--rule);font-family:var(--font);font-size:11px;
+    color:var(--accent-ink);cursor:pointer;padding:5px 10px}
+  .corr:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .corr i{width:6px;height:6px;background:var(--accent);display:block;border-radius:50%}
+
+  /* ---- 纠正上滑框 (bottom sheet) ---- */
+  .sheet{position:absolute;left:56px;right:0;bottom:0;height:356px;background:var(--paper);
+         border-top:1px solid var(--rule);z-index:var(--z-sheet);display:flex;flex-direction:column;
+         box-shadow:0 -14px 34px rgba(43,37,28,.14)}
+  .scrim-up{position:absolute;left:56px;right:0;top:46px;bottom:0;
+            background:rgba(43,37,28,.10);z-index:var(--z-scrim-2)}
+  .sheet-hd{height:46px;flex:none;display:flex;align-items:center;padding:0 22px;gap:14px;
+            border-bottom:1px solid var(--rule)}
+  .sheet-hd .t{font-size:10.5px;letter-spacing:.20em;text-transform:uppercase;font-weight:600}
+  .sheet-hd .hint{font-size:11px;color:var(--muted)}
+  .sheet-hd .sp{flex:1}
+  .sheet-bd{flex:1;display:flex;gap:16px;padding:14px 22px 0;min-height:0}
+  .charts{flex:1;display:flex;flex-direction:column;gap:9px;min-width:0}
+  .chart{background:var(--surface);border:1px solid var(--rule);position:relative;flex:1;min-height:0}
+  .chart .lb{position:absolute;top:8px;left:12px;font-size:9.5px;letter-spacing:.16em;
+             text-transform:uppercase;color:var(--muted);font-weight:600;z-index:2}
+  .chart svg{display:block;width:100%;height:100%}
+  /* 拖动中的实时读数气泡 */
+  .tip{position:absolute;background:var(--ink);color:#F4EEE3;padding:6px 10px;
+       font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;z-index:3;
+       display:flex;gap:12px;align-items:center}
+  .tip b{font-weight:600;color:#EEB695}
+  /* 右侧手动输入面板 */
+  .panel{width:202px;flex:none;background:var(--surface);border:1px solid var(--rule);
+         padding:14px 16px;display:flex;flex-direction:column}
+  .panel h4{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);
+            font-weight:600;margin-bottom:3px}
+  .panel .tm{font-family:var(--mono);font-size:13px;color:var(--ink);font-weight:600;margin-bottom:14px}
+  .fld{margin-bottom:13px}
+  .fld label{display:block;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+             color:var(--ink-2);font-weight:600;margin-bottom:5px}
+  .inp{display:flex;align-items:center;border:1px solid var(--rule);background:var(--paper)}
+  .inp:focus-within{border-color:var(--accent)}
+  .inp input{width:100%;border:none;background:transparent;padding:8px 10px;
+    font-family:var(--font);font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;
+    color:var(--ink);outline:none}
+  .inp .u{font-size:10px;color:var(--muted);padding-right:10px}
+  .orig{font-size:10.5px;color:var(--muted);margin-top:5px;font-variant-numeric:tabular-nums}
+  .panel .sp{flex:1}
+  .sheet-ft{flex:none;display:flex;align-items:center;padding:12px 22px;gap:12px}
+  .sheet-ft .n{font-size:11px;color:var(--muted)}
+  .sheet-ft .sp{flex:1}
+  .btn-ghost{height:30px;padding:0 16px;border:1px solid var(--rule);background:transparent;
+    font-family:var(--font);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ink-2);cursor:pointer}
+  .btn-ghost:hover{border-color:var(--ink-2);color:var(--ink)}
+  .btn-main{height:30px;padding:0 18px;border:none;background:var(--accent);color:#FCFAF6;
+    font-family:var(--font);font-size:10.5px;font-weight:600;letter-spacing:.12em;
+    text-transform:uppercase;cursor:pointer}
+  .btn-main:hover{background:#A95230}
+
+  /* ---- ① 顶部读数条 + 记录控制 ---- */
+  .readout{height:72px;flex:none;display:flex;align-items:center;padding:0 22px;gap:0}
+  .ro{display:flex;flex-direction:column;gap:5px;padding-right:34px}
+  .ro .k{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .ro .v{font-size:27px;font-weight:600;line-height:.9;font-variant-numeric:tabular-nums;color:var(--ink)}
+  .ro .v small{font-size:13px;color:var(--muted);font-weight:400;margin-left:2px}
+  .ro.hi .v{color:var(--accent)}
+  .readout .sp{flex:1}
+  .rec{display:flex;align-items:center;gap:14px}
+  .count{font-size:11px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+  .btn-rec{background:var(--accent);color:#FCFAF6;border:none;padding:11px 20px;
+    font-family:var(--font);font-size:11.5px;font-weight:600;letter-spacing:.14em;
+    text-transform:uppercase;cursor:pointer;display:flex;align-items:center;gap:8px}
+  .btn-rec:hover{background:#A95230}
+  .dot{width:7px;height:7px;background:#FCFAF6;display:block}
+
+  /* ---- ② 曲线（主角） ---- */
+  .curvewrap{flex:1;margin:0 22px;background:var(--surface);border:1px solid var(--rule);
+             display:flex;flex-direction:column;min-height:0;position:relative}
+  .curvehead{display:flex;align-items:center;padding:12px 18px 8px;gap:16px;flex:none}
+  .curvehead .t{font-size:10px;letter-spacing:.20em;text-transform:uppercase;color:var(--ink);font-weight:600}
+  .curvehead .sp{flex:1}
+  .legend{display:flex;gap:16px;font-size:10px;color:var(--muted);letter-spacing:.03em}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .sw{width:16px;height:0;border-top-width:2px;border-top-style:solid;display:block}
+  .sw.band{height:8px;border:none;background:var(--wash)}
+  .sw.dash{border-top-style:dashed;border-top-width:1px}
+  .sw.pt{width:7px;height:7px;border:none;background:var(--accent);border-radius:50%}
+  .sw.raw{width:5px;height:5px;border:none;background:#B8AE9C;border-radius:50%}
+  .curvesvg{flex:1;min-height:0}
+  .curvesvg svg{display:block;width:100%;height:100%}
+
+  /* ---- ③ 底部输入台（仅滑块，数值不重复显示——已在顶部读数条） ---- */
+  .inputbar{flex:none;padding:22px 22px 24px;display:flex;gap:56px}
+  .slider{display:flex;align-items:center;gap:14px}
+  .slider .lb{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-2);
+              font-weight:600;min-width:36px}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:280px;height:22px;
+    background:transparent;cursor:pointer}
+  input[type=range]::-webkit-slider-runnable-track{height:3px;background:var(--rule)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;
+    background:var(--accent);margin-top:-5.5px;border:none;
+    transition:transform var(--t-fast) var(--ease-out),background-color var(--t-fast) var(--ease-out)}
+  input[type=range]::-webkit-slider-thumb:hover{background:var(--accent-ink);transform:scale(1.18)}
+  input[type=range]:active::-webkit-slider-thumb{transform:scale(1.3);background:var(--accent-ink)}
+  input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px var(--accent-soft),0 0 0 5px var(--accent-ink)}
+  /* 输入台：hover 时淡入当前值，避免与顶部读数条重复常驻 */
+  .slider .num{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;
+    min-width:30px;text-align:right;opacity:0;transition:opacity var(--t-fast) var(--ease-out)}
+  .slider:hover .num,.slider:focus-within .num{opacity:1}
+
+  /* ---- 旧的次要区 CSS 已废止（基线进抽屉） ---- */
+
+  /* ---- ④ 次要区（已删除：纠正上移，基线进抽屉） ----
+  .minor{flex:none;display:flex;align-items:center;padding:8px 22px 18px;gap:0}
+  .cell{display:flex;align-items:center;gap:10px;padding-right:30px}
+  .cell .k{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .cell .v{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink-2)}
+  .chev{color:var(--muted);font-size:11px}
+  .minor .sp{flex:1}
+  .mini{height:24px;padding:0 11px;border:1px solid var(--rule);background:transparent;
+    font-family:var(--font);font-size:11px;color:var(--ink-2);cursor:pointer;letter-spacing:.04em}
+  .mini:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  */
+
+  /* ---- 基线主权按钮组（抽屉首项） ----
+     设计意图：操作破坏性递增 → 视觉权重递增；
+     微调±合并成双向 stepper；分叉用菱形几何 + 副文字；重置隔离到右下，danger 同色相 7.4:1。 */
+  .baseline-tools{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+  .stepper{display:inline-flex;align-items:stretch;height:30px;border:1px solid var(--rule);
+    background:var(--surface);width:fit-content}
+  .stepper button{width:32px;height:100%;background:transparent;border:none;cursor:pointer;
+    display:grid;place-items:center;color:var(--ink-2)}
+  .stepper button:hover{background:var(--accent-soft);color:var(--accent)}
+  .stepper button:active:not(:disabled){background:var(--accent);color:var(--paper)}
+  .stepper button:focus-visible{outline:2px solid var(--accent-ink);outline-offset:-2px}
+  .stepper .v{min-width:48px;padding:0 10px;display:grid;place-items:center;
+    font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums;
+    color:var(--ink);border-left:1px solid var(--rule);border-right:1px solid var(--rule);
+    background:var(--paper-2)}
+  .stepper .v small{font-size:9px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;
+    font-family:var(--font);margin-left:4px;font-weight:600}
+  .stepper-row{display:flex;align-items:center;gap:10px}
+  .stepper-row .lb{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--muted);font-weight:600}
+  .stepper-row .delta{font-family:var(--mono);font-size:10.5px;color:var(--accent-ink);
+    font-variant-numeric:tabular-nums;min-width:34px}
+
+  .tool{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;
+    background:transparent;border:1px solid var(--rule);color:var(--ink-2);
+    font-family:var(--font);font-size:11.5px;cursor:pointer;letter-spacing:.04em;
+    width:fit-content;text-align:left}
+  .tool:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .tool:active:not(:disabled){transform:translateY(1px)}
+  .tool:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
+  .tool svg{display:block;flex:none}
+  .tool .tx{display:flex;flex-direction:column;line-height:1.15;gap:1px}
+  .tool .tx b{font-weight:600;font-size:11.5px;letter-spacing:.02em}
+  .tool .tx i{font-style:normal;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--muted);font-weight:600}
+  .tool.danger{color:var(--danger);border-color:var(--danger)}
+  .tool.danger:hover{background:var(--danger);color:var(--paper);border-color:var(--danger)}
+  .tool.danger i{color:var(--danger);opacity:.85}
+  .tool.danger:hover i{color:var(--paper)}
+
+  /* ============ 抽屉 ============ */
+  .drawer{position:absolute;top:46px;right:0;bottom:0;width:380px;background:var(--paper-2);
+          border-left:1px solid var(--rule);display:flex;flex-direction:column;z-index:var(--z-drawer)}
+  .dhead{height:52px;flex:none;display:flex;align-items:center;padding:0 18px;gap:10px;
+         border-bottom:1px solid var(--rule)}
+  .dhead .t{font-size:10.5px;letter-spacing:.20em;text-transform:uppercase;font-weight:600}
+  .dhead .sp{flex:1}
+  .dbody{flex:1;overflow:hidden;padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+  .dsec{background:var(--surface);border:1px solid var(--rule);padding:14px 16px}
+  .dsec h4{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
+           font-weight:600;margin-bottom:10px}
+  .dsec .row{display:flex;align-items:center;gap:10px;margin-top:8px}
+  .dsec .row .num{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;margin-left:auto}
+  .bar{height:3px;background:var(--rule);flex:1}
+  .bar i{display:block;height:100%;background:var(--accent)}
+  .dlist{display:flex;flex-direction:column;gap:0}
+  .dlist .li{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--rule);font-size:12px}
+  .dlist .li:last-child{border-bottom:none}
+  .dlist .li .tm{font-family:var(--mono);font-size:10.5px;color:var(--muted);min-width:38px}
+  .dlist .li .vv{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:600;font-size:12.5px}
+  .scrim{position:absolute;top:46px;left:0;right:380px;bottom:0;background:rgba(43,37,28,.10);z-index:var(--z-scrim)}
+
+  /* ============ 规范表 ============ */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:12px}
+  .sw2{border:1px solid #C9C0AE}
+  .sw2 .c{height:56px}
+  .sw2 .m{padding:7px 9px;background:#FBF8F2;font-size:10px;line-height:1.5}
+  .sw2 .m b{display:block;font-size:11px;letter-spacing:.06em}
+  .sw2 .m i{font-style:normal;color:var(--ink-2);font-family:var(--mono);font-size:9.5px}
+  table{border-collapse:collapse;width:100%;background:#FBF8F2;font-size:12px}
+  th,td{border:1px solid #DDD4C4;padding:8px 12px;text-align:left;vertical-align:top}
+  th{background:var(--paper-2);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:600}
+  td.mono{font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .note{font-size:11.5px;color:var(--ink-2);line-height:1.8;margin-top:10px}
+  .note b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <h1>EmoWave UI · 设计初稿 v1</h1>
+  <div class="sub">
+    构成主义骨架（大块面 / 不对称 / 硬边直角 / 粗无衬线）+ 暖色板（暖黄纸底 · 陶土赭红 · 低饱和 · 单一色相）。<br>
+    信息架构：<b>当前情绪状况（可下拉参数说明 + 纠正入口）</b> → 读数条 → 曲线（视觉主角）→ 底部输入台；<b>次要区已删除</b>（基线校准进抽屉）；个人模型 / 事件回顾 / 历史记录 收进右侧抽屉；<b>纠正改为上滑框</b>（双曲线拖点 + 手动输入）。
+  </div>
+
+  <!-- ============ 稿 1：主界面 ============ -->
+  <div class="cap">01 · 主界面 · 参数说明<b style="text-transform:none;letter-spacing:0">（展开态，点「参数说明」可收起）</b></div>
+  <div class="win">
+    <div class="topbar">
+      <div class="brand"><b>Emowave</b><span>个人情绪状态引擎</span></div>
+      <div class="sp"></div>
+      <div class="date">9月15日 周二</div>
+      <div class="icon-btn" title="导出">
+        <svg width="13" height="13" viewBox="0 0 13 13"><path d="M6.5 1v7M3.6 5.4L6.5 8.3l2.9-2.9M1.5 11h10" stroke="#574E40" stroke-width="1.3" fill="none"/></svg>
+      </div>
+      <div class="icon-btn" title="设置">
+        <svg width="13" height="13" viewBox="0 0 13 13"><rect x="1.5" y="1.5" width="10" height="10" fill="none" stroke="#574E40" stroke-width="1.3"/><rect x="5" y="5" width="3" height="3" fill="#574E40"/></svg>
+      </div>
+    </div>
+
+    <div class="body">
+      <!-- 图标列 -->
+      <div class="rail">
+        <button class="on" title="状态"><svg width="15" height="15" viewBox="0 0 15 15"><circle cx="7.5" cy="7.5" r="6" fill="#574E40"/></svg></button>
+        <button title="曲线"><svg width="15" height="15" viewBox="0 0 15 15"><path d="M7.5 1.5L14 13.5H1z" fill="#574E40"/></svg></button>
+        <button title="历史"><svg width="15" height="15" viewBox="0 0 15 15"><rect x="1.5" y="1.5" width="12" height="12" fill="#574E40"/></svg></button>
+        <button title="抽屉"><svg width="15" height="15" viewBox="0 0 15 15"><path d="M1.5 7.5a6 6 0 0112 0z" fill="#574E40"/></svg></button>
+        <div class="gap"></div>
+        <div class="ver">V2.0</div>
+      </div>
+
+      <div class="main">
+
+        <!-- ⓪ 当前情绪状况（可下拉的参数说明） -->
+        <div class="status">
+          <div class="status-hd">
+            <div class="t">当前情绪状况（<em>平静 · 偏积极</em>）</div>
+            <button class="corr"><i></i>情绪有误，点这里纠正</button>
+            <button class="tog open">参数说明 <span class="ar">▾</span></button>
+            <div class="sp" style="flex:1"></div>
+          </div>
+          <div class="explain">
+            <div class="ex hi">
+              <div class="k">效价 <i>Valence</i></div>
+              <div class="v">62</div>
+              <div class="d">情绪的<b>正负方向</b>。0 = 极负面，50 = 中性，100 = 极正面。</div>
+              <div class="c">当前 <b>62</b>：偏正面，比你的基线 <b>54</b> 高 8 分。</div>
+            </div>
+            <div class="ex">
+              <div class="k">唤醒 <i>Arousal</i></div>
+              <div class="v">41</div>
+              <div class="d">情绪的<b>强度与能量</b>。0 = 极度平静，100 = 极度激动。</div>
+              <div class="c">当前 <b>41</b>：偏低，处于松弛、低能量的状态。</div>
+            </div>
+            <div class="ex">
+              <div class="k">置信 <i>Confidence</i></div>
+              <div class="v">0.82</div>
+              <div class="d">模型对当前估计的<b>把握程度</b>，0–1，越高越可信。</div>
+              <div class="c">当前 <b>0.82</b>：较高，近 2 小时已积累 24 条观测。</div>
+            </div>
+            <div class="ex">
+              <div class="k">置信区间 <i>Interval</i></div>
+              <div class="v">52–71</div>
+              <div class="d">真实情绪值<b>大概率落在的范围</b>（±1σ）。</div>
+              <div class="c">当前 <b>52–71</b>：真实效价大概率在此区间内，跨度 19 分。</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ① 读数条 -->
+        <div class="readout">
+          <div class="ro hi"><div class="k">效价</div><div class="v">62<small>/100</small></div></div>
+          <div class="ro"><div class="k">唤醒</div><div class="v">41<small>/100</small></div></div>
+          <div class="ro"><div class="k">置信</div><div class="v">0.82</div></div>
+          <div class="ro"><div class="k">置信区间</div><div class="v">52–71</div></div>
+          <div class="sp"></div>
+          <div class="rec">
+            <div class="count">已采集 24 条</div>
+            <button class="btn-rec"><span class="dot"></span>开始记录</button>
+          </div>
+        </div>
+
+        <!-- ② 曲线 -->
+        <div class="curvewrap">
+          <div class="curvehead">
+            <div class="t">情绪曲线 · 模型估计</div>
+            <div class="sp"></div>
+            <div class="legend">
+              <span><i class="sw" style="border-color:#BE5E38"></i>模型</span>
+              <span><i class="sw band"></i>±1σ</span>
+              <span><i class="sw dash" style="border-color:#948A79"></i>基线</span>
+              <span><i class="sw raw"></i>原始</span>
+            </div>
+          </div>
+          <div class="curvesvg">
+            <svg viewBox="0 0 1000 268" preserveAspectRatio="none">
+              <!-- 弱化网格：仅 3 条，极淡 -->
+              <line x1="56" y1="18"  x2="982" y2="18"  stroke="#E6DED0" stroke-width="1"/>
+              <line x1="56" y1="138" x2="982" y2="138" stroke="#E6DED0" stroke-width="1"/>
+              <line x1="56" y1="258" x2="982" y2="258" stroke="#E6DED0" stroke-width="1"/>
+              <!-- 刻度：短，不多 -->
+              <line x1="50" y1="18"  x2="56" y2="18"  stroke="#948A79" stroke-width="1"/>
+              <line x1="50" y1="138" x2="56" y2="138" stroke="#948A79" stroke-width="1"/>
+              <line x1="50" y1="258" x2="56" y2="258" stroke="#948A79" stroke-width="1"/>
+              <!-- 基线（虚线） -->
+              <line x1="56" y1="130" x2="982" y2="130" stroke="#948A79" stroke-width="1" stroke-dasharray="5 5"/>
+              <!-- 置信带 -->
+              <path d="M56 137 C100 130,150 106,190 106 C240 106,280 126,324 123 C370 120,410 86,458 89
+                       C505 92,545 66,592 68 C640 70,680 102,726 99 C775 96,815 134,860 130
+                       C900 127,940 90,980 89 L980 133 C940 134,900 171,860 174 C815 178,775 140,726 143
+                       C680 146,640 114,592 112 C545 110,505 136,458 133 C410 130,370 164,324 167
+                       C280 170,240 150,190 150 C150 150,100 174,56 181 Z"
+                    fill="rgba(190,94,56,.10)"/>
+              <!-- 原始点 -->
+              <g fill="#B8AE9C">
+                <circle cx="120" cy="150" r="2.6"/><circle cx="168" cy="126" r="2.6"/>
+                <circle cx="232" cy="138" r="2.6"/><circle cx="286" cy="118" r="2.6"/>
+                <circle cx="352" cy="132" r="2.6"/><circle cx="404" cy="98"  r="2.6"/>
+                <circle cx="470" cy="118" r="2.6"/><circle cx="524" cy="80"  r="2.6"/>
+                <circle cx="568" cy="96"  r="2.6"/><circle cx="628" cy="76"  r="2.6"/>
+                <circle cx="676" cy="108" r="2.6"/><circle cx="712" cy="132" r="2.6"/>
+                <circle cx="778" cy="128" r="2.6"/><circle cx="828" cy="158" r="2.6"/>
+                <circle cx="884" cy="146" r="2.6"/><circle cx="944" cy="118" r="2.6"/>
+              </g>
+              <!-- 模型线 -->
+              <path d="M56 159 C100 152,150 128,190 128 C240 128,280 148,324 145 C370 142,410 108,458 111
+                       C505 114,545 88,592 90 C640 92,680 124,726 121 C775 118,815 156,860 152
+                       C900 149,940 112,980 111"
+                    fill="none" stroke="#BE5E38" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+              <!-- 当前点 -->
+              <circle cx="980" cy="111" r="5.5" fill="#BE5E38"/>
+              <!-- 轴标签 -->
+              <g font-family="'Bahnschrift','Segoe UI',sans-serif" font-size="10" fill="#746A5A">
+                <text x="0" y="22">100</text><text x="0" y="142">50</text><text x="10" y="262">0</text>
+                <text x="44"  y="276">09:00</text><text x="275" y="276">11:00</text>
+                <text x="506" y="276">13:00</text><text x="737" y="276">15:00</text><text x="949" y="276">17:00</text>
+              </g>
+            </svg>
+          </div>
+        </div>
+
+        <!-- ③ 输入台（仅滑块） -->
+        <div class="inputbar">
+          <div class="slider">
+            <div class="lb">效价</div>
+            <input type="range" min="0" max="100" value="62">
+          </div>
+          <div class="slider">
+            <div class="lb">唤醒</div>
+            <input type="range" min="0" max="100" value="41">
+          </div>
+        </div>
+
+        <!-- ④ 次要区 已删除：纠正上移，基线进抽屉 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 稿 2：抽屉展开 ============ -->
+  <div class="cap">02 · 右侧抽屉展开 · 参数说明（收起态）</div>
+  <div class="win">
+    <div class="topbar">
+      <div class="brand"><b>Emowave</b><span>个人情绪状态引擎</span></div>
+      <div class="sp"></div>
+      <div class="date">9月15日 周二</div>
+      <div class="icon-btn"><svg width="13" height="13" viewBox="0 0 13 13"><path d="M6.5 1v7M3.6 5.4L6.5 8.3l2.9-2.9M1.5 11h10" stroke="#574E40" stroke-width="1.3" fill="none"/></svg></div>
+      <div class="icon-btn"><svg width="13" height="13" viewBox="0 0 13 13"><rect x="1.5" y="1.5" width="10" height="10" fill="none" stroke="#574E40" stroke-width="1.3"/><rect x="5" y="5" width="3" height="3" fill="#574E40"/></svg></div>
+    </div>
+    <div class="body">
+      <div class="rail">
+        <button title="状态"><svg width="15" height="15" viewBox="0 0 15 15"><circle cx="7.5" cy="7.5" r="6" fill="#574E40"/></svg></button>
+        <button class="on" title="曲线"><svg width="15" height="15" viewBox="0 0 15 15"><path d="M7.5 1.5L14 13.5H1z" fill="#574E40"/></svg></button>
+        <button title="历史"><svg width="15" height="15" viewBox="0 0 15 15"><rect x="1.5" y="1.5" width="12" height="12" fill="#574E40"/></svg></button>
+        <button title="抽屉"><svg width="15" height="15" viewBox="0 0 15 15"><path d="M1.5 7.5a6 6 0 0112 0z" fill="#574E40"/></svg></button>
+        <div class="gap"></div><div class="ver">V2.0</div>
+      </div>
+      <div class="main">
+
+        <!-- ⓪ 收起态 -->
+        <div class="status collapsed">
+          <div class="status-hd">
+            <div class="t">当前情绪状况（<em>平静 · 偏积极</em>）</div>
+            <button class="corr"><i></i>情绪有误，点这里纠正</button>
+            <button class="tog">参数说明 <span class="ar">▾</span></button>
+            <div class="sp" style="flex:1"></div>
+          </div>
+          <div class="explain">
+            <div class="ex hi">
+              <div class="k">效价 <i>Valence</i></div><div class="v">62</div>
+              <div class="d">情绪的<b>正负方向</b>。0 = 极负面，50 = 中性，100 = 极正面。</div>
+              <div class="c">当前 <b>62</b>：偏正面，比你的基线 <b>54</b> 高 8 分。</div>
+            </div>
+            <div class="ex">
+              <div class="k">唤醒 <i>Arousal</i></div><div class="v">41</div>
+              <div class="d">情绪的<b>强度与能量</b>。0 = 极度平静，100 = 极度激动。</div>
+              <div class="c">当前 <b>41</b>：偏低，处于松弛、低能量的状态。</div>
+            </div>
+            <div class="ex">
+              <div class="k">置信 <i>Confidence</i></div><div class="v">0.82</div>
+              <div class="d">模型对当前估计的<b>把握程度</b>，0–1，越高越可信。</div>
+              <div class="c">当前 <b>0.82</b>：较高，近 2 小时已积累 24 条观测。</div>
+            </div>
+            <div class="ex">
+              <div class="k">置信区间 <i>Interval</i></div><div class="v">52–71</div>
+              <div class="d">真实情绪值<b>大概率落在的范围</b>（±1σ）。</div>
+              <div class="c">当前 <b>52–71</b>：真实效价大概率在此区间内，跨度 19 分。</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="readout">
+          <div class="ro hi"><div class="k">效价</div><div class="v">62<small>/100</small></div></div>
+          <div class="ro"><div class="k">唤醒</div><div class="v">41<small>/100</small></div></div>
+          <div class="ro"><div class="k">置信</div><div class="v">0.82</div></div>
+          <div class="ro"><div class="k">置信区间</div><div class="v">52–71</div></div>
+          <div class="sp"></div>
+          <div class="rec"><div class="count">已采集 24 条</div>
+            <button class="btn-rec"><span class="dot"></span>暂停</button></div>
+        </div>
+        <div class="curvewrap">
+          <div class="curvehead"><div class="t">情绪曲线 · 模型估计</div><div class="sp"></div>
+            <div class="legend">
+              <span><i class="sw" style="border-color:#BE5E38"></i>模型</span>
+              <span><i class="sw band"></i>±1σ</span>
+              <span><i class="sw dash" style="border-color:#948A79"></i>基线</span>
+              <span><i class="sw raw"></i>原始</span>
+            </div>
+          </div>
+          <div class="curvesvg">
+            <svg viewBox="0 0 1000 268" preserveAspectRatio="none">
+              <line x1="56" y1="18"  x2="982" y2="18"  stroke="#E6DED0" stroke-width="1"/>
+              <line x1="56" y1="138" x2="982" y2="138" stroke="#E6DED0" stroke-width="1"/>
+              <line x1="56" y1="258" x2="982" y2="258" stroke="#E6DED0" stroke-width="1"/>
+              <line x1="50" y1="18"  x2="56" y2="18"  stroke="#948A79" stroke-width="1"/>
+              <line x1="50" y1="138" x2="56" y2="138" stroke="#948A79" stroke-width="1"/>
+              <line x1="50" y1="258" x2="56" y2="258" stroke="#948A79" stroke-width="1"/>
+              <line x1="56" y1="130" x2="982" y2="130" stroke="#948A79" stroke-width="1" stroke-dasharray="5 5"/>
+              <path d="M56 137 C100 130,150 106,190 106 C240 106,280 126,324 123 C370 120,410 86,458 89
+                       C505 92,545 66,592 68 C640 70,680 102,726 99 C775 96,815 134,860 130
+                       C900 127,940 90,980 89 L980 133 C940 134,900 171,860 174 C815 178,775 140,726 143
+                       C680 146,640 114,592 112 C545 110,505 136,458 133 C410 130,370 164,324 167
+                       C280 170,240 150,190 150 C150 150,100 174,56 181 Z" fill="rgba(190,94,56,.10)"/>
+              <g fill="#B8AE9C">
+                <circle cx="120" cy="150" r="2.6"/><circle cx="168" cy="126" r="2.6"/><circle cx="232" cy="138" r="2.6"/>
+                <circle cx="286" cy="118" r="2.6"/><circle cx="352" cy="132" r="2.6"/><circle cx="404" cy="98"  r="2.6"/>
+                <circle cx="470" cy="118" r="2.6"/><circle cx="524" cy="80"  r="2.6"/><circle cx="568" cy="96"  r="2.6"/>
+                <circle cx="628" cy="76"  r="2.6"/><circle cx="676" cy="108" r="2.6"/><circle cx="712" cy="132" r="2.6"/>
+                <circle cx="778" cy="128" r="2.6"/><circle cx="828" cy="158" r="2.6"/><circle cx="884" cy="146" r="2.6"/>
+                <circle cx="944" cy="118" r="2.6"/>
+              </g>
+              <path d="M56 159 C100 152,150 128,190 128 C240 128,280 148,324 145 C370 142,410 108,458 111
+                       C505 114,545 88,592 90 C640 92,680 124,726 121 C775 118,815 156,860 152
+                       C900 149,940 112,980 111" fill="none" stroke="#BE5E38" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="980" cy="111" r="5.5" fill="#BE5E38"/>
+              <g font-family="'Bahnschrift','Segoe UI',sans-serif" font-size="10" fill="#746A5A">
+                <text x="0" y="22">100</text><text x="0" y="142">50</text><text x="10" y="262">0</text>
+                <text x="44" y="276">09:00</text><text x="275" y="276">11:00</text>
+                <text x="506" y="276">13:00</text><text x="737" y="276">15:00</text><text x="949" y="276">17:00</text>
+              </g>
+            </svg>
+          </div>
+        </div>
+        <div class="inputbar">
+          <div class="slider"><div class="lb">效价</div><input type="range" min="0" max="100" value="62"></div>
+          <div class="slider"><div class="lb">唤醒</div><input type="range" min="0" max="100" value="41"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scrim"></div>
+    <div class="drawer">
+      <div class="dhead">
+        <div class="t">抽屉</div><div class="sp"></div>
+        <div class="icon-btn"><svg width="11" height="11" viewBox="0 0 11 11"><path d="M1 1l9 9M10 1l-9 9" stroke="#574E40" stroke-width="1.3"/></svg></div>
+      </div>
+      <div class="dbody">
+        <div class="dsec">
+          <h4>基线主权</h4>
+          <div style="font-size:12px;color:#574E40;line-height:1.6">基线是「你正常状态下的情绪位置」，所有曲线相对它偏离多少就是「今天不一样」的量。</div>
+          <div class="baseline-tools">
+            <div class="stepper-row">
+              <span class="lb">步进</span>
+              <span class="delta">±0.02</span>
+              <div class="stepper">
+                <button title="微调 −0.02" aria-label="基线减 0.02">
+                  <svg width="11" height="11" viewBox="0 0 11 11"><path d="M2 5.5h7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="square"/></svg>
+                </button>
+                <span class="v">0.54<small>/100</small></span>
+                <button title="微调 +0.02" aria-label="基线加 0.02">
+                  <svg width="11" height="11" viewBox="0 0 11 11"><path d="M2 5.5h7M5.5 2v7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="square"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="stepper-row">
+              <button class="tool" title="从此刻起作为新的基线起点">
+                <svg width="12" height="12" viewBox="0 0 12 12">
+                  <path d="M6 1L11 6 6 11 1 6z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="miter"/>
+                  <path d="M3.5 6h5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="square"/>
+                </svg>
+                <span class="tx"><b>分叉（新起点）</b><i>从此处起算</i></span>
+              </button>
+            </div>
+            <div class="stepper-row">
+              <button class="tool danger" title="重置基线为系统默认 0.50">
+                <svg width="12" height="12" viewBox="0 0 12 12">
+                  <path d="M2.5 6a3.5 3.5 0 1 0 1.05-2.49" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="square"/>
+                  <path d="M3.5 1.5v2.5h2.5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
+                </svg>
+                <span class="tx"><b>重置</b><i>回到 0.50</i></span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="dsec">
+          <h4>个人模型</h4>
+          <div style="font-size:12px;color:#574E40;line-height:1.6">模型已学习 4 次，贴合度逐步提升。</div>
+          <div class="row"><span style="font-size:11.5px;color:#574E40">贴合度</span><div class="bar"><i style="width:68%"></i></div><span class="num">0.68</span></div>
+          <div class="row"><button class="mini" style="margin-left:auto">学习一步</button></div>
+        </div>
+        <div class="dsec">
+          <h4>事件回顾</h4>
+          <div class="dlist">
+            <div class="li"><span class="tm">10:12</span><span>晨会</span><span class="vv" style="color:#A95230">52</span></div>
+            <div class="li"><span class="tm">13:40</span><span>午休后</span><span class="vv" style="color:#A95230">71</span></div>
+            <div class="li"><span class="tm">16:05</span><span>散步</span><span class="vv" style="color:#A95230">64</span></div>
+          </div>
+        </div>
+        <div class="dsec">
+          <h4>历史记录</h4>
+          <div class="dlist">
+            <div class="li"><span class="tm">09-14</span><span>日均</span><span class="vv">58</span></div>
+            <div class="li"><span class="tm">09-13</span><span>日均</span><span class="vv">47</span></div>
+            <div class="li"><span class="tm">09-12</span><span>日均</span><span class="vv">63</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 稿 3：纠正上滑框 ============ -->
+  <div class="cap">03 · 纠正上滑框（点「情绪有误，点这里纠正」后从底部滑出）</div>
+  <div class="win">
+    <div class="topbar">
+      <div class="brand"><b>Emowave</b><span>个人情绪状态引擎</span></div>
+      <div class="sp"></div>
+      <div class="date">9月15日 周二</div>
+      <div class="icon-btn"><svg width="13" height="13" viewBox="0 0 13 13"><path d="M6.5 1v7M3.6 5.4L6.5 8.3l2.9-2.9M1.5 11h10" stroke="#574E40" stroke-width="1.3" fill="none"/></svg></div>
+      <div class="icon-btn"><svg width="13" height="13" viewBox="0 0 13 13"><rect x="1.5" y="1.5" width="10" height="10" fill="none" stroke="#574E40" stroke-width="1.3"/><rect x="5" y="5" width="3" height="3" fill="#574E40"/></svg></div>
+    </div>
+    <div class="body">
+      <div class="rail">
+        <button title="状态"><svg width="15" height="15" viewBox="0 0 15 15"><circle cx="7.5" cy="7.5" r="6" fill="#574E40"/></svg></button>
+        <button class="on" title="曲线"><svg width="15" height="15" viewBox="0 0 15 15"><path d="M7.5 1.5L14 13.5H1z" fill="#574E40"/></svg></button>
+        <button title="历史"><svg width="15" height="15" viewBox="0 0 15 15"><rect x="1.5" y="1.5" width="12" height="12" fill="#574E40"/></svg></button>
+        <button title="抽屉"><svg width="15" height="15" viewBox="0 0 15 15"><path d="M1.5 7.5a6 6 0 0112 0z" fill="#574E40"/></svg></button>
+        <div class="gap"></div><div class="ver">V2.0</div>
+      </div>
+      <div class="main">
+        <div class="status collapsed">
+          <div class="status-hd">
+            <div class="t">当前情绪状况（<em>平静 · 偏积极</em>）</div>
+            <button class="corr"><i></i>情绪有误，点这里纠正</button>
+            <button class="tog">参数说明 <span class="ar">▾</span></button>
+            <div class="sp" style="flex:1"></div>
+          </div>
+          <div class="explain">
+            <div class="ex"><div class="k">效价</div><div class="v">62</div><div class="d">—</div><div class="c">—</div></div>
+            <div class="ex"><div class="k">唤醒</div><div class="v">41</div><div class="d">—</div><div class="c">—</div></div>
+            <div class="ex"><div class="k">置信</div><div class="v">0.82</div><div class="d">—</div><div class="c">—</div></div>
+            <div class="ex"><div class="k">置信区间</div><div class="v">52–71</div><div class="d">—</div><div class="c">—</div></div>
+          </div>
+        </div>
+        <div class="readout">
+          <div class="ro hi"><div class="k">效价</div><div class="v">62<small>/100</small></div></div>
+          <div class="ro"><div class="k">唤醒</div><div class="v">41<small>/100</small></div></div>
+          <div class="ro"><div class="k">置信</div><div class="v">0.82</div></div>
+          <div class="ro"><div class="k">置信区间</div><div class="v">52–71</div></div>
+          <div class="sp"></div>
+          <div class="rec"><div class="count">已采集 24 条</div>
+            <button class="btn-rec"><span class="dot"></span>暂停</button></div>
+        </div>
+        <div class="curvewrap">
+          <div class="curvehead"><div class="t">情绪曲线 · 模型估计</div><div class="sp"></div>
+            <div class="legend">
+              <span><i class="sw" style="border-color:#BE5E38"></i>模型</span>
+              <span><i class="sw band"></i>±1σ</span>
+              <span><i class="sw dash" style="border-color:#948A79"></i>基线</span>
+              <span><i class="sw raw"></i>原始</span>
+            </div>
+          </div>
+          <div class="curvesvg">
+            <svg viewBox="0 0 1000 268" preserveAspectRatio="none">
+              <line x1="56" y1="18"  x2="982" y2="18"  stroke="#E6DED0" stroke-width="1"/>
+              <line x1="56" y1="138" x2="982" y2="138" stroke="#E6DED0" stroke-width="1"/>
+              <line x1="56" y1="258" x2="982" y2="258" stroke="#E6DED0" stroke-width="1"/>
+              <line x1="50" y1="18"  x2="56" y2="18"  stroke="#948A79" stroke-width="1"/>
+              <line x1="50" y1="138" x2="56" y2="138" stroke="#948A79" stroke-width="1"/>
+              <line x1="50" y1="258" x2="56" y2="258" stroke="#948A79" stroke-width="1"/>
+              <line x1="56" y1="130" x2="982" y2="130" stroke="#948A79" stroke-width="1" stroke-dasharray="5 5"/>
+              <path d="M56 137 C100 130,150 106,190 106 C240 106,280 126,324 123 C370 120,410 86,458 89
+                       C505 92,545 66,592 68 C640 70,680 102,726 99 C775 96,815 134,860 130
+                       C900 127,940 90,980 89 L980 133 C940 134,900 171,860 174 C815 178,775 140,726 143
+                       C680 146,640 114,592 112 C545 110,505 136,458 133 C410 130,370 164,324 167
+                       C280 170,240 150,190 150 C150 150,100 174,56 181 Z" fill="rgba(190,94,56,.10)"/>
+              <path d="M56 159 C100 152,150 128,190 128 C240 128,280 148,324 145 C370 142,410 108,458 111
+                       C505 114,545 88,592 90 C640 92,680 124,726 121 C775 118,815 156,860 152
+                       C900 149,940 112,980 111" fill="none" stroke="#BE5E38" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="980" cy="111" r="5.5" fill="#BE5E38"/>
+              <g font-family="'Bahnschrift','Segoe UI',sans-serif" font-size="10" fill="#746A5A">
+                <text x="0" y="22">100</text><text x="0" y="142">50</text><text x="10" y="262">0</text>
+                <text x="44" y="276">09:00</text><text x="275" y="276">11:00</text>
+                <text x="506" y="276">13:00</text><text x="737" y="276">15:00</text><text x="949" y="276">17:00</text>
+              </g>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 上滑框 -->
+    <div class="scrim-up"></div>
+    <div class="sheet">
+      <div class="sheet-hd">
+        <div class="t">纠正</div>
+        <div class="hint">拖动曲线上的点调整；或选中某点后在右侧直接输入</div>
+        <div class="sp"></div>
+        <div class="icon-btn"><svg width="11" height="11" viewBox="0 0 11 11"><path d="M1 1l9 9M10 1l-9 9" stroke="#574E40" stroke-width="1.3"/></svg></div>
+      </div>
+
+      <div class="sheet-bd">
+        <div class="charts">
+          <!-- 效价 -->
+          <div class="chart">
+            <div class="lb">效价</div>
+            <svg viewBox="0 0 700 120" preserveAspectRatio="none">
+              <line x1="40" y1="14"  x2="690" y2="14"  stroke="#E6DED0" stroke-width="1"/>
+              <line x1="40" y1="57"  x2="690" y2="57"  stroke="#E6DED0" stroke-width="1"/>
+              <line x1="40" y1="100" x2="690" y2="100" stroke="#E6DED0" stroke-width="1"/>
+              <line x1="40" y1="54"  x2="690" y2="54"  stroke="#948A79" stroke-width="1" stroke-dasharray="5 5"/>
+              <!-- 拖动中的竖直辅助线 -->
+              <line x1="400" y1="14" x2="400" y2="100" stroke="#BE5E38" stroke-width="1" stroke-dasharray="3 3"/>
+              <path d="M40 64 C90 62,150 56,202 59 C260 62,310 40,365 39 C420 38,470 58,527 61
+                       C585 64,640 48,690 47" fill="none" stroke="#BE5E38" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+              <!-- 可拖动手柄 -->
+              <g fill="#FCFAF6" stroke="#BE5E38" stroke-width="1.6">
+                <circle cx="40"  cy="64" r="3.4"/><circle cx="202" cy="59" r="3.4"/>
+                <circle cx="527" cy="61" r="3.4"/><circle cx="690" cy="47" r="3.4"/>
+              </g>
+              <!-- 原位置（空心，显示改动量） -->
+              <circle cx="400" cy="44" r="3" fill="none" stroke="#948A79" stroke-width="1.2" stroke-dasharray="2 2"/>
+              <!-- 当前拖到位置 -->
+              <circle cx="400" cy="40" r="6.5" fill="#BE5E38"/>
+            </svg>
+            <div class="tip" style="left:57%;top:10%">效价 <b>71</b> 唤醒 <b>69</b></div>
+          </div>
+          <!-- 唤醒 -->
+          <div class="chart">
+            <div class="lb">唤醒</div>
+            <svg viewBox="0 0 700 100" preserveAspectRatio="none">
+              <line x1="40" y1="14" x2="690" y2="14" stroke="#E6DED0" stroke-width="1"/>
+              <line x1="40" y1="49" x2="690" y2="49" stroke="#E6DED0" stroke-width="1"/>
+              <line x1="40" y1="84" x2="690" y2="84" stroke="#E6DED0" stroke-width="1"/>
+              <line x1="400" y1="14" x2="400" y2="84" stroke="#BE5E38" stroke-width="1" stroke-dasharray="3 3"/>
+              <path d="M40 60 C90 56,150 48,202 46 C260 44,310 34,365 35 C420 36,470 48,527 50
+                       C585 52,640 55,690 55" fill="none" stroke="#8C7B62" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+              <g fill="#FCFAF6" stroke="#8C7B62" stroke-width="1.6">
+                <circle cx="40"  cy="60" r="3.4"/><circle cx="202" cy="46" r="3.4"/>
+                <circle cx="527" cy="50" r="3.4"/><circle cx="690" cy="55" r="3.4"/>
+              </g>
+              <circle cx="400" cy="34" r="3" fill="none" stroke="#948A79" stroke-width="1.2" stroke-dasharray="2 2"/>
+              <circle cx="400" cy="36" r="6.5" fill="#8C7B62"/>
+            </svg>
+          </div>
+        </div>
+
+        <!-- 手动输入 -->
+        <div class="panel">
+          <h4>选中的点</h4>
+          <div class="tm">13:40</div>
+          <div class="fld">
+            <label>效价</label>
+            <div class="inp"><input type="text" value="71"><span class="u">/100</span></div>
+            <div class="orig">原值 68</div>
+          </div>
+          <div class="fld">
+            <label>唤醒</label>
+            <div class="inp"><input type="text" value="69"><span class="u">/100</span></div>
+            <div class="orig">原值 72</div>
+          </div>
+          <div class="sp"></div>
+        </div>
+      </div>
+
+      <div class="sheet-ft">
+        <div class="n">已提交 3 条纠正 · 查看</div>
+        <div class="sp"></div>
+        <button class="btn-ghost">取消</button>
+        <button class="btn-main">提交纠正</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 规范 ============ -->
+  <div class="cap">04 · 色板（单一暖色相 + 暖中性）</div>
+  <div class="grid">
+    <div class="sw2"><div class="c" style="background:#F2ECE1"></div><div class="m"><b>Paper</b><i>#F2ECE1 · 底</i></div></div>
+    <div class="sw2"><div class="c" style="background:#E9E1D3"></div><div class="m"><b>Paper 2</b><i>#E9E1D3 · 次级块面</i></div></div>
+    <div class="sw2"><div class="c" style="background:#FCFAF6"></div><div class="m"><b>Surface</b><i>#FCFAF6 · 曲线纸面</i></div></div>
+    <div class="sw2"><div class="c" style="background:#2B251C"></div><div class="m"><b>Ink</b><i>#2B251C · 14.6:1</i></div></div>
+    <div class="sw2"><div class="c" style="background:#574E40"></div><div class="m"><b>Ink 2</b><i>#574E40 · 7.8:1</i></div></div>
+    <div class="sw2"><div class="c" style="background:#746A5A"></div><div class="m"><b>Muted</b><i>#746A5A · 5.1:1</i></div></div>
+    <div class="sw2"><div class="c" style="background:#948A79"></div><div class="m"><b>Tick</b><i>#948A79 · 3.3:1 刻度/基线</i></div></div>
+    <div class="sw2"><div class="c" style="background:#DFD6C6"></div><div class="m"><b>Rule</b><i>#DFD6C6 · 发丝边</i></div></div>
+    <div class="sw2"><div class="c" style="background:#BE5E38"></div><div class="m"><b>Accent</b><i>#BE5E38 · 图形/大数字</i></div></div>
+    <div class="sw2"><div class="c" style="background:#A95230"></div><div class="m"><b>Accent Ink</b><i>#A95230 · 5.1:1 小字</i></div></div>
+    <div class="sw2"><div class="c" style="background:#8C3A1E"></div><div class="m"><b>Danger</b><i>#8C3A1E · 7.4:1 重置</i></div></div>
+    <div class="sw2"><div class="c" style="background:#F1E0D5"></div><div class="m"><b>Accent Soft</b><i>#F1E0D5 · 浅底</i></div></div>
+  </div>
+  <div class="note">
+    <b>关键决定：全画面只有一个色相（陶土赭红）。</b>模型线、当前点、记录按钮、进度条全部同一色，只靠<b>明度和面积</b>区分层级。
+    置信带用 accent 的 10% 透明，刻度/基线用同族暖灰——不引入第二个色相。
+    同时避开红=告警的语义问题：陶土色是暖橙红，读起来是"体温"而不是"危险"。
+    <br><br>
+    <b>⚠️ 本轮修掉的两个真实无障碍缺陷（已实测，非估计）：</b>
+    <table style="margin-top:8px">
+      <tr><th>问题</th><th>实测</th><th>处理</th></tr>
+      <tr><td>极小标签用 <span class="mono">#9E9384</span>（9.5px）</td><td class="mono">2.89:1 ❌ 远低于 AA 4.5</td><td>拆成 muted <span class="mono">#746A5A</span>(5.1) 文字 / tick <span class="mono">#948A79</span>(3.3) 线条</td></tr>
+      <tr><td>11px 正文用 accent <span class="mono">#BE5E38</span></td><td class="mono">4.16:1 ❌ 差一点</td><td>新增 accent-ink <span class="mono">#A95230</span>(5.1) 专供小字；#BE5E38 只用于图形与大号数字（3:1 达标）</td></tr>
+      <tr><td>「重置」用纯红 <span class="mono">#B4231F</span></td><td>破坏单一色相</td><td>改同色相加深 <span class="mono">#8C3A1E</span></td></tr>
+    </table>
+  </div>
+
+  <div class="cap">05 · 字阶与结构</div>
+  <div class="two">
+    <table>
+      <tr><th>用途</th><th>规格</th></tr>
+      <tr><td>大读数（效价/唤醒）</td><td class="mono">Bahnschrift 27px / 600 / tabular</td></tr>
+      <tr><td>次读数（置信/区间）</td><td class="mono">Bahnschrift 27px / 600</td></tr>
+      <tr><td>分区标题</td><td class="mono">10px / 600 / 大写 / 字距 .20em</td></tr>
+      <tr><td>极小标签</td><td class="mono">9.5px / 600 / 大写 / 字距 .16em</td></tr>
+      <tr><td>正文/次要</td><td class="mono">11–12.5px / 400</td></tr>
+      <tr><td>等宽数值（历史时间）</td><td class="mono">Cascadia Code 10.5px</td></tr>
+    </table>
+    <table>
+      <tr><th>结构</th><th>取值</th></tr>
+      <tr><td>圆角</td><td class="mono">0（全站硬边）</td></tr>
+      <tr><td>外框线</td><td class="mono">1px #DFD6C6，仅用于分层</td></tr>
+      <tr><td>网格线</td><td class="mono">3 条 #E6DED0，无竖网格</td></tr>
+      <tr><td>刻度</td><td class="mono">6px 短线，仅 100/50/0 三档</td></tr>
+      <tr><td>图标列宽</td><td class="mono">56px（纯几何形：圆/三角/方/半圆）</td></tr>
+      <tr><td>抽屉宽</td><td class="mono">380px，右侧滑出 + 遮罩</td></tr>
+      <tr><td>间距节奏</td><td class="mono">8 / 12 / 16 / 22 / 34</td></tr>
+    </table>
+  </div>
+
+  <div class="cap">06 · 交互状态与动效</div>
+  <div class="two">
+    <table>
+      <tr><th>状态</th><th>处理</th></tr>
+      <tr><td>Hover</td><td class="mono">描边→accent + 浅底 + 文字转 accent-ink</td></tr>
+      <tr><td>Focus</td><td class="mono">:focus-visible 2px accent-ink 环，offset 2px（鼠标不显示）</td></tr>
+      <tr><td>Active</td><td class="mono">translateY(1px) 下沉；滑块 thumb scale(1.3)</td></tr>
+      <tr><td>Disabled</td><td class="mono">opacity .42 + pointer-events:none</td></tr>
+      <tr><td>Loading / Error / Success</td><td class="mono">提交纠正后 toast 确认（待实现）</td></tr>
+    </table>
+    <table>
+      <tr><th>动效</th><th>规格</th></tr>
+      <tr><td>缓动</td><td class="mono">cubic-bezier(.165,.84,.44,1) ease-out-quart</td></tr>
+      <tr><td>时长</td><td class="mono">130ms / 220ms / 320ms 三档</td></tr>
+      <tr><td>只动</td><td class="mono">transform / opacity（不触发布局，60fps）</td></tr>
+      <tr><td>抽屉</td><td class="mono">translateX(100%→0) 320ms</td></tr>
+      <tr><td>上滑框</td><td class="mono">translateY(100%→0) 320ms</td></tr>
+      <tr><td>减弱动效</td><td class="mono">prefers-reduced-motion 全局降到 .01ms</td></tr>
+    </table>
+  </div>
+  <div class="note">
+    <b>本轮补的交互缺口：</b>① 之前全站<b>没有任何 focus 态</b>——键盘用户完全看不见焦点在哪，现在统一 2px 环且只在键盘操作时出现；
+    ② 补了 <b>active 按下反馈</b>（原来只有 hover，点了没反应）；
+    ③ 图标列从 <span class="mono">&lt;i&gt;</span> 改成语义化 <span class="mono">&lt;button&gt;</span>，可 Tab 聚焦（原来键盘根本到不了）；
+    ④ 参数说明从 <span class="mono">display:none</span> 硬切改成 max-height 过渡；
+    ⑤ z-index 从散落的 4/5/7/8 收敛成语义化变量；
+    ⑥ 输入台数值改为 <b>hover/focus 时才淡入</b>，平时不占视觉重量。
+  </div>
+
+  <div class="cap">07 · 「当前情绪状况」的命名规则 · 纠正交互</div>
+  <div class="note">
+    括号内的一句话状态由<b>效价 × 唤醒</b>两个维度落在哪个象限决定，不是主观文案：
+    <table style="margin-top:10px">
+      <tr><th>象限</th><th>条件</th><th>状态命名</th></tr>
+      <tr><td>高效价 · 高唤醒</td><td class="mono">V≥50 且 A≥50</td><td>兴奋 · 活跃</td></tr>
+      <tr><td>高效价 · 低唤醒</td><td class="mono">V≥50 且 A&lt;50</td><td><b>平静 · 偏积极</b>（当前）</td></tr>
+      <tr><td>低效价 · 高唤醒</td><td class="mono">V&lt;50 且 A≥50</td><td>紧张 · 焦虑</td></tr>
+      <tr><td>低效价 · 低唤醒</td><td class="mono">V&lt;50 且 A&lt;50</td><td>低落 · 疲惫</td></tr>
+      <tr><td>接近中性</td><td class="mono">V 与 A 均在 45–55</td><td>平稳</td></tr>
+    </table>
+    <span style="display:block;margin-top:8px">注：文案刻意<b>不作诊断、不作评价</b>（不用"好/坏"），只描述状态——情绪类界面避免评判性措辞。</span>
+  </div>
+
+  <div class="note" style="margin-top:18px">
+    <b>纠正交互（已按你的要求改）：</b><br>
+    1. 次要区的<b>纠正滑块已删除</b>，主界面不再有纠正控件。<br>
+    2. 入口上移到「当前情绪状况（…）」右侧的一句话：<b>· 情绪有误，点这里纠正</b>（小圆点 + 发丝框，无下划线）。<br>
+    3. 点击后<b>上滑框</b>从底部升起（高 356px，遮罩压暗上方），内含两条独立的曲线：<b>效价</b>与<b>唤醒</b>（共用时间轴，上下 small multiples）。<br>
+    4. <b>拖动</b>曲线上的任一点：光标跟随气泡<b>实时显示效价与唤醒</b>两个数值；一条虚线竖直辅助线贯穿两条曲线，保证改的是同一时刻；原位置留一个空心小圈，直观看到改动量。<br>
+    5. <b>手动输入</b>：右侧面板显示「选中的点 · 13:40」，两个输入框直接填效价/唤醒，下方标注原值对照。<br>
+    6. 底部：已提交 N 条纠正 · 查看 / 取消 / 提交纠正。<br>
+    <span style="display:block;margin-top:8px">
+    7. <b>次要区整块已删除</b>——基线主权（微调±/分叉/重置）从主界面拿掉，<b>搬进抽屉作为首项</b>。理由：日常调基线是极低频操作（也许一个月才一两次），不该常驻主界面。
+    </span>
+    <span style="display:block;margin-top:8px">
+    8. <b>底部输入台只保留滑块</b>，右侧的 "62 / 41" 重复数字砍掉——顶部读数条已经显示了一次，输入区不再重复。
+    </span>
+    <span style="display:block;margin-top:8px">
+    ⚠️ <b>顺带暴露的一个实现缺口</b>：现有 <span style="font-family:var(--mono);font-size:11px">EmotionCurveWidget</span> 虽然数据里有
+    <span style="font-family:var(--mono);font-size:11px">model_v</span> 和 <span style="font-family:var(--mono);font-size:11px">model_a</span>（效价/唤醒），
+    但 <b>只画了效价，唤醒从来没被可视化过</b>。上滑框把唤醒单独画一条，正好补上。
+    </span>
+  </div>
+
+  <div class="cap">08 · 需要你确认/微调的点</div>
+  <div class="note">
+    1. <b>基线主权放进抽屉</b>，是否合适？或者你想把它放在「当前情绪状况」的下拉说明里（同位置就近）。<br>
+    2. <b>「参数说明」默认展开还是收起？</b>目前稿 01 展开、稿 02/03 收起。<br>
+    3. <b>「置信」与「置信区间」信息有重叠</b>，是否合并成一个（只留区间）。<br>
+    4. <b>图标列的四个几何形</b>（圆=状态 / 三角=曲线 / 方=历史 / 半圆=抽屉）语义是否合直觉？<br>
+    5. <b>陶土色 #BE5E38 的深浅</b>——要更暗更沉，还是更亮更暖？<br>
+    6. 上滑框的高度：是否需要再压一压（去掉留白）？
+  </div>
+
+</div>
+
+<script>
+document.querySelectorAll('.status-hd .tog').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var st = btn.closest('.status');
+    st.classList.toggle('collapsed');
+    btn.classList.toggle('open');
+  });
+});
+</script>
+</body>
+</html>
