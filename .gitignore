@@ -12,3 +12,13 @@ benchmark_results/
 evaluation_report/
 profiling_output/
 test_data/
+
+# 编辑器 / 本地工具配置
+.idea/
+.vscode/
+.qoder/
+
+# 本地备份（改稿过程中的中间态，保留在本地但不进版本库）
+*.bak
+*.bak.html
+*.bak2.html

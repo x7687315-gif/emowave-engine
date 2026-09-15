@@ -1,265 +1,273 @@
 #!/usr/bin/env python3
-"""心潮 EmoWave 桌面应用入口（2.0 单页控制台）
+"""心潮 EmoWave 桌面应用入口（v3 · 重做界面）
 
-所有内容集中在一个界面（ConsoleWindow）：实时状态 / 情绪曲线 / 实时调节 /
-基线主权 / 个人模型 / 纠正 / 事件回顾 / 历史记录，自上而下单页呈现。
-侧边栏为锚点导航（点击滚动到分区），可折叠为日式竖排二字。
+=== 与 v2 的差异 ===
+1. 外壳极简：56px 图标列 + 一行页头，**删除菜单栏**
+2. 主界面换为 windows/main_console.MainConsole（4 区块：状态 / 读数 / 曲线 / 输入）
+3. 全局一次注入 theme.build_app_qss()（修 QSS 不继承 font/color 的老问题）
+4. HighDPI 在 QApplication 创建**之前**打开（否则 Qt 忽略）
 
-后续由用户决定哪些分区放入隐藏式、哪些保留主界面。
+=== 为什么图标手绘而不用 SVG ===
+QtSvg 不一定随 PyQt5 wheels 装好；构成主义硬边图形用 QPainter 直接描线更稳，
+也更贴合"直角 / 无圆角 / 几何"的语言。
 """
 import sys
 import os
+import json
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget,
-    QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame,
-    QFileDialog, QMessageBox, QSizePolicy,
-)
+# ---- HighDPI：必须在 QApplication 创建前设置 ----
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+Qt.AA_EnableHighDpiScaling = True
+Qt.AA_UseHighDpiPixmaps = True
 
-from db import DatabaseManager
-from session import SessionController
-from widgets import COLORS, app_font
-from windows.console_window import ConsoleWindow
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QToolButton, QLabel, QFrame, QFileDialog, QMessageBox, QSizePolicy,
+)
+from PyQt5.QtGui import QPainter, QPen, QColor, QFont
 
-SIDEBAR_W = 150
-SIDEBAR_W_COLLAPSED = 54
+from theme import (
+    COLORS, METRICS, app_font, app_font_num, build_app_qss,
+)
+from windows.main_console import MainConsole
 
-STYLE_SHEET = f"""
-QMainWindow {{ background-color: {COLORS['bg']}; }}
-QToolTip {{
-    background-color: {COLORS['surface']}; color: {COLORS['ink']};
-    border: 1px solid {COLORS['rule']}; padding: 4px;
-}}
-"""
-
-# (完整名, 收起态竖排二字, 锚点 key) — 7 项（≤7 导航 guideline），顺序同页面布局
-NAV_ITEMS = [
-    ("实时状态", "状态", "state"),
-    ("情绪曲线", "曲线", "curve"),
-    ("实时调节", "调节", "adjust"),
-    ("纠正", "纠正", "correction"),
-    ("基线主权", "基线", "baseline"),
-    ("个人模型", "学习", "model"),
-    ("回顾与历史", "回顾", "legacy"),
-]
+try:
+    from db import DatabaseManager
+except Exception:                                    # 无 DB 也能启动
+    DatabaseManager = None
 
 
+# ================================================================
+# 手绘图标按钮（构成主义：直角、几何、无圆角）
+# ================================================================
+class IconButton(QToolButton):
+    """56px 图标列 / 页头用的几何描线图标按钮。
+
+    图标用 QPainter 在 16×16 逻辑框里画（坐标 2..14），不依赖字体字形覆盖。
+    """
+
+    #: kind -> 折线组（16×16 坐标系）
+    _PATHS = {
+        # 情绪曲线：一条折线（构成主义斜线）
+        'curve': [((2, 11), (5, 5), (8, 9), (11, 3), (14, 7))],
+        # 抽屉：三条不等长线 + 右侧竖框
+        'drawer': [((2, 4), (9, 4)), ((2, 8), (9, 8)), ((2, 12), (6, 12)),
+                   ((11, 3), (14, 3), (14, 13), (11, 13), (11, 3))],
+        # 导出：下箭头 + 底线
+        'export': [((8, 2), (8, 9)), ((5, 6), (8, 9), (11, 6)), ((3, 12), (13, 12))],
+        # 设置：两条滑杆（杆 + 游标方块）
+        'settings': [((2, 6), (14, 6)), ((2, 10), (14, 10))],
+    }
+    _KNOBS = {'settings': ((6, 6), (10, 10))}        # 游标方块中心
+
+    def __init__(self, kind: str, tooltip: str = "", size: int = 34, parent=None):
+        super().__init__(parent)
+        self.kind = kind
+        self._size = size
+        self.setToolTip(tooltip)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setCheckable(False)
+        self.setFixedSize(size, size)
+        self.setStyleSheet("QToolButton { background: transparent; border: none; }")
+
+    # ---- 绘制 ----
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        hovered = self.underMouse()
+        color = QColor(COLORS['accent'] if hovered else COLORS['ink_2'])
+        if not self.isEnabled():
+            color = QColor(COLORS['muted'])
+        pen = QPen(color, 1.6)
+        pen.setCapStyle(Qt.SquareCap)
+        pen.setJoinStyle(Qt.MiterJoin)
+        p.setPen(pen)
+
+        s = 16.0
+        ox = (self.width() - s) / 2.0
+        oy = (self.height() - s) / 2.0
+        for poly in self._PATHS.get(self.kind, []):
+            pts = [(ox + x, oy + y) for (x, y) in poly]
+            for i in range(len(pts) - 1):
+                p.drawLine(*(pts[i] + pts[i + 1]))
+        for (kx, ky) in self._KNOBS.get(self.kind, ()):
+            # 游标：实心方块（直角，非圆点）
+            p.fillRect(int(ox + kx - 1.3), int(oy + ky - 2.6), 3, 5, color)
+        p.end()
+
+
+def _vline():
+    ln = QFrame()
+    ln.setFrameShape(QFrame.VLine)
+    ln.setFixedWidth(1)
+    ln.setStyleSheet(f"background: {COLORS['rule']}; border: none;")
+    return ln
+
+
+# ================================================================
+# 主窗口
+# ================================================================
 class MainWindow(QMainWindow):
-    """主窗口：可折叠锚点侧栏 + 单页控制台 + 菜单栏"""
+    """外壳：图标列 + 极简页头 + 主控制台。"""
 
     def __init__(self, db=None):
         super().__init__()
         self.setWindowTitle("心潮 EmoWave · 个人情绪状态引擎")
-        self.setMinimumSize(880, 620)
-        self.resize(1020, 720)
-        self.setStyleSheet(STYLE_SHEET)
-        self.sidebar_collapsed = False
+        self.setMinimumSize(900, 640)
+        self.resize(1180, 780)
 
-        if db is None:
-            db = DatabaseManager()
+        if db is None and DatabaseManager is not None:
+            try:
+                db = DatabaseManager()
+            except Exception:
+                # L2 优雅降级：本地库打不开不该阻止主界面启动。
+                # 仅影响「导出数据」一个动作，该动作会提示未连接数据库。
+                db = None
         self.db = db
-        self.session = SessionController(db)
 
         central = QWidget()
         self.setCentralWidget(central)
-        main_layout = QHBoxLayout(central)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        self.sidebar = self._build_sidebar()
-        main_layout.addWidget(self.sidebar)
+        root.addWidget(self._build_rail())
 
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(0)
-        content_layout.addWidget(self._build_header())
-        content_layout.addWidget(self._header_rule())
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        rl.setSpacing(0)
+        rl.addWidget(self._build_header())
+        rule = QFrame()
+        rule.setFixedHeight(1)
+        rule.setStyleSheet(f"background: {COLORS['rule']}; border: none;")
+        rl.addWidget(rule)
 
-        # 单页控制台（全部内容集中于此）
-        self.console = ConsoleWindow(self.session, parent=self)
-        content_layout.addWidget(self.console, stretch=1)
-        main_layout.addWidget(content, stretch=1)
+        # ---- 主界面（自带内核 + 抽屉）----
+        self.console = MainConsole(parent=self)
+        rl.addWidget(self.console, 1)
+        root.addWidget(right, 1)
 
-        self._setup_menu()
-        self._set_active(0)
-
-    # ================================================================
-    # 侧边栏（锚点导航，可折叠）
-    # ================================================================
-
-    def _build_sidebar(self):
-        sidebar = QFrame()
-        sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(SIDEBAR_W)
-        sidebar.setStyleSheet(
-            f"QFrame#Sidebar {{ background-color: {COLORS['bg']};"
+    # ------------------------------------------------------------
+    # 图标列（56px）
+    # ------------------------------------------------------------
+    def _build_rail(self):
+        rail = QFrame()
+        rail.setObjectName("Rail")
+        rail.setFixedWidth(METRICS['rail_w'])
+        rail.setStyleSheet(
+            f"QFrame#Rail {{ background: {COLORS['paper_2']};"
             f" border: none; border-right: 1px solid {COLORS['rule']}; }}"
         )
-        layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(6, 8, 6, 8)
-        layout.setSpacing(2)
+        lay = QVBoxLayout(rail)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
 
-        self.btn_toggle = QPushButton("≡")
-        self.btn_toggle.setCursor(Qt.PointingHandCursor)
-        self.btn_toggle.setFixedSize(38, 30)
-        self.btn_toggle.setStyleSheet(
-            f"QPushButton {{ background: transparent; border: none;"
-            f" color: {COLORS['muted']}; font-size: 15px; border-radius: 6px; }}"
-            f"QPushButton:hover {{ background-color: {COLORS['accent_soft']};"
-            f" color: {COLORS['accent']}; }}"
+        # 字标：竖排「心潮」（构成主义：竖排 + 硬边）
+        mark = QLabel("心\n潮")
+        mark.setFont(app_font(13, QFont.DemiBold))
+        mark.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        mark.setStyleSheet(
+            f"color: {COLORS['ink']}; padding: 14px 0 10px 0;"
+            f" letter-spacing: 2px; background: transparent;"
         )
-        self.btn_toggle.clicked.connect(self.toggle_sidebar)
-        layout.addWidget(self.btn_toggle, 0, Qt.AlignLeft)
-        layout.addSpacing(8)
+        lay.addWidget(mark)
 
-        self.nav_buttons = []
-        for idx, (label, short, key) in enumerate(NAV_ITEMS):
-            btn = QPushButton(label)
-            btn.setCheckable(True)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.clicked.connect(lambda checked, i=idx: self._jump(i))
-            self.nav_buttons.append(btn)
-            layout.addWidget(btn)
+        btn_curve = IconButton('curve', "情绪曲线（主界面）")
+        btn_drawer = IconButton('drawer', "抽屉：基线 / 个人模型 / 回顾与历史")
+        btn_drawer.clicked.connect(self._toggle_drawer)
+        for b in (btn_curve, btn_drawer):
+            lay.addWidget(b, 0, Qt.AlignHCenter)
 
-        layout.addStretch()
-        ver = QLabel("  v2.0")
-        ver.setStyleSheet(f"color: {COLORS['ink_soft']}; font-size: 10px;")
-        layout.addWidget(ver)
+        lay.addStretch(1)
 
-        self._apply_sidebar_style(expanded=True)
-        return sidebar
+        ver = QLabel("v3")
+        ver.setFont(app_font(9))
+        ver.setAlignment(Qt.AlignHCenter)
+        ver.setStyleSheet(f"color: {COLORS['muted']}; padding-bottom: 10px;"
+                          f" background: transparent;")
+        lay.addWidget(ver)
+        return rail
 
-    def _apply_sidebar_style(self, expanded: bool):
-        for (label, short, key), btn in zip(NAV_ITEMS, self.nav_buttons):
-            btn.setText(label if expanded else "\n".join(short))
-            if expanded:
-                btn.setFixedHeight(28)
-                btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-                btn.setStyleSheet(
-                    f"QPushButton {{ text-align: left; padding: 0 10px;"
-                    f" border: none; border-left: 2px solid transparent;"
-                    f" border-radius: 4px; font-size: 11px;"
-                    f" color: {COLORS['ink_soft']}; background: transparent; }}"
-                    f"QPushButton:hover {{ background-color: {COLORS['accent_soft']};"
-                    f" color: {COLORS['ink']}; }}"
-                    f"QPushButton:checked {{ background-color: {COLORS['accent_soft']};"
-                    f" border-left: 2px solid {COLORS['accent']};"
-                    f" color: {COLORS['ink']}; font-weight: 600; }}"
-                )
-            else:
-                btn.setFixedHeight(42)
-                btn.setStyleSheet(
-                    f"QPushButton {{ text-align: center; padding: 2px 0;"
-                    f" border: none; border-radius: 6px; font-size: 11px;"
-                    f" color: {COLORS['ink_soft']}; background: transparent; }}"
-                    f"QPushButton:hover {{ background-color: {COLORS['rule']}; }}"
-                    f"QPushButton:checked {{ background-color: {COLORS['accent_soft']};"
-                    f" color: {COLORS['ink']}; font-weight: 600; }}"
-                )
-
-    def toggle_sidebar(self):
-        self.sidebar_collapsed = not self.sidebar_collapsed
-        expanded = not self.sidebar_collapsed
-        self.sidebar.setFixedWidth(SIDEBAR_W if expanded else SIDEBAR_W_COLLAPSED)
-        self._apply_sidebar_style(expanded=expanded)
-
-    def _jump(self, index):
-        """锚点导航：滚动单页到对应分区并高亮侧栏项。"""
-        self._set_active(index)
-        self.console.scroll_to(NAV_ITEMS[index][2])
-
-    def _set_active(self, index):
-        for i, btn in enumerate(self.nav_buttons):
-            btn.setChecked(i == index)
-        self.page_title.setText(NAV_ITEMS[index][0])
-
-    # ================================================================
-    # 页头
-    # ================================================================
-
+    # ------------------------------------------------------------
+    # 页头（46px，无菜单栏）
+    # ------------------------------------------------------------
     def _build_header(self):
-        header = QWidget()
-        header.setFixedHeight(40)
-        layout = QHBoxLayout(header)
-        layout.setContentsMargins(14, 0, 14, 0)
+        head = QFrame()
+        head.setObjectName("TopBar")
+        head.setFixedHeight(METRICS['topbar_h'])
+        lay = QHBoxLayout(head)
+        lay.setContentsMargins(20, 0, 16, 0)
+        lay.setSpacing(10)
 
-        self.page_title = QLabel("实时状态")
-        self.page_title.setStyleSheet(
-            f"color: {COLORS['ink']}; font-size: 15px; font-weight: 600;"
-        )
-        layout.addWidget(self.page_title)
-        layout.addStretch()
+        title = QLabel("情绪曲线")
+        title.setFont(app_font(13, QFont.DemiBold))
+        title.setStyleSheet(f"color: {COLORS['ink']}; background: transparent;")
+        lay.addWidget(title)
+        lay.addStretch(1)
 
         today = datetime.now()
         weekdays = "一二三四五六日"
-        date_text = today.strftime("%m月%d日") + " 周" + weekdays[today.weekday()]
-        self.header_date = QLabel(date_text)
-        self.header_date.setStyleSheet(f"color: {COLORS['muted']}; font-size: 11px;")
-        layout.addWidget(self.header_date)
-        return header
+        date_label = QLabel(today.strftime("%m月%d日") + " 周" + weekdays[today.weekday()])
+        date_label.setFont(app_font(10))
+        date_label.setStyleSheet(f"color: {COLORS['muted']}; background: transparent;")
+        lay.addWidget(date_label)
 
-    @staticmethod
-    def _header_rule():
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet(f"background-color: {COLORS['rule']}; border: none;")
-        line.setFixedHeight(1)
-        return line
+        lay.addWidget(_vline())
 
-    # ================================================================
-    # 菜单
-    # ================================================================
+        b_export = IconButton('export', "导出数据（JSON）", size=28)
+        b_export.clicked.connect(self._export_data)
+        b_about = IconButton('settings', "关于 / 参数", size=28)
+        b_about.clicked.connect(self._show_about)
+        for b in (b_export, b_about):
+            lay.addWidget(b, 0, Qt.AlignVCenter)
+        return head
 
-    def _setup_menu(self):
-        bar = self.menuBar()
-        file_menu = bar.addMenu("文件(&F)")
-        file_menu.addAction("导出数据", self._export_data)
-        file_menu.addAction("退出", self.close)
-
-        view_menu = bar.addMenu("视图(&V)")
-        view_menu.addAction("折叠侧边栏", self.toggle_sidebar)
-        for i, (label, short, key) in enumerate(NAV_ITEMS):
-            view_menu.addAction(label, lambda i=i: self._jump(i))
-
-        help_menu = bar.addMenu("帮助(&H)")
-        help_menu.addAction("关于", self._show_about)
+    # ------------------------------------------------------------
+    # 行为
+    # ------------------------------------------------------------
+    def _toggle_drawer(self):
+        self.console.toggle_drawer()
 
     def _export_data(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, "导出数据", "", "JSON Files (*.json)"
-        )
-        if path:
-            import json
-            events = self.db.get_recent_events(limit=10000)
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(events, f, ensure_ascii=False, indent=2)
-            QMessageBox.information(
-                self, "导出成功", f"已导出 {len(events)} 条记录到:\n{path}"
-            )
+        if self.db is None:
+            QMessageBox.information(self, "暂无数据", "当前会话未连接本地数据库。")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "导出数据", "", "JSON (*.json)")
+        if not path:
+            return
+        events = self.db.get_recent_events(limit=10000)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(events, f, ensure_ascii=False, indent=2)
+        QMessageBox.information(self, "导出成功",
+                                f"已导出 {len(events)} 条记录到:\n{path}")
 
-    def _show_about(self):
+    @staticmethod
+    def _show_about():
         QMessageBox.about(
-            self, "关于心潮",
-            "心潮 EmoWave v2.0\n\n"
+            None, "关于心潮",
+            "心潮 EmoWave v3\n\n"
             "个人情绪状态引擎 · 本地情绪追踪与校准\n"
-            "所有数据仅存储在设备本地\n不上传任何个人信息"
+            "所有数据仅存储在设备本地，不上传任何个人信息。",
         )
 
     def closeEvent(self, event):
-        if hasattr(self, 'db') and self.db:
-            self.db.close()
+        # 关库失败不能拦住退出，否则用户点 × 关不掉窗口。
+        if getattr(self, 'db', None):
+            try:
+                self.db.close()
+            except Exception:
+                pass
         super().closeEvent(event)
 
 
 def main():
     app = QApplication(sys.argv)
     app.setFont(app_font(10))
+    app.setStyleSheet(build_app_qss())          # 全局一次注入（QSS 不继承）
     win = MainWindow()
     win.show()
     sys.exit(app.exec_())

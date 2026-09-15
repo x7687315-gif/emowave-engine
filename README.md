@@ -10,7 +10,7 @@
 
 `观测 → 估计 → 查看 → 修正 → 学习 → 校准 → 循环`
 
-![测试 606 通过](https://img.shields.io/badge/%E6%B5%8B%E8%AF%95-606%20%E9%80%9A%E8%BF%87-64748B)
+![测试 622 通过](https://img.shields.io/badge/%E6%B5%8B%E8%AF%95-622%20%E9%80%9A%E8%BF%87-64748B)
 ![运行时依赖 零](https://img.shields.io/badge/%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96-%E9%9B%B6-2E6BE6)
 ![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-64748B)
 ![schema v1](https://img.shields.io/badge/schema-v1-2E6BE6)
@@ -71,6 +71,46 @@ emowave/                          零第三方依赖 · 纯标准库 · 34 源�
 ```
 
 **Core 硬边界**：Core 不知道 PyQt / Flet / Android / iOS / SQLite 实现细节 / Amiya / LLM / TTS。所有跨边界交互经 `adapters/`。
+
+---
+
+## UI 预览（v3 实拍）
+
+> **左 56px 图标列**（心潮字标 + 曲线 / 抽屉两个动作）→ **中部主界面**（状态 · 读数 · 曲线 · 输入四区块）→ **右侧抽屉**（基线主权 · 个人模型 · 回顾与历史）。
+> 构成主义骨架（大块面 · 不对称 · 硬边直角 · 粗无衬线） + 暖色板（暖黄纸底 · 陶土赭红 · 低饱和 · 单一色相）。纠正入口在状态卡右上「情绪有误，点这里纠正」，底部上滑框双曲线拖点 + 手动输入并存。
+
+| 01 · 主界面（48 个采样喂给曲线） | 02 · 右侧抽屉展开 | 03 · 纠正上滑框（双曲线 + 手动输入） |
+|:---:|:---:|:---:|
+| ![主界面](docs/screenshots/01-main.png) | ![右侧抽屉](docs/screenshots/02-drawer.png) | ![纠正上滑框](docs/screenshots/03-correct-sheet.png) |
+
+> 设计稿（HTML 模拟）：[`docs/ui-draft-v1.html`](docs/ui-draft-v1.html) · 调研依据：[`docs/UI_PREFLIGHT_视觉传达与UI设计调研.md`](docs/UI_PREFLIGHT_视觉传达与UI设计调研.md) · 设计令牌：[`theme.py`](theme.py)
+
+**桌面端结构**（PyQt5，与内核解耦，`emowave/` 不反向依赖任何 UI 代码）：
+
+```
+main_app.py          外壳 · 56px 图标列 + 极简页头（无菜单栏）· HighDPI 前置
+├─ theme.py          设计令牌 + 一份 app 级 QSS（修 QSS 不继承 font/color）
+├─ curve_widget.py   曲线 · 效价/唤醒双序列 · QPainterPath 单次描边
+└─ windows/
+   ├─ main_console.py    主界面 4 区块：状态 · 读数 · 曲线 · 输入台
+   ├─ drawer.py          右侧滑出抽屉（380px，maximumWidth 动画）
+   ├─ baseline_tools.py  基线主权：步进器 ±0.02 · ◆ 分叉 · ↺ 重置
+   ├─ model_card.py      个人模型：学习进度 · 惯性 ℓ · 阶段
+   ├─ legacy_embed.py    事件回顾 · 历史记录
+   └─ correction_sheet.py + correction_canvas.py   底部上滑纠正框（双曲线拖点 + 手动输入）
+```
+
+**这一版修掉的三个硬伤**：
+
+| 问题 | 根因 | 修法 |
+|---|---|---|
+| 1px 发丝线在缩放屏糊掉 | HighDPI 未设 | `QApplication` 创建**前** `AA_EnableHighDpiScaling` |
+| 界面「AI 搓的廉价感」 | 循环里逐控件 `setStyleSheet`，而 **QSS 不继承** font/color | 改一份 app 级 QSS（`theme.build_app_qss()`） |
+| 曲线拐点「串珠」 | 逐段 `drawLine` + `RoundCap` | 单次 `QPainterPath` + `strokePath` + `SquareCap`/`MiterJoin` |
+
+另修：`InputPanel` 记录按钮文案不翻转（传的是翻转前的旧状态）、抽屉第二次 toggle 关不掉（用 `isVisible()` 判断，但抽屉靠 `maximumWidth` 收放，Qt 始终认为 visible）、唤醒维度从未可视化（旧控件收了 `model_a` 却不画）、「提交纠正」因 `UserCorrection` 字段用错而抛 `TypeError`（这条路此前从未真正跑通）。
+
+实测 n=20000 平滑数据单次渲染 **14.7 ms**（目标 ≤149 ms）。
 
 ---
 
@@ -151,6 +191,15 @@ python -m emowave.cli detect --text "我好焦虑"
 python -m emowave.cli curve --points 60 --nodes 15   # RTS 曲线 + 置信带
 ```
 
+```bash
+# 桌面端（PyQt5 5.15+）
+python main_app.py
+# 重拍 README 截图
+python docs/shot_app.py
+```
+
+> 桌面端依赖 PyQt5，与内核解耦：不装 PyQt5 时 `emowave.cli` 仍可完整运行。
+
 ```python
 from emowave import Observation
 from emowave.core.estimator.estimator import StateEstimator
@@ -166,11 +215,11 @@ for i in range(60):
 
 ## 09 · 测试与质量
 
-**606 个测试全通过**（564 内核 + 30 旧回归 + 12 安全审查回归），TDD 全程：写测试 → 看失败 → 最小实现 → 看通过 → 重构。
+**622 个测试全通过**（577 内核 + 32 桌面端 + 7 引擎回归 + 6 报告回归），TDD 全程：写测试 → 看失败 → 最小实现 → 看通过 → 重构。
 
 ```bash
-python -m pytest emowave/tests/ -v   # 564 内核测试
-python -m pytest tests/ test_engine.py -v  # 旧桌面应用回归
+python -m pytest emowave/tests/ -v            # 577 内核测试
+python -m pytest tests/ test_engine.py -v     # 桌面端 + 引擎回归
 ```
 
 覆盖：领域模型不变式 · Matérn 闭式解数学性质 · RTS 优于滤波 · 可编辑曲线不发散 · 个人学习"修正越多误差下降" · 基线主权 · 双向降级 · SQLite 不可变与并发 · CLI。
@@ -206,4 +255,4 @@ EmoWave 作为 Amiya 的**可选外部状态引擎**，不反向依赖 Amiya。A
 
 ---
 
-■ 心潮 EmoWave · Personal Emotion State Engine · v2.0
+■ 心潮 EmoWave · Personal Emotion State Engine · v2.0（内核）· v3.0（桌面端 UI）
