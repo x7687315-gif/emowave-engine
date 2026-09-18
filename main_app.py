@@ -33,6 +33,8 @@ from theme import (
     COLORS, METRICS, app_font, app_font_num, build_app_qss,
 )
 from windows.main_console import MainConsole
+from windows.archetype_dialog import ArchetypeDialog
+from emowave import ARCHETYPES, DEFAULT_ARCHETYPE_KEY, get_archetype
 
 try:
     from db import DatabaseManager
@@ -149,6 +151,9 @@ class MainWindow(QMainWindow):
                 db = None
         self.db = db
 
+        # 先解析精力人群先验（页头要显示它，主界面要用它 seed），必须在建 UI 前
+        self._archetype_key = self._load_archetype_key()
+
         central = QWidget()
         self.setCentralWidget(central)
         root = QHBoxLayout(central)
@@ -168,9 +173,57 @@ class MainWindow(QMainWindow):
         rl.addWidget(rule)
 
         # ---- 主界面（自带内核 + 抽屉）----
-        self.console = MainConsole(parent=self, db=self.db)
+        self.console = MainConsole(parent=self, db=self.db, archetype_key=self._archetype_key)
         rl.addWidget(self.console, 1)
         root.addWidget(right, 1)
+
+    # ------------------------------------------------------------
+    # 精力人群先验：读取 / 开局选择 / 重选
+    # ------------------------------------------------------------
+    def _load_archetype_key(self) -> str:
+        saved = ""
+        if self.db is not None:
+            try:
+                saved = self.db.get_state("archetype", "") or ""
+            except Exception:
+                saved = ""
+        return saved if saved in ARCHETYPES else DEFAULT_ARCHETYPE_KEY
+
+    def has_saved_archetype(self) -> bool:
+        if self.db is None:
+            return False
+        try:
+            return (self.db.get_state("archetype", "") or "") in ARCHETYPES
+        except Exception:
+            return False
+
+    def prompt_archetype(self):
+        """首启（无存档）时弹框让用户选精力人群；选定后持久化并 seed 主界面。"""
+        if self.has_saved_archetype():
+            return
+        dlg = ArchetypeDialog(self._archetype_key, parent=self)
+        if dlg.exec_() == ArchetypeDialog.Accepted:
+            self.apply_archetype(dlg.selected())
+
+    def apply_archetype(self, key: str):
+        """应用（或切换）精力人群先验：重 seed 主界面 + 持久化。"""
+        if key not in ARCHETYPES:
+            return
+        self._archetype_key = key
+        self.console.set_archetype(key)
+        if self.db is not None:
+            try:
+                self.db.set_state("archetype", key)
+            except Exception:
+                pass
+
+    def _repick_archetype(self):
+        """页头按钮：随时重选精力类型。"""
+        dlg = ArchetypeDialog(self._archetype_key, parent=self)
+        if dlg.exec_() == ArchetypeDialog.Accepted:
+            self.apply_archetype(dlg.selected())
+            self.arch_btn.setText(
+                "精力 · " + get_archetype(self._archetype_key).label + " ▾")
 
     # ------------------------------------------------------------
     # 图标列（56px）
@@ -239,6 +292,17 @@ class MainWindow(QMainWindow):
         date_label.setStyleSheet(f"color: {COLORS['muted']}; background: transparent;")
         lay.addWidget(date_label)
 
+        self.arch_btn = QToolButton()
+        self.arch_btn.setText("精力 · " + get_archetype(self._archetype_key).label + " ▾")
+        self.arch_btn.setCursor(Qt.PointingHandCursor)
+        self.arch_btn.setStyleSheet(
+            f"QToolButton {{ background: transparent; border: none;"
+            f" color: {COLORS['ink_2']}; font-size: 11px; padding: 2px 6px; }}"
+            f"QToolButton:hover {{ color: {COLORS['accent']}; }}"
+        )
+        self.arch_btn.clicked.connect(self._repick_archetype)
+        lay.addWidget(self.arch_btn, 0, Qt.AlignVCenter)
+
         lay.addWidget(_vline())
 
         b_export = IconButton('export', "导出数据（JSON）", size=28)
@@ -304,6 +368,7 @@ def main():
     app.setStyleSheet(build_app_qss())          # 全局一次注入（QSS 不继承）
     win = MainWindow()
     win.show()
+    win.prompt_archetype()          # 首启选精力人群（有存档则跳过）
     sys.exit(app.exec_())
 
 

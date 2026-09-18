@@ -31,6 +31,13 @@ from emowave.core.domain.correction import (
 )
 from emowave.core.domain.baseline import Baseline, BaselineShiftEvent
 from emowave.core.domain.model_parameters import ModelParameters
+from emowave.core.domain.archetype import (
+    EnergyArchetype,
+    ARCHETYPES,
+    ARCHETYPE_ORDER,
+    DEFAULT_ARCHETYPE_KEY,
+    get_archetype,
+)
 from emowave.core.domain.events import StateEvent, StateEventType, EventStream
 from emowave.core.protocol.schemas import (
     SCHEMA_VERSION,
@@ -66,6 +73,11 @@ __all__ = [
     "Baseline",
     "BaselineShiftEvent",
     "ModelParameters",
+    "EnergyArchetype",
+    "ARCHETYPES",
+    "ARCHETYPE_ORDER",
+    "DEFAULT_ARCHETYPE_KEY",
+    "get_archetype",
     "StateEvent",
     "StateEventType",
     "EventStream",

@@ -226,6 +226,75 @@ def test_recording_without_db_degrades_safely(qapp):
     assert c.db is None
 
 
+# ----------------------------------------------------------------
+# 精力人群先验（A/B）+ 改点即时重拟合显示曲线（C）
+# ----------------------------------------------------------------
+def test_console_seeds_from_high_archetype(qapp):
+    """回归：选高精力 → 用高精力先验 seed（ℓ 更短、基线唤醒更高）。"""
+    from windows.main_console import MainConsole
+    c = MainConsole(db=None, archetype_key="high")
+    assert c.archetype_key == "high"
+    assert c.params.ell_arousal == 180.0 and c.params.ell_valence == 240.0
+    assert c.baseline_ctrl.current.arousal == 0.60
+    assert c.estimator.params is c.params
+
+
+def test_console_default_is_medium_population_prior(qapp):
+    """回归：不选人群 = 中精力 = 群体先验（与旧冷启动一致）。"""
+    from windows.main_console import MainConsole
+    from emowave import ModelParameters
+    c = MainConsole(db=None)
+    pop = ModelParameters.population_prior()
+    assert c.archetype_key == "medium"
+    assert (c.params.ell_valence, c.params.ell_arousal) == (pop.ell_valence, pop.ell_arousal)
+    assert c.baseline_ctrl.current.arousal == 0.42
+
+
+def test_set_archetype_reseeds_and_clears_session(qapp):
+    """回归：切到低精力 → 重 seed 参数/基线并清空当前会话曲线。"""
+    from windows.main_console import MainConsole
+    c = MainConsole(db=None, archetype_key="high")
+    c._toggle_recording(True)
+    c._sample(); c._sample()
+    assert len(c.observations) == 2
+    c.set_archetype("low")
+    assert c.params.ell_arousal == 320.0
+    assert c.baseline_ctrl.current.arousal == 0.25
+    assert c.observations == [] and c.states == [] and c._edits == []
+
+
+def test_correction_refits_displayed_curve(qapp, tmp_path):
+    """回归（C 核心）：提交一次效价纠正 → 显示曲线（RTS 平滑）随之重拟合。"""
+    win, db = _make_window(tmp_path)
+    c = win.console
+    c._toggle_recording(True)
+    for _ in range(6):
+        c._sample()
+    c._toggle_recording(False)
+
+    before = list(c.curve.model_v)                    # 默认滑块 v=0.5 → 平滑峰 ~0.5
+    ts = c.states[3][0]
+    n = c.ingest_corrections([(ts, 0.95, c.states[3][1].arousal)])
+    after = list(c.curve.model_v)
+
+    assert n >= 1
+    assert after != before                            # 曲线确实变了
+    assert max(after) > max(before)                   # 被拉到 0.95 处隆起
+    db.close()
+
+
+def test_mainwindow_reads_saved_archetype(qapp, tmp_path):
+    """回归：db 里存过 archetype=high → 重启 MainWindow 直接按高精力 seed。"""
+    import main_app
+    from db import DatabaseManager
+    db = DatabaseManager(str(tmp_path / "a.db"))
+    db.set_state("archetype", "high")
+    win = main_app.MainWindow(db)
+    assert win.console.archetype_key == "high"
+    assert win.console.params.ell_arousal == 180.0
+    db.close()
+
+
 def test_baseline_nudge_fork_and_reset(qapp, tmp_path):
     """基线主权：nudge 改变基线，fork 产生新 regime，reset 回到群体先验
 

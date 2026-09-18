@@ -35,9 +35,11 @@ from curve_widget import EmotionCurveWidget
 from emowave import (
     Observation, ObservationSource, ModelParameters, UserCorrection,
     CorrectionDimension, CorrectionSource,
+    get_archetype, DEFAULT_ARCHETYPE_KEY,
 )
 from emowave.core.domain.baseline import Baseline
 from emowave.core.estimator.estimator import StateEstimator
+from emowave.core.curve.smoother import RTSSmoother
 from emowave.core.calibration.baseline_control import BaselineController
 from emowave.core.calibration.calibrator import Calibrator
 
@@ -373,15 +375,19 @@ class InputPanel(QWidget):
 class MainConsole(QWidget):
     """新版主界面：4 区块 + 抽屉。"""
 
-    def __init__(self, parent=None, db=None):
+    def __init__(self, parent=None, db=None, archetype_key=None):
         super().__init__(parent)
 
         # 数据库（事件表数据源）：抽屉「事件回顾/历史记录」与停止记录落库都靠它
         self.db = db
 
+        # 精力人群先验：开局选一类 → 用它 seed 默认曲线（ModelParameters）+ 中心（Baseline）
+        self.archetype_key = archetype_key or DEFAULT_ARCHETYPE_KEY
+        self.archetype = get_archetype(self.archetype_key)
+
         # ---- 2.0 内核会话 ----
-        self.params = ModelParameters()
-        self.baseline_ctrl = BaselineController()
+        self.params = self.archetype.to_params()
+        self.baseline_ctrl = BaselineController(initial_baseline=self.archetype.to_baseline())
         self.estimator = StateEstimator(params=self.params,
                                         baseline=self.baseline_ctrl.current)
         self.calibrator = Calibrator()
@@ -389,6 +395,7 @@ class MainConsole(QWidget):
         self.states = []
         self.recording = False
         self._segment = []          # 本次「开始→停止记录」采集到的观察，停止时聚合成一条 event
+        self._edits = []            # 用户对曲线点的编辑（伪观察），驱动显示曲线的 RTS 重拟合
 
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
@@ -531,15 +538,25 @@ class MainConsole(QWidget):
             ):
                 if abs(cv - pv) < 1e-9:
                     continue        # 该维度没动，不产生纠正
-                self.calibrator.ingest_correction(UserCorrection(
+                uc = UserCorrection(
                     timestamp=ts,
                     dimension=dim,
                     predicted_value=pv,
                     corrected_value=cv,
                     source=source,
                     created_at=time.time(),
-                ))
+                )
+                self.calibrator.ingest_correction(uc)
+                # 同时作为伪观察喂给显示曲线 → 改点即时重拟合整条曲线
+                self._edits.append({
+                    "timestamp": ts,
+                    "channel": dim.value,
+                    "value": cv,
+                    "reliability_weight": uc.reliability_weight,
+                })
                 n += 1
+        if n:
+            self._refresh_curve()
         return n
 
     # ================================================================
@@ -626,6 +643,12 @@ class MainConsole(QWidget):
             logger.warning("情绪事件落库失败（%d 个采样）：%s", len(seg), exc)
         finally:
             self._segment = []                         # 无论成败都消费掉，避免重复落库
+        # 停止即自动个性化一步（用本次记录 + 已有纠正），不再只靠手点「学习一步」
+        try:
+            self._learn()
+            self._refresh_curve()
+        except Exception as exc:
+            logger.warning("停止记录后自动学习失败：%s", exc)
         self.legacy.refresh()                          # 新事件即时出现在抽屉里
 
     # ================================================================
@@ -634,6 +657,29 @@ class MainConsole(QWidget):
     def _learn(self):
         self.params = self.calibrator.learn(self.params)
         self.estimator.params = self.params
+
+    def set_archetype(self, key: str):
+        """切换精力人群先验：用新类的默认曲线 + 基线重新 seed，清空当前会话。
+
+        换人群 = 换起点先验，历史曲线随之作废（从零重新按新先验演化）。
+        """
+        self.archetype_key = key
+        self.archetype = get_archetype(key)
+        self.params = self.archetype.to_params()
+        self.baseline_ctrl = BaselineController(initial_baseline=self.archetype.to_baseline())
+        self.estimator = StateEstimator(params=self.params,
+                                        baseline=self.baseline_ctrl.current)
+        self.calibrator = Calibrator()
+        self.observations = []
+        self.states = []
+        self._segment = []
+        self._edits = []
+        self.recording = False
+        self.timer.stop()
+        self.input_panel.set_recording(False)
+        self.input_panel.set_count(0)
+        self._refresh_readouts()
+        self._refresh_curve()
 
     # ================================================================
     # 刷新
@@ -662,14 +708,13 @@ class MainConsole(QWidget):
         )
 
     def _refresh_curve(self):
-        if len(self.states) < 2:
+        if len(self.observations) < 2:
             return
-        ts_list = [t for t, _ in self.states]
-        mv = [s.valence for _, s in self.states]
-        ma = [s.arousal for _, s in self.states]
-        vv = [s.variance_valence for _, s in self.states]
-        va = [s.variance_arousal for _, s in self.states]
+        # 显示曲线 = RTS 非因果平滑（原始观察 + 用户编辑伪观察共同参与）：
+        # 用户改任一点，整条曲线按核函数光滑地重新收敛（"拉函数图像"的手感）。
+        traj = RTSSmoother(self.params).smooth(self.observations, self._edits)
         raw = [(o.timestamp, o.valence) for o in self.observations]
-        self.curve.set_data(ts_list, mv, ma, vv, va,
+        self.curve.set_data(traj.timestamps, traj.mean_valence, traj.mean_arousal,
+                            traj.var_valence, traj.var_arousal,
                             baseline_v=self.baseline_ctrl.current.valence,
                             raw=raw)
