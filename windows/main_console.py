@@ -17,6 +17,10 @@
 5. 主界面不再有菜单栏；用页头图标按钮替代
 """
 import time
+import json
+import math
+import uuid
+import logging
 
 from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtWidgets import (
@@ -43,6 +47,8 @@ from .baseline_tools import BaselineToolsCard
 from .model_card import ModelCard
 from .legacy_embed import LegacyEmbed
 from .correction_sheet import CorrectionSheet
+
+logger = logging.getLogger(__name__)
 
 
 # ================================================================
@@ -367,8 +373,11 @@ class InputPanel(QWidget):
 class MainConsole(QWidget):
     """新版主界面：4 区块 + 抽屉。"""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, db=None):
         super().__init__(parent)
+
+        # 数据库（事件表数据源）：抽屉「事件回顾/历史记录」与停止记录落库都靠它
+        self.db = db
 
         # ---- 2.0 内核会话 ----
         self.params = ModelParameters()
@@ -379,6 +388,7 @@ class MainConsole(QWidget):
         self.observations = []
         self.states = []
         self.recording = False
+        self._segment = []          # 本次「开始→停止记录」采集到的观察，停止时聚合成一条 event
 
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
@@ -456,16 +466,17 @@ class MainConsole(QWidget):
         self.baseline_card = BaselineToolsCard(self.baseline_ctrl, self.estimator)
         model_card = ModelCard(self.params, self.calibrator,
                                on_learn=self._learn)
-        legacy = LegacyEmbed()
+        self.legacy = LegacyEmbed(db=self.db)
         self.drawer.add_section(self.baseline_card)
         self.drawer.add_section(model_card)
-        self.drawer.add_section(legacy)
+        self.drawer.add_section(self.legacy)
 
     # ================================================================
     # 抽屉开合
     # ================================================================
     def open_drawer(self):
         self.drawer.show_drawer()
+        self.legacy.refresh()
 
     def close_drawer(self):
         self.drawer.hide_drawer()
@@ -475,6 +486,8 @@ class MainConsole(QWidget):
         # 抽屉靠 maximumWidth 0↔380 收放，Qt 始终认为它 visible，
         # 用 isVisible() 判断会导致第二次 toggle 关不掉。
         self.drawer.toggle()
+        if self.drawer.is_open():
+            self.legacy.refresh()
 
     # ================================================================
     # 纠正上滑框
@@ -551,15 +564,18 @@ class MainConsole(QWidget):
         """切换（或强制设置）记录状态。
 
         want_running=None → 按当前状态取反；否则按给定值设置。
+        一次「开始→停止」视为一个情绪事件：开始时清空 segment，停止时落库。
         """
         if want_running is None:
             want_running = not self.recording
         self.recording = want_running
         self.input_panel.set_recording(want_running)
         if want_running:
+            self._segment = []                 # 新的一段记录
             self.timer.start(1000)
         else:
             self.timer.stop()
+            self._persist_segment_event()      # 停止 = 结束一个事件，落库并刷新面板
 
     def _sample(self):
         ts = time.time()
@@ -567,6 +583,7 @@ class MainConsole(QWidget):
         obs = Observation(timestamp=ts, valence=v, arousal=a,
                           source=ObservationSource.USER)
         self.observations.append(obs)
+        self._segment.append(obs)
         if not self.estimator.is_initialized:
             self.estimator.initialize(timestamp=ts, valence=v, arousal=a)
         state = self.estimator.update(obs)
@@ -574,6 +591,42 @@ class MainConsole(QWidget):
         self.input_panel.set_count(len(self.observations))
         self._refresh_readouts()
         self._refresh_curve()
+
+    def _persist_segment_event(self):
+        """把本次「开始→停止」采集到的观察聚合成一条 emotion_events 落库。
+
+        v3 的连续记录此前从不写事件表（只有旧 SessionController.process_event 写），
+        导致抽屉「事件回顾/历史记录」永远空。这里补上落库，面板才有真实数据。
+        """
+        if self.db is None or not self._segment:
+            return
+        seg = self._segment
+        peak_obs = max(seg, key=lambda o: o.arousal)
+        # Russell 环状模型：中性点 (0.5, 0.5)，强度=到中性点距离 / 最大距离
+        def _intensity(o):
+            return math.sqrt((o.valence - 0.5) ** 2 + (o.arousal - 0.5) ** 2) / math.sqrt(0.5)
+        event = {
+            "event_id": uuid.uuid4().hex,
+            "start_time": seg[0].timestamp,
+            "end_time": seg[-1].timestamp,
+            "peak_valence": peak_obs.valence,
+            "peak_arousal": peak_obs.arousal,
+            "peak_intensity": max(_intensity(o) for o in seg),
+            "sample_count": len(seg),
+            "trigger_tags": [],
+            "coping_methods": [],
+            "coping_ratings": {},
+            "body_symptoms": [],
+            "user_peak_rating": None,
+            "raw_data": json.dumps([[o.timestamp, o.valence, o.arousal] for o in seg]),
+        }
+        try:
+            self.db.save_event(event)
+        except Exception as exc:                       # 落库失败不打断 UI，仅记日志
+            logger.warning("情绪事件落库失败（%d 个采样）：%s", len(seg), exc)
+        finally:
+            self._segment = []                         # 无论成败都消费掉，避免重复落库
+        self.legacy.refresh()                          # 新事件即时出现在抽屉里
 
     # ================================================================
     # 学习（个人模型）

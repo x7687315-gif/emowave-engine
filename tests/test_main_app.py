@@ -176,6 +176,56 @@ def test_input_panel_button_label_follows_state(qapp, tmp_path):
     db.close()
 
 
+def test_recording_stop_persists_one_event(qapp, tmp_path):
+    """回归：一次「开始→停止记录」必须把该段观察聚合成一条 emotion_events 落库。
+    v3 此前从不写事件表，导致抽屉「事件回顾/历史记录」永远空。"""
+    win, db = _make_window(tmp_path)
+    console = win.console
+
+    assert db.get_recent_events(limit=10) == []      # 起始无事件
+    console._toggle_recording(True)
+    for _ in range(4):
+        console._sample()
+    console._toggle_recording(False)
+
+    events = db.get_recent_events(limit=10)
+    assert len(events) == 1
+    ev = events[0]
+    assert ev["sample_count"] == 4
+    assert 0.0 <= ev["peak_arousal"] <= 1.0
+    assert 0.0 <= ev["peak_valence"] <= 1.0
+    assert 0.0 <= ev["peak_intensity"] <= 1.0 + 1e-9
+    db.close()
+
+
+def test_legacy_panels_populate_after_recording(qapp, tmp_path):
+    """回归：db 注入后，抽屉的 HistoryWindow 在 refresh 时按今天日期填充事件表。"""
+    win, db = _make_window(tmp_path)
+    console = win.console
+
+    console._toggle_recording(True)
+    for _ in range(3):
+        console._sample()
+    console._toggle_recording(False)
+
+    console.legacy.refresh()                          # 打开抽屉/落库后都会调
+    assert console.legacy.history.events_table.rowCount() >= 1
+    db.close()
+
+
+def test_recording_without_db_degrades_safely(qapp):
+    """回归：无 db 时记录/停止/刷新都不该抛异常（主界面仍可脱库启动）。"""
+    from windows.main_console import MainConsole
+    c = MainConsole(db=None)
+    c._toggle_recording(True)
+    c._sample()
+    c._sample()
+    c._toggle_recording(False)                         # db=None → 落库安全跳过
+    c.legacy.refresh()                                 # db=None → 安全跳过
+    assert c.recording is False
+    assert c.db is None
+
+
 def test_baseline_nudge_fork_and_reset(qapp, tmp_path):
     """基线主权：nudge 改变基线，fork 产生新 regime，reset 回到群体先验
 
