@@ -19,7 +19,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # ---- HighDPI：必须在 QApplication 创建前设置 ----
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QPointF
 Qt.AA_EnableHighDpiScaling = True
 Qt.AA_UseHighDpiPixmaps = True
 
@@ -63,36 +63,57 @@ class IconButton(QToolButton):
     }
     _KNOBS = {'settings': ((6, 6), (10, 10))}        # 游标方块中心
 
+    # ---- 绘制几何常量（避免魔法值 P3C-STY-004）----
+    _ICON_BOX = 16.0          # 逻辑坐标系边长
+    _PEN_WIDTH = 1.6          # 描线粗细
+    _ACTIVE_BAR_W = 2         # 当前视图指示条宽（px）
+    _ACTIVE_BAR_TOP = 0.28    # 指示条顶端占高比
+    _ACTIVE_BAR_H = 0.44      # 指示条高度占高比
+
     def __init__(self, kind: str, tooltip: str = "", size: int = 34, parent=None):
         super().__init__(parent)
         self.kind = kind
         self._size = size
+        self._active = False
         self.setToolTip(tooltip)
         self.setCursor(Qt.PointingHandCursor)
         self.setCheckable(False)
         self.setFixedSize(size, size)
         self.setStyleSheet("QToolButton { background: transparent; border: none; }")
 
+    def set_active(self, on: bool):
+        """当前视图高亮：active 时描线用 accent，并在左边缘画一条硬边指示条。"""
+        if self._active != bool(on):
+            self._active = bool(on)
+            self.update()
+
     # ---- 绘制 ----
     def paintEvent(self, _e):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
         hovered = self.underMouse()
-        color = QColor(COLORS['accent'] if hovered else COLORS['ink_2'])
+        emphasis = hovered or self._active
+        color = QColor(COLORS['accent'] if emphasis else COLORS['ink_2'])
         if not self.isEnabled():
             color = QColor(COLORS['muted'])
-        pen = QPen(color, 1.6)
+        pen = QPen(color, self._PEN_WIDTH)
         pen.setCapStyle(Qt.SquareCap)
         pen.setJoinStyle(Qt.MiterJoin)
         p.setPen(pen)
 
-        s = 16.0
+        # 当前视图指示条：左边缘硬边竖线（构成主义，无圆角）
+        if self._active:
+            h = self.height()
+            p.fillRect(0, int(h * self._ACTIVE_BAR_TOP), self._ACTIVE_BAR_W,
+                       int(h * self._ACTIVE_BAR_H), QColor(COLORS['accent']))
+
+        s = self._ICON_BOX
         ox = (self.width() - s) / 2.0
         oy = (self.height() - s) / 2.0
         for poly in self._PATHS.get(self.kind, []):
-            pts = [(ox + x, oy + y) for (x, y) in poly]
+            pts = [QPointF(ox + x, oy + y) for (x, y) in poly]
             for i in range(len(pts) - 1):
-                p.drawLine(*(pts[i] + pts[i + 1]))
+                p.drawLine(pts[i], pts[i + 1])
         for (kx, ky) in self._KNOBS.get(self.kind, ()):
             # 游标：实心方块（直角，非圆点）
             p.fillRect(int(ox + kx - 1.3), int(oy + ky - 2.6), 3, 5, color)
@@ -176,10 +197,12 @@ class MainWindow(QMainWindow):
         )
         lay.addWidget(mark)
 
-        btn_curve = IconButton('curve', "情绪曲线（主界面）")
-        btn_drawer = IconButton('drawer', "抽屉：基线 / 个人模型 / 回顾与历史")
-        btn_drawer.clicked.connect(self._toggle_drawer)
-        for b in (btn_curve, btn_drawer):
+        self.btn_curve = IconButton('curve', "情绪曲线（主界面）")
+        self.btn_drawer = IconButton('drawer', "抽屉：基线 / 个人模型 / 回顾与历史")
+        self.btn_curve.clicked.connect(self._select_curve)
+        self.btn_drawer.clicked.connect(self._toggle_drawer)
+        self.btn_curve.set_active(True)          # 启动即主界面（情绪曲线）
+        for b in (self.btn_curve, self.btn_drawer):
             lay.addWidget(b, 0, Qt.AlignHCenter)
 
         lay.addStretch(1)
@@ -231,6 +254,17 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------
     def _toggle_drawer(self):
         self.console.toggle_drawer()
+        self._sync_rail_active()
+
+    def _select_curve(self):
+        # 情绪曲线 = 主界面：回到主视图即收起右侧抽屉，让曲线重新占满焦点。
+        self.console.close_drawer()
+        self._sync_rail_active()
+
+    def _sync_rail_active(self):
+        open_ = self.console.drawer.is_open()
+        self.btn_drawer.set_active(open_)
+        self.btn_curve.set_active(not open_)
 
     def _export_data(self):
         if self.db is None:

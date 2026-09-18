@@ -70,6 +70,79 @@ def test_drawer_toggles_open_and_closed(qapp, tmp_path):
     db.close()
 
 
+# ----------------------------------------------------------------
+# 回归：上面只断言 is_open() 标志，正是它放过了两个真实 bug ——
+#   ① setFixedWidth 把 minimumWidth 钉成 380，maximumWidth 动画收不回 0，
+#      抽屉永远关不上（点抽屉按钮“点不进去”）；
+#   ② 情绪曲线按钮根本没接 clicked（死按钮）。
+# 因此这里断言**实际宽度**与**按钮是否真的生效**，而不是只看标志位。
+# ----------------------------------------------------------------
+def _settle(app, ms=320):
+    """跑一段事件循环，让 QPropertyAnimation（时间驱动）真正走完。"""
+    from PyQt5.QtCore import QEventLoop, QTimer
+    loop = QEventLoop()
+    QTimer.singleShot(ms, loop.quit)
+    loop.exec_()
+    app.processEvents()
+
+
+def test_drawer_starts_actually_collapsed(qapp, tmp_path):
+    """回归①：抽屉初始必须真正收起（宽度 0），不是只把 is_open 设 False。"""
+    win, db = _make_window(tmp_path)
+    win.show()
+    _settle(qapp)
+    assert win.console.drawer.width() == 0
+    db.close()
+
+
+def test_drawer_toggle_changes_actual_width(qapp, tmp_path):
+    """回归①：点抽屉按钮必须真的展开/收起（宽度 0↔380），而非仅翻转标志。"""
+    win, db = _make_window(tmp_path)
+    win.show()
+    _settle(qapp)
+    d = win.console.drawer
+
+    win.btn_drawer.click()
+    _settle(qapp)
+    assert d.is_open() is True and d.width() == 380
+
+    win.btn_drawer.click()
+    _settle(qapp)
+    assert d.is_open() is False and d.width() == 0
+    db.close()
+
+
+def test_curve_button_is_wired_and_closes_drawer(qapp, tmp_path):
+    """回归②：情绪曲线按钮过去没接 clicked（死按钮）。现在点它必须收起抽屉。"""
+    win, db = _make_window(tmp_path)
+    win.show()
+    _settle(qapp)
+    d = win.console.drawer
+
+    win.btn_drawer.click()          # 先开抽屉
+    _settle(qapp)
+    assert d.width() == 380
+
+    win.btn_curve.click()           # 点曲线按钮 → 收起抽屉
+    _settle(qapp)
+    assert d.is_open() is False and d.width() == 0
+    db.close()
+
+
+def test_rail_active_state_follows_view(qapp, tmp_path):
+    """侧栏当前视图高亮：主界面=曲线亮；开抽屉=抽屉亮、曲线灭。"""
+    win, db = _make_window(tmp_path)
+    win.show()
+    _settle(qapp)
+
+    assert win.btn_curve._active is True and win.btn_drawer._active is False
+    win.btn_drawer.click(); _settle(qapp)
+    assert win.btn_drawer._active is True and win.btn_curve._active is False
+    win.btn_curve.click(); _settle(qapp)
+    assert win.btn_curve._active is True and win.btn_drawer._active is False
+    db.close()
+
+
 def test_console_recording_samples_state(qapp, tmp_path):
     """记录模式：无参 _toggle_recording 切换状态，采样喂给 2.0 估计器"""
     win, db = _make_window(tmp_path)

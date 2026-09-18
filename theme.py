@@ -340,6 +340,10 @@ QFrame#Drawer {{
     background-color: {c['paper_2']};
     border-left: 1px solid {c['rule']};
 }}
+QFrame#DrawerInner {{
+    background: transparent;
+    border: none;
+}}
 QFrame#TopBar {{
     background-color: {c['paper']};
     border-bottom: 1px solid {c['rule']};
