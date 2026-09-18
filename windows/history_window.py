@@ -24,6 +24,7 @@ class HistoryWindow(QWidget):
         super().__init__(parent)
         self.session = session
         self._event_dates = []
+        self._row_events = []          # 与事件表行一一对应，供双击补全定位
         self._setup_ui()
 
     # ----------------------------------------------------------------
@@ -85,6 +86,7 @@ class HistoryWindow(QWidget):
         header = self.events_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
         self.events_table.setMaximumHeight(170)
+        self.events_table.itemDoubleClicked.connect(self._on_row_activated)
         list_card.add_widget(self.events_table)
 
         # 导出按钮（描边式，右对齐）
@@ -123,6 +125,7 @@ class HistoryWindow(QWidget):
         """点击日历日期时按日期查询事件并填充表格。"""
         date_str = qdate.toString('yyyy-MM-dd')
         events = self.session.db.get_events_by_date(date_str)
+        self._row_events = list(events)
 
         self.events_table.setRowCount(0)
         for row_idx, event in enumerate(events):
@@ -137,6 +140,19 @@ class HistoryWindow(QWidget):
             self.events_table.setItem(
                 row_idx, 3, QTableWidgetItem(self._fmt_number(
                     event.get('user_peak_rating'), digits=1)))
+
+    def _on_row_activated(self, item):
+        """双击事件行 → 打开补全/修正窗口；保存后按当前日期重载表格。"""
+        row = item.row()
+        if not (0 <= row < len(self._row_events)):
+            return
+        db = getattr(self.session, "db", None) if self.session is not None else None
+        if db is None:
+            return
+        from .event_detail_dialog import EventDetailDialog
+        dlg = EventDetailDialog(self._row_events[row], db, parent=self)
+        if dlg.exec_():
+            self._on_date_clicked(self.calendar.selectedDate())
 
     # ----------------------------------------------------------------
     # 辅助方法

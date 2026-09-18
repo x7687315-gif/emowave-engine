@@ -76,6 +76,34 @@ class DatabaseManager:
             "SELECT DISTINCT date(created_at) as d FROM emotion_events").fetchall()
         return [r['d'] for r in rows]
 
+    # 允许用户事后补全/修正的字段（其余如 created_at / 峰值 / raw 不动）
+    _EDITABLE_LIST = ("trigger_tags", "coping_methods", "body_symptoms")
+    _EDITABLE_OTHER = ("coping_ratings", "user_peak_rating")
+
+    def get_event(self, event_id):
+        """按 event_id 取单条事件；不存在返回 None。"""
+        row = self.conn.execute(
+            "SELECT * FROM emotion_events WHERE event_id=?", (event_id,)).fetchone()
+        return dict(row) if row else None
+
+    def update_event(self, event_id, fields: dict):
+        """只更新可补全字段（触发/应对/躯体/自评），保留 created_at 等原值。"""
+        sets, vals = [], []
+        for key, val in fields.items():
+            if key in self._EDITABLE_LIST:
+                sets.append(f"{key}=?"); vals.append(json.dumps(val or []))
+            elif key == "coping_ratings":
+                sets.append("coping_ratings=?"); vals.append(json.dumps(val or {}))
+            elif key == "user_peak_rating":
+                sets.append("user_peak_rating=?"); vals.append(val)
+        if not sets:
+            return 0
+        vals.append(event_id)
+        self.conn.execute(
+            f"UPDATE emotion_events SET {', '.join(sets)} WHERE event_id=?", vals)
+        self.conn.commit()
+        return len(sets)
+
     def save_daily_summary(self, data: dict):
         self.conn.execute(
             "INSERT OR REPLACE INTO daily_summaries "
