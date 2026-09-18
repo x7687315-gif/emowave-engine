@@ -411,7 +411,7 @@ class MainConsole(QWidget):
         self.baseline_ctrl = BaselineController(initial_baseline=self.archetype.to_baseline())
         self.estimator = StateEstimator(params=self.params,
                                         baseline=self.baseline_ctrl.current)
-        self.calibrator = Calibrator()
+        self.calibrator = Calibrator(population=self.archetype.to_params())
         self.observations = []
         self.states = []
         self.recording = False
@@ -792,8 +792,8 @@ class MainConsole(QWidget):
             return
         try:
             self.db.set_state("active_wave", "")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("清除 active_wave 快照失败：%s", exc)
 
     def _resume_active_wave(self):
         """开机若有未走完的波：重放观察、重建估计器，进入衰减"慢慢推演"。"""
@@ -801,7 +801,8 @@ class MainConsole(QWidget):
             return
         try:
             raw = self.db.get_state("active_wave", "") or ""
-        except Exception:
+        except Exception as exc:
+            logger.debug("读取 active_wave 快照失败：%s", exc)
             return
         if not raw:
             return
@@ -809,7 +810,8 @@ class MainConsole(QWidget):
             data = json.loads(raw)
             samples = data.get("samples", [])
             end_ts = float(data.get("end_ts", 0.0))
-        except Exception:
+        except Exception as exc:
+            logger.warning("active_wave 快照损坏，已清除：%s", exc)
             self._clear_active_wave()
             return
         if not samples:
@@ -849,7 +851,7 @@ class MainConsole(QWidget):
         self.baseline_ctrl = BaselineController(initial_baseline=self.archetype.to_baseline())
         self.estimator = StateEstimator(params=self.params,
                                         baseline=self.baseline_ctrl.current)
-        self.calibrator = Calibrator()
+        self.calibrator = Calibrator(population=self.archetype.to_params())
         self.observations = []
         self.states = []
         self._segment = []

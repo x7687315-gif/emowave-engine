@@ -59,13 +59,16 @@ class Calibrator:
         learner_config: Optional[LearnerConfig] = None,
         reg_lambda: float = 1.0,
         max_correction: float = 0.3,
+        population: Optional[ModelParameters] = None,
     ) -> None:
         self.dataset = CorrectionDataset()
         self.residual_model = OnlineResidualRegression(
             reg_lambda=reg_lambda, max_correction=max_correction
         )
         self.learner = PersonalModelLearner(config=learner_config)
-        self._population = ModelParameters.population_prior()
+        # 层次收缩的锚点：默认全局群体先验；可注入"所选精力人群先验"作为锚，
+        # 让个性化向用户所属人群的默认曲线收缩，而不是只向单一全局先验。
+        self._population = population or ModelParameters.population_prior()
 
     # ============================================================
     # 摄入纠正

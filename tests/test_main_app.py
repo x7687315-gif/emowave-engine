@@ -263,6 +263,15 @@ def test_set_archetype_reseeds_and_clears_session(qapp):
     assert c.observations == [] and c.states == [] and c._edits == []
 
 
+def test_personalization_anchor_follows_archetype(qapp):
+    """回归：个性化学习收缩的锚 = 所选精力人群先验（非单一全局先验），换人群即随之变。"""
+    from windows.main_console import MainConsole
+    c = MainConsole(db=None, archetype_key="high")
+    assert c.calibrator._population.ell_arousal == 180.0   # 高精力先验作锚
+    c.set_archetype("low")
+    assert c.calibrator._population.ell_arousal == 320.0   # 低精力先验作锚
+
+
 def test_correction_refits_displayed_curve(qapp, tmp_path):
     """回归（C 核心）：提交一次效价纠正 → 显示曲线（RTS 平滑）随之重拟合。"""
     win, db = _make_window(tmp_path)
