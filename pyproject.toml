@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emowave"
+version = "3.0.0"
+description = "心潮 EmoWave — 个人情绪状态引擎（零第三方依赖的可移植内核 + CLI）"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "beigui" }]
+keywords = ["emotion", "affective-computing", "gaussian-process", "matern", "kalman", "rtssmoother"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# 内核零第三方依赖（只用 Python 标准库）
+dependencies = []
+
+[project.optional-dependencies]
+# 桌面 GUI（PyQt5）为可选；核心引擎与 CLI 无需它即可运行
+gui = ["PyQt5>=5.15"]
+
+[project.scripts]
+emowave = "emowave.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/x7687315-gif/emowave-engine"
+Repository = "https://github.com/x7687315-gif/emowave-engine"
+
+[tool.setuptools.packages.find]
+include = ["emowave*"]
+exclude = ["emowave.tests*"]
