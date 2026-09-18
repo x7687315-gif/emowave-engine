@@ -5,7 +5,7 @@
 """
 import json
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPainter, QPen, QColor
 
@@ -60,6 +60,20 @@ class EventSummaryWindow(QWidget):
         body_card.add_widget(self.body_label)
         layout.addWidget(body_card)
 
+        # 补全/修正入口：让"未记录"的字段有地方可填
+        self.edit_btn = QPushButton("✎  补全 / 修正事件信息")
+        self.edit_btn.setCursor(Qt.PointingHandCursor)
+        self.edit_btn.setEnabled(False)
+        self.edit_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {COLORS['ink_soft']};"
+            f" border: 1px solid {COLORS['rule']}; padding: 7px 12px; font-size: 12px; }}"
+            f"QPushButton:disabled {{ color: {COLORS['muted']}; }}"
+            f"QPushButton:hover:enabled {{ border-color: {COLORS['accent']};"
+            f" color: {COLORS['accent']}; }}"
+        )
+        self.edit_btn.clicked.connect(self._edit_event)
+        layout.addWidget(self.edit_btn)
+
         layout.addStretch(1)
 
     # ----------------------------------------------------------------
@@ -82,10 +96,27 @@ class EventSummaryWindow(QWidget):
             self.profile_label.setText(f"未找到事件：{event_id}")
             self.body_label.setText("暂无躯体症状记录")
             self.curve_canvas.set_data([])
+            self.edit_btn.setEnabled(False)
             return
 
         self._current_event = event
         self._render_event(event)
+        self.edit_btn.setEnabled(self._db() is not None)
+
+    def _db(self):
+        return getattr(self.session, "db", None) if self.session is not None else None
+
+    def _edit_event(self):
+        """打开补全/修正窗口；保存后重新载入该事件以刷新显示。"""
+        if not self._current_event:
+            return
+        db = self._db()
+        if db is None:
+            return
+        from .event_detail_dialog import EventDetailDialog
+        dlg = EventDetailDialog(self._current_event, db, parent=self)
+        if dlg.exec_():
+            self.show_event(self._current_event.get("event_id"))
 
     def _render_event(self, event):
         # JSON 字段统一用 json.loads 解析
