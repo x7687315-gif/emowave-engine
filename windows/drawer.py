@@ -14,14 +14,34 @@ class SideDrawer(QFrame):
     def __init__(self, width=380, parent=None):
         super().__init__(parent)
         self.setObjectName("Drawer")
-        self.setFixedWidth(width)
 
         self._target_w = width
         self._visible = False
 
+        # ---- 为什么不能 setFixedWidth(width) ----
+        # setFixedWidth 同时把 minimumWidth 也钉成 width，而收放动画只改
+        # maximumWidth（0↔width）。Qt 里 minimumWidth 优先级高于 maximumWidth，
+        # 于是抽屉永远缩不回 0、也永远关不上——点抽屉按钮毫无反应（“点不进去”）。
+        # 正确做法：外壳 frame 的 minimumWidth 保持 0，靠 maximumWidth 动画收放；
+        # 内容放进一个固定宽度的内层容器，滑动时不回流、只被 frame 裁切。
+        self.setMinimumWidth(0)
+        self.setMaximumWidth(0)
+
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
+
+        # 内层：固定宽度，保证滑动过程中内容不被压扁/回流
+        # 用 QFrame + #DrawerInner 规则置透明，避免全局 QWidget 的 paper 底
+        # 盖掉抽屉应有的 paper_2 底色。
+        inner = QFrame()
+        inner.setObjectName("DrawerInner")
+        inner.setFixedWidth(width)
+        outer.addWidget(inner)
+
+        il = QVBoxLayout(inner)
+        il.setContentsMargins(0, 0, 0, 0)
+        il.setSpacing(0)
 
         # 抽屉头
         head = QWidget()
@@ -33,23 +53,20 @@ class SideDrawer(QFrame):
         t.setStyleSheet(f"color: {COLORS['ink']}; letter-spacing: 1.8px;")
         hl.addWidget(t)
         hl.addStretch(1)
-        outer.addWidget(head)
+        il.addWidget(head)
 
         # 分隔
         sep = QFrame()
         sep.setFixedHeight(1)
         sep.setStyleSheet(f"background: {COLORS['rule']}; border: none;")
-        outer.addWidget(sep)
+        il.addWidget(sep)
 
         # body
         self._body = QVBoxLayout()
         self._body.setContentsMargins(18, 16, 18, 16)
         self._body.setSpacing(14)
         self._body.addStretch(1)
-        outer.addLayout(self._body, 1)
-
-        # 初始隐藏
-        self.setMaximumWidth(0)
+        il.addLayout(self._body, 1)
 
     def add_section(self, widget):
         """添加一个分区。"""
