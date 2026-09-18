@@ -186,21 +186,25 @@ class EmotionCurveWidget(QWidget):
         if self.compact:
             return
 
-        # 时间轴：首 / 中 / 末 三个刻度（不画竖网格线）
+        # 时间轴：按面板宽度放若干刻度（真实时钟时间，短跨度显示到秒）
         t0, t1 = self.timestamps[0], self.timestamps[-1]
         span = t1 - t0
         p.setPen(QColor(COLORS['muted']))
         p.setFont(app_font(8))
-        for frac, anchor in ((0.0, Qt.AlignLeft), (0.5, Qt.AlignCenter),
-                             (1.0, Qt.AlignRight)):
+        nt = max(3, min(6, int(pw / 110) + 1))
+        wide = 78
+        for i in range(nt):
+            frac = i / (nt - 1)
             ts = t0 + span * frac
             x = self._x(ts, t0, span, x0, pw)
-            label = _fmt_time(ts)
-            wide = 70
-            tx = x - wide / 2 if anchor == Qt.AlignCenter else (
-                x if anchor == Qt.AlignLeft else x - wide)
-            p.drawText(QRectF(tx, y0 + ph + 6, wide, 12), anchor | Qt.AlignVCenter,
-                       label)
+            label = _fmt_time(ts, span)
+            if i == 0:
+                rx, al = x0, Qt.AlignLeft
+            elif i == nt - 1:
+                rx, al = x0 + pw - wide, Qt.AlignRight
+            else:
+                rx, al = x - wide / 2, Qt.AlignHCenter
+            p.drawText(QRectF(rx, y0 + ph + 6, wide, 12), al | Qt.AlignVCenter, label)
 
         # 子图标题（效价 / 唤醒）—— 画在子图内部左上角，不占顶部空间
         # 这样不会和上方子图最顶端的"100"刻度标签重叠
@@ -343,8 +347,16 @@ def _decimate(n, cap=_MAX_POINTS):
     return sorted(set(int(i * step) for i in range(cap)) | {n - 1})
 
 
-def _fmt_time(ts):
-    """时间戳 → HH:MM（跨天时显示 MM-DD）。"""
+def _fmt_time(ts, span=None):
+    """时间戳 → 可读时钟时间。跨度小就显示到秒，跨天就带上日期。
+
+    短记录（几十秒）若只显示到分钟，三个刻度会同为"00:05"，看着像卡住；
+    这里按可见跨度自适应精度，让时间轴真正"走得动"。
+    """
     import time as _time
     lt = _time.localtime(ts)
+    if span is not None and span >= 86400:      # 跨天
+        return _time.strftime("%m-%d %H:%M", lt)
+    if span is not None and span < 180:         # 短于 3 分钟：显示到秒
+        return _time.strftime("%H:%M:%S", lt)
     return _time.strftime("%H:%M", lt)
