@@ -4,7 +4,9 @@ slide-from-right 380px 宽，背景 paper_2。
 通过 QPropertyAnimation 推动 maximumWidth 在 0 ↔ width 之间过渡（ease-out-quart）。
 """
 from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve
-from PyQt5.QtWidgets import QFrame, QVBoxLayout, QWidget, QLabel, QHBoxLayout
+from PyQt5.QtWidgets import (
+    QFrame, QVBoxLayout, QWidget, QLabel, QHBoxLayout, QScrollArea,
+)
 from PyQt5.QtGui import QFont
 
 from theme import COLORS, app_font, DUR_MID
@@ -61,12 +63,20 @@ class SideDrawer(QFrame):
         sep.setStyleSheet(f"background: {COLORS['rule']}; border: none;")
         il.addWidget(sep)
 
-        # body
-        self._body = QVBoxLayout()
+        # body：可滚动，保证「事件回顾/历史记录」等靠下的分区能滚到
+        scroll = QScrollArea()
+        scroll.setObjectName("DrawerScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        content = QWidget()
+        content.setObjectName("DrawerContent")
+        self._body = QVBoxLayout(content)
         self._body.setContentsMargins(18, 16, 18, 16)
         self._body.setSpacing(14)
         self._body.addStretch(1)
-        il.addLayout(self._body, 1)
+        scroll.setWidget(content)
+        il.addWidget(scroll, 1)
 
     def add_section(self, widget):
         """添加一个分区。"""

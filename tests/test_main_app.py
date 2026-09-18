@@ -295,6 +295,24 @@ def test_mainwindow_reads_saved_archetype(qapp, tmp_path):
     db.close()
 
 
+def test_time_axis_formatting_adapts_to_span(qapp):
+    """回归：时间轴按可见跨度自适应精度（短记录显示到秒，别再三个刻度都同分）。"""
+    import time
+    from curve_widget import _fmt_time
+    t0 = time.time()
+    assert _fmt_time(t0, span=30).count(":") == 2        # HH:MM:SS
+    assert _fmt_time(t0, span=600).count(":") == 1      # HH:MM
+    assert "-" in _fmt_time(t0, span=90000)              # 跨天带日期
+
+
+def test_drawer_is_scrollable(qapp, tmp_path):
+    """回归：抽屉内容可滚动，靠下的「事件回顾/历史记录」才够得着（此前被裁在折叠外）。"""
+    from PyQt5.QtWidgets import QScrollArea
+    win, db = _make_window(tmp_path)
+    assert win.console.drawer.findChild(QScrollArea) is not None
+    db.close()
+
+
 def test_baseline_nudge_fork_and_reset(qapp, tmp_path):
     """基线主权：nudge 改变基线，fork 产生新 regime，reset 回到群体先验
 

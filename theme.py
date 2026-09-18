@@ -344,6 +344,13 @@ QFrame#DrawerInner {{
     background: transparent;
     border: none;
 }}
+QScrollArea#DrawerScroll, QScrollArea#DrawerScroll > QWidget {{
+    background: transparent;
+    border: none;
+}}
+QWidget#DrawerContent {{
+    background: transparent;
+}}
 QFrame#TopBar {{
     background-color: {c['paper']};
     border-bottom: 1px solid {c['rule']};
