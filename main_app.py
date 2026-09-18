@@ -14,6 +14,7 @@ QtSvg 不一定随 PyQt5 wheels 装好；构成主义硬边图形用 QPainter �
 import sys
 import os
 import json
+import logging
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -40,6 +41,8 @@ try:
     from db import DatabaseManager
 except Exception:                                    # 无 DB 也能启动
     DatabaseManager = None
+
+logger = logging.getLogger(__name__)
 
 
 # ================================================================
@@ -214,8 +217,8 @@ class MainWindow(QMainWindow):
         if self.db is not None:
             try:
                 self.db.set_state("archetype", key)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("持久化精力人群选择失败：%s", exc)
 
     def _repick_archetype(self):
         """页头按钮：随时重选精力类型。"""
