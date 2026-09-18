@@ -168,7 +168,7 @@ class MainWindow(QMainWindow):
         rl.addWidget(rule)
 
         # ---- 主界面（自带内核 + 抽屉）----
-        self.console = MainConsole(parent=self)
+        self.console = MainConsole(parent=self, db=self.db)
         rl.addWidget(self.console, 1)
         root.addWidget(right, 1)
 
