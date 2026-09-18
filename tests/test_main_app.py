@@ -313,6 +313,59 @@ def test_drawer_is_scrollable(qapp, tmp_path):
     db.close()
 
 
+def test_stop_with_data_enters_decay(qapp, tmp_path):
+    """回归：有数据时停止记录 → 进入"衰减回基线"，不清空、按钮转推演中。"""
+    win, db = _make_window(tmp_path)
+    c = win.console
+    c._toggle_recording(True)
+    for _ in range(5):
+        c._sample()
+    c._toggle_recording(False)
+    assert c.recording is False
+    assert c._wave_active is True
+    assert len(c.states) == 5
+    assert c.input_panel.btn_record.text().startswith("◌")   # 推演中
+    db.close()
+
+
+def test_decay_settles_back_to_baseline_and_clears(qapp, tmp_path):
+    """回归：衰减外推回基线后曲线消失、回到"开始记录"。"""
+    win, db = _make_window(tmp_path)
+    c = win.console
+    c._toggle_recording(True)
+    for _ in range(4):
+        c._sample()
+    c._toggle_recording(False)
+    assert c._wave_active is True
+    for _ in range(60):
+        if not c._wave_active:
+            break
+        c._decay_step()
+    assert c._wave_active is False
+    assert c.curve.timestamps == []                          # 曲线消失
+    assert c.input_panel.btn_record.text().startswith("●")   # 回到开始记录
+    db.close()
+
+
+def test_active_wave_resumes_on_relaunch(qapp, tmp_path):
+    """回归：关掉重开（新 MainConsole 同库）→ 从 active_wave 快照恢复并继续推演。"""
+    from windows.main_console import MainConsole
+    from db import DatabaseManager
+    db = DatabaseManager(str(tmp_path / "r.db"))
+    c = MainConsole(db=db, archetype_key="medium")
+    c._toggle_recording(True)
+    for _ in range(6):
+        c._sample()
+    c._toggle_recording(False)
+    assert c._wave_active is True
+
+    c2 = MainConsole(db=db, archetype_key="medium")         # 模拟重启
+    assert c2._wave_active is True
+    assert len(c2.observations) == 6
+    assert c2.input_panel.btn_record.text().startswith("◌")
+    db.close()
+
+
 def test_baseline_nudge_fork_and_reset(qapp, tmp_path):
     """基线主权：nudge 改变基线，fork 产生新 regime，reset 回到群体先验
 

@@ -52,6 +52,12 @@ from .correction_sheet import CorrectionSheet
 
 logger = logging.getLogger(__name__)
 
+# ---- 情绪波生命周期常量（记录→衰减回基线→消失→待下次记录）----
+SETTLE_EPS = 0.05        # 距基线小于此值视为"回归基线"
+SETTLE_MIN_SEC = 3.0     # 至少衰减这么久才允许判定结束（避免刚停就消失）
+MAX_DECAY_SEC = 600.0    # 衰减外推的硬上限（防止无限外推）
+DECAY_DT = 1.0           # 每个定时器 tick 向前推演的秒数（实时、无需后台进程）
+
 
 # ================================================================
 # 状态名派生（按 V×A 象限；不作诊断/评判）
@@ -299,7 +305,7 @@ class InputPanel(QWidget):
             f"QPushButton:hover {{ background: {COLORS['accent_ink']}; }}"
             f"QPushButton:pressed {{ background: {COLORS['accent_deep']}; }}"
         )
-        self.btn_record.clicked.connect(self._toggle_recording)
+        self.btn_record.clicked.connect(lambda: self._on_toggle())
         ctrl.addWidget(self.btn_record)
 
         self.count_label = QLabel("0 个观察")
@@ -338,28 +344,43 @@ class InputPanel(QWidget):
         layout.addWidget(num)
         return {'layout': layout, 'slider': slider, 'num': num, 'key': key}
 
-    def _toggle_recording(self):
-        # running = 当前按钮显示的是「停止」→ 正在记录
-        running = self.btn_record.text().startswith("■")
-        self._on_toggle(not running)
-        self.set_recording(not running)  # 用翻转后的新状态同步按钮文案
+    _BTN_PRIMARY = (
+        f"QPushButton {{ background: {COLORS['accent']}; color: {COLORS['surface']};"
+        f" border: none; padding: 11px 22px; font-size: 11.5px;"
+        f" font-weight: 600; letter-spacing: 1.6px; }}"
+        f"QPushButton:hover {{ background: {COLORS['accent_ink']}; }}"
+        f"QPushButton:pressed {{ background: {COLORS['accent_deep']}; }}"
+    )
+    _BTN_STOP = (
+        f"QPushButton {{ background: {COLORS['accent_deep']};"
+        f" color: {COLORS['surface']}; border: none; padding: 11px 22px;"
+        f" font-size: 11.5px; font-weight: 600; letter-spacing: 1.6px; }}"
+    )
+    _BTN_DECAY = (
+        f"QPushButton {{ background: {COLORS['rule']};"
+        f" color: {COLORS['muted']}; border: none; padding: 11px 22px;"
+        f" font-size: 11.5px; font-weight: 600; letter-spacing: 1.6px; }}"
+    )
+
+    def set_mode(self, mode: str):
+        """按钮三态：idle=开始记录 / recording=停止记录 / decaying=推演中(禁用)。"""
+        btn = self.btn_record
+        if mode == "recording":
+            btn.setText("■  停止记录")
+            btn.setEnabled(True)
+            btn.setStyleSheet(self._BTN_STOP)
+        elif mode == "decaying":
+            btn.setText("◌  推演中…")
+            btn.setEnabled(False)
+            btn.setStyleSheet(self._BTN_DECAY)
+        else:  # idle
+            btn.setText("●  开始记录")
+            btn.setEnabled(True)
+            btn.setStyleSheet(self._BTN_PRIMARY)
 
     def set_recording(self, running: bool):
-        if running:
-            self.btn_record.setText("■  停止记录")
-            self.btn_record.setStyleSheet(
-                f"QPushButton {{ background: {COLORS['accent_deep']};"
-                f" color: {COLORS['surface']}; border: none; padding: 11px 22px;"
-                f" font-size: 11.5px; font-weight: 600; letter-spacing: 1.6px; }}"
-            )
-        else:
-            self.btn_record.setText("●  开始记录")
-            self.btn_record.setStyleSheet(
-                f"QPushButton {{ background: {COLORS['accent']};"
-                f" color: {COLORS['surface']}; border: none; padding: 11px 22px;"
-                f" font-size: 11.5px; font-weight: 600; letter-spacing: 1.6px; }}"
-                f"QPushButton:hover {{ background: {COLORS['accent_ink']}; }}"
-            )
+        """兼容旧接口：True→recording，False→idle。"""
+        self.set_mode("recording" if running else "idle")
 
     def get_values(self):
         return (self.v_row['slider'].value() / 100.0,
@@ -397,12 +418,18 @@ class MainConsole(QWidget):
         self._segment = []          # 本次「开始→停止记录」采集到的观察，停止时聚合成一条 event
         self._edits = []            # 用户对曲线点的编辑（伪观察），驱动显示曲线的 RTS 重拟合
 
+        # 情绪波生命周期：idle → recording → decaying(外推回基线) → 回归基线后消失 → idle
+        self._wave_active = False
+        self._last_obs_ts = 0.0
+        self._decay_now = 0.0
+
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
-        self.timer.timeout.connect(self._sample)
+        self.timer.timeout.connect(self._tick)
 
         self._build()
         self._refresh_readouts()
+        self._resume_active_wave()   # 上次未走完的波：开机后"慢慢推演"
 
     # ================================================================
     # 布局
@@ -578,21 +605,37 @@ class MainConsole(QWidget):
     # 数据采集
     # ================================================================
     def _toggle_recording(self, want_running=None):
-        """切换（或强制设置）记录状态。
-
-        want_running=None → 按当前状态取反；否则按给定值设置。
-        一次「开始→停止」视为一个情绪事件：开始时清空 segment，停止时落库。
-        """
+        """开始/停止记录。停止后不清空，而是进入"外推衰减回基线"，回归后曲线消失。"""
         if want_running is None:
             want_running = not self.recording
-        self.recording = want_running
-        self.input_panel.set_recording(want_running)
         if want_running:
-            self._segment = []                 # 新的一段记录
+            if self._wave_active and not self.recording:
+                self._end_wave()                 # 上一波还在衰减 → 先收尾
+            self.recording = True
+            self._wave_active = True
+            self._segment = []
+            self.input_panel.set_mode("recording")
             self.timer.start(1000)
         else:
-            self.timer.stop()
-            self._persist_segment_event()      # 停止 = 结束一个事件，落库并刷新面板
+            if not self.recording:
+                return
+            self.recording = False
+            self._persist_segment_event()        # 落库 + 自动学习（保留 states/observations）
+            if not self.states:                  # 没采到点 → 直接回 idle
+                self._end_wave()
+                return
+            self._last_obs_ts = self.states[-1][0]
+            self._decay_now = self._last_obs_ts
+            self.input_panel.set_mode("decaying")
+            self._store_active_wave()            # 存快照：关掉重开也能"慢慢推演"
+            self.timer.start(1000)               # 继续跑 → _decay_step 衰减回基线
+
+    def _tick(self):
+        """1Hz 心跳：记录中采样；衰减中向前推演。"""
+        if self.recording:
+            self._sample()
+        elif self._wave_active:
+            self._decay_step()
 
     def _sample(self):
         ts = time.time()
@@ -601,6 +644,7 @@ class MainConsole(QWidget):
                           source=ObservationSource.USER)
         self.observations.append(obs)
         self._segment.append(obs)
+        self._last_obs_ts = ts
         if not self.estimator.is_initialized:
             self.estimator.initialize(timestamp=ts, valence=v, arousal=a)
         state = self.estimator.update(obs)
@@ -652,6 +696,142 @@ class MainConsole(QWidget):
         self.legacy.refresh()                          # 新事件即时出现在抽屉里
 
     # ================================================================
+    # 情绪波衰减：记录停止后外推回基线，回归即消失（无需后台进程）
+    # ================================================================
+    def _decay_step(self):
+        if not self.states:
+            self._end_wave()
+            return
+        self._decay_now += DECAY_DT
+        horizon = self._decay_now - self._last_obs_ts
+        if horizon <= 0:
+            return
+        pts = self._decay_points(horizon)          # 向基线（GP 均值函数）衰减，而非向 0
+        self._refresh_curve_wave(pts)
+        bv = self.baseline_ctrl.current.valence
+        ba = self.baseline_ctrl.current.arousal
+        if pts:
+            last_v, last_a = pts[-1][1], pts[-1][2]
+        else:
+            last_v, last_a = self.states[-1][1].valence, self.states[-1][1].arousal
+        settled = (abs(last_v - bv) < SETTLE_EPS and abs(last_a - ba) < SETTLE_EPS
+                   and horizon >= SETTLE_MIN_SEC)
+        if settled or horizon >= MAX_DECAY_SEC:
+            self._end_wave()                       # 回归基线 → 曲线消失
+
+    def _decay_points(self, horizon: float):
+        """从末态按 Matérn 位置衰减因子 d(Δt)=e^(-λΔt)(1+λΔt) 外推回基线。
+
+        返回 [(ts, valence, arousal, var_v, var_a)]，与 predict_forward 的
+        "偏离空间回复到基线"同一套数学（estimator.extrapolate 是向 0 收，不适用）。
+        """
+        bv = self.baseline_ctrl.current.valence
+        ba = self.baseline_ctrl.current.arousal
+        last = self.states[-1][1]
+        lv, la = last.valence, last.arousal
+        lv_var, la_var = last.variance_valence, last.variance_arousal
+        lam_v = self.params.lambda_valence()
+        lam_a = self.params.lambda_arousal()
+        pts = []
+        n = int(horizon // DECAY_DT)
+        for i in range(1, n + 1):
+            dt = i * DECAY_DT
+            dv = math.exp(-lam_v * dt) * (1 + lam_v * dt)
+            da = math.exp(-lam_a * dt) * (1 + lam_a * dt)
+            v = max(0.0, min(1.0, bv + (lv - bv) * dv))
+            a = max(0.0, min(1.0, ba + (la - ba) * da))
+            pts.append((self._last_obs_ts + dt, v, a, lv_var, la_var))
+        return pts
+
+    def _refresh_curve_wave(self, pts):
+        """显示 = 已记录的真实状态 + 外推衰减尾巴（一条会自己往基线收的波）。"""
+        ts_list = [t for t, _ in self.states] + [p[0] for p in pts]
+        mv = [s.valence for _, s in self.states] + [p[1] for p in pts]
+        ma = [s.arousal for _, s in self.states] + [p[2] for p in pts]
+        vv = [s.variance_valence for _, s in self.states] + [p[3] for p in pts]
+        va = [s.variance_arousal for _, s in self.states] + [p[4] for p in pts]
+        raw = [(o.timestamp, o.valence) for o in self.observations]
+        self.curve.set_data(ts_list, mv, ma, vv, va,
+                            baseline_v=self.baseline_ctrl.current.valence, raw=raw)
+
+    def _end_wave(self):
+        """一波结束：曲线消失、读数复位、估计器重置回基线，回到待记录(idle)。"""
+        self.timer.stop()
+        self.recording = False
+        self._wave_active = False
+        self.curve.clear()
+        self._reset_readouts()
+        self.states = []
+        self.observations = []
+        self._edits = []
+        self._segment = []
+        self.estimator = StateEstimator(params=self.params,
+                                        baseline=self.baseline_ctrl.current)
+        self.input_panel.set_mode("idle")
+        self.input_panel.set_count(0)
+        self._clear_active_wave()
+
+    def _reset_readouts(self):
+        for lbl in (self.readout.v_lbl, self.readout.a_lbl,
+                    self.readout.c_lbl, self.readout.ci_lbl):
+            lbl.value_label.setText("—")
+        self.status.state_label.setText("—")
+
+    def _store_active_wave(self):
+        if self.db is None:
+            return
+        try:
+            snap = {"end_ts": self._last_obs_ts,
+                    "samples": [[o.timestamp, o.valence, o.arousal] for o in self.observations]}
+            self.db.set_state("active_wave", json.dumps(snap))
+        except Exception as exc:
+            logger.warning("保存活动情绪波快照失败：%s", exc)
+
+    def _clear_active_wave(self):
+        if self.db is None:
+            return
+        try:
+            self.db.set_state("active_wave", "")
+        except Exception:
+            pass
+
+    def _resume_active_wave(self):
+        """开机若有未走完的波：重放观察、重建估计器，进入衰减"慢慢推演"。"""
+        if self.db is None:
+            return
+        try:
+            raw = self.db.get_state("active_wave", "") or ""
+        except Exception:
+            return
+        if not raw:
+            return
+        try:
+            data = json.loads(raw)
+            samples = data.get("samples", [])
+            end_ts = float(data.get("end_ts", 0.0))
+        except Exception:
+            self._clear_active_wave()
+            return
+        if not samples:
+            self._clear_active_wave()
+            return
+        for ts, v, a in samples:
+            obs = Observation(timestamp=ts, valence=v, arousal=a,
+                              source=ObservationSource.USER)
+            self.observations.append(obs)
+            if not self.estimator.is_initialized:
+                self.estimator.initialize(timestamp=ts, valence=v, arousal=a)
+            state = self.estimator.update(obs)
+            self.states.append((ts, state))
+        self._last_obs_ts = end_ts or self.states[-1][0]
+        self._decay_now = self._last_obs_ts
+        self._wave_active = True
+        self.recording = False
+        self.input_panel.set_mode("decaying")
+        self.input_panel.set_count(len(self.observations))
+        self.timer.start(1000)                         # 前台心跳推演（无后台进程）
+
+    # ================================================================
     # 学习（个人模型）
     # ================================================================
     def _learn(self):
@@ -675,11 +855,15 @@ class MainConsole(QWidget):
         self._segment = []
         self._edits = []
         self.recording = False
+        self._wave_active = False
+        self._last_obs_ts = 0.0
+        self._decay_now = 0.0
         self.timer.stop()
-        self.input_panel.set_recording(False)
+        self.input_panel.set_mode("idle")
         self.input_panel.set_count(0)
-        self._refresh_readouts()
-        self._refresh_curve()
+        self._reset_readouts()
+        self.curve.clear()
+        self._clear_active_wave()
 
     # ================================================================
     # 刷新
