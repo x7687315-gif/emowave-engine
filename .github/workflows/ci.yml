@@ -31,7 +31,9 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q --tb=short
 
-      - name: Smoke: imports without GUI
+      # 注意：step name 里含冒号时必须加引号，否则 YAML 把 ": " 当键分隔符，
+      # 整个 workflow 解析失败（run 秒失败、零 job、注解 Invalid workflow file）
+      - name: "Smoke: imports without GUI"
         # 解耦后的边界：presenter / 视图 / 入口都能在无显示环境 import
         run: |
           python -c "import main_app, presenters.console_presenter, windows.mini_window; print('imports OK')"
