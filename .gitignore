@@ -22,3 +22,12 @@ test_data/
 *.bak
 *.bak.html
 *.bak2.html
+
+# 设计稿 mock 渲染（docs/shot.py 的中间产物，不进版本库）
+*.mock.png
+
+# AI 走查工具输出（一次性审计留痕）
+spark-output/
+
+# 虚拟环境（.venv 内层有自己的 .gitignore=*，这里显式声明双保险）
+.venv/

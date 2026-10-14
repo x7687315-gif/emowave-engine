@@ -345,13 +345,18 @@ class MainConsole(QWidget):
 
         # ---- 页 1：模型（基线主权 + 个人模型 + 参数说明）----
         self.baseline_card = BaselineToolsCard(self.baseline_ctrl, self.estimator)
-        model_card = ModelCard(self.params, self.calibrator,
-                               on_learn=self._learn)
+        # provider 形式传入：换人群/学习一步后 params 会被 replace，
+        # 卡片必须从源头拉最新值（v3 遗留 bug，持有对象会显示旧值）
+        self.model_card = ModelCard(
+            params=lambda: self.presenter.params,
+            calibrator=lambda: self.presenter.calibrator,
+            on_learn=self._learn,
+        )
         body = QVBoxLayout()
         body.setContentsMargins(16, 16, 16, 16)
         body.setSpacing(14)
         body.addWidget(self.baseline_card)
-        body.addWidget(model_card)
+        body.addWidget(self.model_card)
         # 参数说明：v3 是状态卡里 220px 折叠面板，小窗放不下 → 常驻模型页
         self.params_card = ParamsExplainCard()
         body.addWidget(self.params_card)
@@ -482,14 +487,15 @@ class MainConsole(QWidget):
     def _learn(self):
         self.presenter.learn()
         self._refresh_readouts()
+        self.model_card.refresh()      # learn() 返回新 params，卡片重新拉取
 
     def set_archetype(self, key: str):
         """切换精力人群先验：重 seed + 清空会话（委托 presenter）。"""
         self.presenter.set_archetype(key)
         # presenter 重建了 estimator/calibrator/params：把卡片上的旧引用换掉
-        # （v3 的隐患：卡片仍写给已退役的对象）
         self.baseline_card.set_estimator(self.estimator)
         self.baseline_card.refresh()
+        self.model_card.refresh()
         self._push_input()
 
     # ================================================================

@@ -474,6 +474,36 @@ def test_mini_window_mirrors_main_view(qapp, tmp_path):
     db.close()
 
 
+def test_model_card_pulls_latest_params(qapp, tmp_path):
+    """阶段 5：ModelCard 用 provider 拉取，换人群/学习一步后不再显示旧值。"""
+    win, db = _make_window(tmp_path)
+    card = win.console.model_card
+    console = win.console
+
+    # ① 换人群 → ℓ 应变成低精力先验的 380（v3 这里会停在旧的 240）
+    console.set_archetype("low")
+    card.refresh()
+    assert card._lbl_ell.value_label.text() == "380"
+    assert card._lbl_stage.value_label.text() == "cold_start"
+
+    # ② 学习一步（换人群会清空会话，所以先重新记录 + 做一次纠正）
+    console._toggle_recording(True)
+    for _ in range(3):
+        console._sample()
+    console._toggle_recording(False)
+    ts = console.states[-1][0]
+    console.ingest_corrections([(ts, 0.9, 0.5)])
+    console._learn()
+    card.refresh()
+
+    # 有纠正数据集 → 走 warm 路径，n_events_fitted +1（v3 会停在 0）
+    assert card._lbl_n.value_label.text() != "0"
+    # ℓ 必须与 presenter 当前 params 一致（不是学习前的旧值）
+    assert int(card._lbl_ell.value_label.text()) == int(round(
+        console.presenter.params.ell_valence))
+    db.close()
+
+
 def test_stop_with_data_enters_decay(qapp, tmp_path):
     """回归：有数据时停止记录 → 进入"衰减回基线"，不清空、按钮转推演中。"""
     win, db = _make_window(tmp_path)

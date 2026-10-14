@@ -10,11 +10,22 @@ from theme import COLORS, app_font, app_font_num
 
 
 class ModelCard(QFrame):
+    """个人模型卡：已学习 / 惯性 ℓ / 阶段 / 个人化 + 「学习一步」。
+
+    === 为什么不直接持有 params/calibrator ===
+    v3 在构造时抓住 `params` 对象，但 presenter 有两处会 replace 它：
+      · `set_archetype()` 换人群 → 新 params
+      · `Calibrator.learn()` 学习一步 → 返回新 params（version+1）
+    两者都会让卡片显示**上一次的旧值**（"学习一步"点下去数字不动）。
+    因此改为持有 **provider（可调用）**，每次 refresh 都从源头拉；
+    传入普通对象也支持（`_get()` 兜底），不破坏既有调用方式。
+    """
+
     def __init__(self, params, calibrator, on_learn, parent=None):
         super().__init__(parent)
         self.setObjectName("Section")
-        self._params = params
-        self._calibrator = calibrator
+        self._params_ref = params          # 对象或 callable
+        self._calibrator_ref = calibrator  # 同上（当前仅作状态来源预留）
         self._on_learn = on_learn
 
         lay = QVBoxLayout(self)
@@ -82,13 +93,19 @@ class ModelCard(QFrame):
         w.value_label = big
         return w
 
+    @staticmethod
+    def _get(ref):
+        """支持传对象或传 callable（callable 用于永远从源头拉最新值）。"""
+        return ref() if callable(ref) else ref
+
     def refresh(self):
-        self._lbl_n.value_label.setText(str(getattr(self._params, 'n_events_fitted', 0)))
-        self._lbl_ell.value_label.setText(f"{getattr(self._params, 'ell_valence', 0):.0f}")
-        self._lbl_stage.value_label.setText(getattr(self._params.stage, 'value', '—'))
+        p = self._get(self._params_ref)
+        self._lbl_n.value_label.setText(str(getattr(p, 'n_events_fitted', 0)))
+        self._lbl_ell.value_label.setText(f"{getattr(p, 'ell_valence', 0):.0f}")
+        self._lbl_stage.value_label.setText(getattr(p.stage, 'value', '—'))
         self._lbl_shrink.value_label.setText(
-            f"{int(getattr(self._params, 'shrinkage_alpha', 0)*100)}%")
+            f"{int(getattr(p, 'shrinkage_alpha', 0)*100)}%")
 
     def _learn(self):
         self._on_learn()
-        self.refresh()
+        self.refresh()          # 学习一步后立刻重新拉取（learn() 返回新 params）

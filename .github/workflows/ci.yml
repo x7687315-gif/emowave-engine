@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    # Windows：项目主战场是 PyQt5 桌面端（run_emowave.bat / Python 3.9）
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install dependencies
+        # PyQt5 5.15.11 + pytest-qt；numpy 只被根目录 1.x 遗留模块使用，
+        # 但全量测试会 import 它们，所以一起装。
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run full test suite (offscreen)
+        # 桌面端 55+ 条集成测试靠 tests/conftest.py 的 qapp fixture + offscreen 平台
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q --tb=short
+
+      - name: Smoke: imports without GUI
+        # 解耦后的边界：presenter / 视图 / 入口都能在无显示环境 import
+        run: |
+          python -c "import main_app, presenters.console_presenter, windows.mini_window; print('imports OK')"
