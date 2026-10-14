@@ -26,6 +26,7 @@ from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, pyqtPrope
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider, QPushButton, QFrame,
     QSizePolicy, QGraphicsOpacityEffect, QToolButton, QButtonGroup, QScrollArea,
+    QStackedWidget,
 )
 from PyQt5.QtGui import QFont
 
@@ -44,7 +45,6 @@ from emowave.core.calibration.baseline_control import BaselineController
 from emowave.core.calibration.calibrator import Calibrator
 
 # 子模块（抽屉、首项、上滑框）
-from .drawer import SideDrawer
 from .baseline_tools import BaselineToolsCard
 from .model_card import ModelCard
 from .legacy_embed import LegacyEmbed
@@ -432,15 +432,23 @@ class MainConsole(QWidget):
         self._resume_active_wave()   # 上次未走完的波：开机后"慢慢推演"
 
     # ================================================================
-    # 布局
+    # 布局（小窗化 · 阶段 1：三页 Tab 取代「主区 + 右侧抽屉」）
     # ================================================================
     def _build(self):
-        # 左：主界面（4 区块）；右：抽屉
-        outer = QHBoxLayout(self)
+        """三页结构：
+        页 0 曲线（4 区块）/ 页 1 模型（基线主权 + 个人模型）/ 页 2 历史（回顾 + 记录）。
+
+        为什么改：v3 的右侧抽屉宽 380px，比 400×680 的小窗本身还宽，
+        物理上无法并排；且次要区与主区同屏时小窗根本放不下。
+        """
+        outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # ---- 主区 ----
+        self.stack = QStackedWidget()
+        outer.addWidget(self.stack, 1)
+
+        # ---- 页 0：曲线（4 区块）----
         main = QWidget()
         main.setStyleSheet(f"background: {COLORS['paper']};")
         ml = QVBoxLayout(main)
@@ -477,7 +485,9 @@ class MainConsole(QWidget):
         head.addWidget(legend)
         cf.addLayout(head)
         self.curve = EmotionCurveWidget(series='valence')
-        self.curve.setMinimumHeight(280)
+        # 阶段 1 临时值：从 280 压到 220，让 400×680 容得下全部 4 区块。
+        # 阶段 2 把 StatusCard 与 ReadoutBar 合并成 56px 状态头后，曲线可回到 ~340。
+        self.curve.setMinimumHeight(220)
         cf.addWidget(self.curve)
         ml.addWidget(curve_frame, 1)
 
@@ -490,37 +500,59 @@ class MainConsole(QWidget):
         ml.addWidget(sep)
         ml.addWidget(self.input_panel)
 
-        outer.addWidget(main, 1)
+        self.page_curve = main
+        self.stack.addWidget(main)
 
-        # ---- 抽屉（首期隐藏）----
-        self.drawer = SideDrawer(width=METRICS['drawer_w'])
-        outer.addWidget(self.drawer)
-
-        # 抽屉内 4 项
+        # ---- 页 1：模型（基线主权 + 个人模型）----
         self.baseline_card = BaselineToolsCard(self.baseline_ctrl, self.estimator)
         model_card = ModelCard(self.params, self.calibrator,
                                on_learn=self._learn)
+        body = QVBoxLayout()
+        body.setContentsMargins(16, 16, 16, 16)
+        body.setSpacing(14)
+        body.addWidget(self.baseline_card)
+        body.addWidget(model_card)
+        body.addStretch(1)
+        self.page_model = self._make_scroll_page(body)
+        self.stack.addWidget(self.page_model)
+
+        # ---- 页 2：历史（事件回顾 + 历史记录）----
         self.legacy = LegacyEmbed(db=self.db)
-        self.drawer.add_section(self.baseline_card)
-        self.drawer.add_section(model_card)
-        self.drawer.add_section(self.legacy)
+        body2 = QVBoxLayout()
+        body2.setContentsMargins(16, 16, 16, 16)
+        body2.setSpacing(14)
+        body2.addWidget(self.legacy)
+        body2.addStretch(1)
+        self.page_history = self._make_scroll_page(body2)
+        self.stack.addWidget(self.page_history)
 
-    # ================================================================
-    # 抽屉开合
-    # ================================================================
-    def open_drawer(self):
-        self.drawer.show_drawer()
-        self.legacy.refresh()
+    def _make_scroll_page(self, body_layout):
+        """把若干区块包成一个可滚动的整页。
 
-    def close_drawer(self):
-        self.drawer.hide_drawer()
+        400×680 下「模型 / 历史」内容必然超出屏高，必须可滚
+        （v3 抽屉时代靠 SideDrawer 的 QScrollArea，这里保留同一约束）。
+        """
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        scroll = QScrollArea()
+        scroll.setObjectName("PageScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        content = QWidget()
+        content.setObjectName("PageBody")
+        content.setLayout(body_layout)
+        scroll.setWidget(content)
+        lay.addWidget(scroll, 1)
+        return page
 
-    def toggle_drawer(self):
-        # 必须用 drawer.is_open()（内部 _visible 标志），不能用 isVisible()：
-        # 抽屉靠 maximumWidth 0↔380 收放，Qt 始终认为它 visible，
-        # 用 isVisible() 判断会导致第二次 toggle 关不掉。
-        self.drawer.toggle()
-        if self.drawer.is_open():
+    def show_page(self, index: int):
+        """切换页（外壳 TopTabs.currentChanged 接这里）。"""
+        self.stack.setCurrentIndex(index)
+        if index == 2:
+            # 进「历史」页才刷新：v3 是开抽屉时刷，语义等价
             self.legacy.refresh()
 
     # ================================================================

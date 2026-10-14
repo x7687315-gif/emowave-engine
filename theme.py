@@ -93,13 +93,19 @@ def app_font_num(size: int = 18, weight: int = QFont.Light) -> QFont:
 # ================================================================
 # 尺寸与动效令牌
 # ================================================================
+# v3 → 小窗化（阶段 1）的变更：
+#   · rail_w 56      → 已删除，左侧图标列让位给顶部 Tab 栏 tabbar_h
+#   · drawer_w 380   → 已删除，右侧抽屉改整页（模型 / 历史 Tab）
+#   · topbar_h 46→44，新增 tabbar_h 40、statehead_h 56（阶段 2 合并状态头）
 METRICS = {
-    'rail_w':        56,      # 图标列宽
-    'topbar_h':      46,      # 极简页头高
-    'drawer_w':      380,     # 右侧抽屉宽
-    'sheet_h':       356,     # 纠正上滑框高
-    'readout_h':     72,      # 读数条高
-    'radius':        0,       # 构成主义：全站直角
+    'tabbar_h':     40,      # 顶部 Tab 栏高（替代原来的 56px 图标列）
+    'topbar_h':     44,      # 极简页头高
+    'statehead_h':  56,      # 状态头高（阶段 2：状态名 + 效价/唤醒读数合并）
+    'readout_h':    72,      # 读数条高（v3 遗留 · 阶段 2 并入状态头）
+    'sheet_h':      356,     # 纠正上滑框高（阶段 2 适配 400 宽）
+    'mini_w':       360,     # 迷你置顶窗宽（阶段 4）
+    'mini_h':       180,     # 迷你置顶窗高（阶段 4）
+    'radius':       0,       # 构成主义：全站直角
 }
 
 # 指数缓动（ease-out-quart）—— 绝不回弹
@@ -335,29 +341,42 @@ QGroupBox::title {{
     font-weight: 600;
 }}
 
-/* ---------- 抽屉 / 面板容器 ---------- */
-QFrame#Drawer {{
-    background-color: {c['paper_2']};
-    border-left: 1px solid {c['rule']};
+/* ---------- 顶部 Tab 栏（小窗化：替代 56px 图标列）---------- */
+QFrame#TopTabs {{
+    background-color: {c['paper']};
+    border: none;
+    border-bottom: 1px solid {c['rule']};
 }}
-QFrame#DrawerInner {{
+QPushButton#TabBtn {{
+    background: transparent;
+    border: none;
+    /* 底部指示条占位：未选中时透明，选中时 2px accent（构成主义硬边）*/
+    border-bottom: 2px solid transparent;
+    border-radius: 0px;
+    color: {c['muted']};
+    font-family: "{fam}", "{FONT_FAMILY_FALLBACK}", sans-serif;
+    letter-spacing: 1.2px;
+    padding: 0px;
+}}
+QPushButton#TabBtn:hover {{
+    color: {c['ink']};
+}}
+QPushButton#TabBtn:checked {{
+    color: {c['accent_ink']};
+    border-bottom: 2px solid {c['accent']};
+}}
+
+/* ---------- 次要页滚动区（模型 / 历史 Tab）---------- */
+QScrollArea#PageScroll, QScrollArea#PageScroll > QWidget {{
     background: transparent;
     border: none;
 }}
-QScrollArea#DrawerScroll, QScrollArea#DrawerScroll > QWidget {{
-    background: transparent;
-    border: none;
-}}
-QWidget#DrawerContent {{
-    background: transparent;
+QWidget#PageBody {{
+    background: {c['paper']};
 }}
 QFrame#TopBar {{
     background-color: {c['paper']};
     border-bottom: 1px solid {c['rule']};
-}}
-QFrame#Rail {{
-    background-color: {c['paper_2']};
-    border-right: 1px solid {c['rule']};
 }}
 QFrame#CurvePanel {{
     background-color: {c['surface']};

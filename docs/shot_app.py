@@ -23,9 +23,6 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PyQt5.QtCore import Qt, QTimer
-Qt.AA_EnableHighDpiScaling = True
-Qt.AA_UseHighDpiPixmaps = True
-
 from PyQt5.QtWidgets import QApplication
 
 from theme import app_font, build_app_qss
@@ -37,11 +34,15 @@ os.makedirs(OUT, exist_ok=True)
 
 N_SAMPLES = 48
 
+# HighDPI：必须在 QApplication 构造前用静态 setAttribute
+# （Qt.AA_EnableHighDpiScaling = True 那种写法只是给枚举加同名属性，Qt 不读）
+QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
 app = QApplication(sys.argv)
 app.setFont(app_font(10))
 app.setStyleSheet(build_app_qss())
-win = MainWindow()
-win.resize(1180, 780)
+win = MainWindow()          # 默认即 400×680 手机比例小窗
 win.show()
 
 console = win.console
@@ -98,11 +99,12 @@ def run(i=0):
 
 
 STEPS = [
-    (lambda: (feed(), shot(win, "01-main.png")), 500),
-    (lambda: (console.toggle_drawer(), shot(win, "02-drawer.png")), 700),
-    (lambda: (console.toggle_drawer(), None), 400),
+    (lambda: (feed(), shot(win, "01-main.png")), 600),
+    (lambda: (win.tabs.set_current(1), shot(win, "02-model.png")), 500),
+    (lambda: (win.tabs.set_current(2), shot(win, "03-history.png")), 500),
+    (lambda: (win.tabs.set_current(0), None), 300),
     (open_sheet, 700),
-    (lambda: shot(holder['sheet'], "03-correct-sheet.png"), 300),
+    (lambda: shot(holder['sheet'], "04-correct-sheet.png"), 400),
 ]
 
 QTimer.singleShot(300, lambda: run(0))

@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""心潮 EmoWave 桌面应用入口（v3 · 重做界面）
+"""心潮 EmoWave 桌面应用入口（v3.1 · 小窗化重做界面）
 
-=== 与 v2 的差异 ===
-1. 外壳极简：56px 图标列 + 一行页头，**删除菜单栏**
-2. 主界面换为 windows/main_console.MainConsole（4 区块：状态 / 读数 / 曲线 / 输入）
-3. 全局一次注入 theme.build_app_qss()（修 QSS 不继承 font/color 的老问题）
-4. HighDPI 在 QApplication 创建**之前**打开（否则 Qt 忽略）
+=== 与 v3 的差异 ===
+1. 窗口从 1180×780 缩到 **400×680**（约 9:15.5 竖屏，为手机迁移打底）
+2. **删除左侧 56px 图标列**，横向导航换成**顶部 Tab 栏**（40px，见 windows/top_tabs.py）
+3. **删除右侧 380px 抽屉**，其内容拆成两个整页 Tab：模型 / 历史
+   （抽屉比小窗本身还宽，物理上无法并排）
+4. 次要内容页（模型 / 历史）包进可滚动整页，小窗下靠下的区块才够得着
+5. HighDPI 从「给枚举对象赋值的空操作」改成 `QApplication.setAttribute(...)`
+   —— 原写法 `Qt.AA_EnableHighDpiScaling = True` Qt 根本不读，必须在
+   QCoreApplication 构造前调用静态 setAttribute
 
 === 为什么图标手绘而不用 SVG ===
 QtSvg 不一定随 PyQt5 wheels 装好；构成主义硬边图形用 QPainter 直接描线更稳，
@@ -19,11 +23,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# ---- HighDPI：必须在 QApplication 创建前设置 ----
 from PyQt5.QtCore import Qt, QPointF
-Qt.AA_EnableHighDpiScaling = True
-Qt.AA_UseHighDpiPixmaps = True
-
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QToolButton, QLabel, QFrame, QFileDialog, QMessageBox, QSizePolicy,
@@ -33,6 +33,7 @@ from PyQt5.QtGui import QPainter, QPen, QColor, QFont
 from theme import (
     COLORS, METRICS, app_font, app_font_num, build_app_qss,
 )
+from windows.top_tabs import TopTabs
 from windows.main_console import MainConsole
 from windows.archetype_dialog import ArchetypeDialog
 from emowave import ARCHETYPES, DEFAULT_ARCHETYPE_KEY, get_archetype
@@ -44,12 +45,16 @@ except Exception:                                    # 无 DB 也能启动
 
 logger = logging.getLogger(__name__)
 
+# ---- 小窗化后的窗口尺寸（手机比例；可拉大但布局保持单列）----
+WIN_W, WIN_H = 400, 680
+WIN_MIN_W, WIN_MIN_H = 360, 600
+
 
 # ================================================================
 # 手绘图标按钮（构成主义：直角、几何、无圆角）
 # ================================================================
 class IconButton(QToolButton):
-    """56px 图标列 / 页头用的几何描线图标按钮。
+    """页头用的几何描线图标按钮。
 
     图标用 QPainter 在 16×16 逻辑框里画（坐标 2..14），不依赖字体字形覆盖。
     """
@@ -58,9 +63,6 @@ class IconButton(QToolButton):
     _PATHS = {
         # 情绪曲线：一条折线（构成主义斜线）
         'curve': [((2, 11), (5, 5), (8, 9), (11, 3), (14, 7))],
-        # 抽屉：三条不等长线 + 右侧竖框
-        'drawer': [((2, 4), (9, 4)), ((2, 8), (9, 8)), ((2, 12), (6, 12)),
-                   ((11, 3), (14, 3), (14, 13), (11, 13), (11, 3))],
         # 导出：下箭头 + 底线
         'export': [((8, 2), (8, 9)), ((5, 6), (8, 9), (11, 6)), ((3, 12), (13, 12))],
         # 设置：两条滑杆（杆 + 游标方块）
@@ -71,11 +73,8 @@ class IconButton(QToolButton):
     # ---- 绘制几何常量（避免魔法值 P3C-STY-004）----
     _ICON_BOX = 16.0          # 逻辑坐标系边长
     _PEN_WIDTH = 1.6          # 描线粗细
-    _ACTIVE_BAR_W = 2         # 当前视图指示条宽（px）
-    _ACTIVE_BAR_TOP = 0.28    # 指示条顶端占高比
-    _ACTIVE_BAR_H = 0.44      # 指示条高度占高比
 
-    def __init__(self, kind: str, tooltip: str = "", size: int = 34, parent=None):
+    def __init__(self, kind: str, tooltip: str = "", size: int = 28, parent=None):
         super().__init__(parent)
         self.kind = kind
         self._size = size
@@ -87,7 +86,7 @@ class IconButton(QToolButton):
         self.setStyleSheet("QToolButton { background: transparent; border: none; }")
 
     def set_active(self, on: bool):
-        """当前视图高亮：active 时描线用 accent，并在左边缘画一条硬边指示条。"""
+        """高亮态：hover/激活时描线用 accent。"""
         if self._active != bool(on):
             self._active = bool(on)
             self.update()
@@ -105,12 +104,6 @@ class IconButton(QToolButton):
         pen.setCapStyle(Qt.SquareCap)
         pen.setJoinStyle(Qt.MiterJoin)
         p.setPen(pen)
-
-        # 当前视图指示条：左边缘硬边竖线（构成主义，无圆角）
-        if self._active:
-            h = self.height()
-            p.fillRect(0, int(h * self._ACTIVE_BAR_TOP), self._ACTIVE_BAR_W,
-                       int(h * self._ACTIVE_BAR_H), QColor(COLORS['accent']))
 
         s = self._ICON_BOX
         ox = (self.width() - s) / 2.0
@@ -133,17 +126,24 @@ def _vline():
     return ln
 
 
+def _hrule():
+    ln = QFrame()
+    ln.setFixedHeight(1)
+    ln.setStyleSheet(f"background: {COLORS['rule']}; border: none;")
+    return ln
+
+
 # ================================================================
 # 主窗口
 # ================================================================
 class MainWindow(QMainWindow):
-    """外壳：图标列 + 极简页头 + 主控制台。"""
+    """外壳：页头 + 顶部 Tab + 三页（曲线 / 模型 / 历史）。"""
 
     def __init__(self, db=None):
         super().__init__()
         self.setWindowTitle("心潮 EmoWave · 个人情绪状态引擎")
-        self.setMinimumSize(900, 640)
-        self.resize(1180, 780)
+        self.setMinimumSize(WIN_MIN_W, WIN_MIN_H)
+        self.resize(WIN_W, WIN_H)
 
         if db is None and DatabaseManager is not None:
             try:
@@ -159,26 +159,23 @@ class MainWindow(QMainWindow):
 
         central = QWidget()
         self.setCentralWidget(central)
-        root = QHBoxLayout(central)
+        root = QVBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        root.addWidget(self._build_rail())
+        root.addWidget(self._build_header())
+        root.addWidget(_hrule())
 
-        right = QWidget()
-        rl = QVBoxLayout(right)
-        rl.setContentsMargins(0, 0, 0, 0)
-        rl.setSpacing(0)
-        rl.addWidget(self._build_header())
-        rule = QFrame()
-        rule.setFixedHeight(1)
-        rule.setStyleSheet(f"background: {COLORS['rule']}; border: none;")
-        rl.addWidget(rule)
+        # ---- 顶部 Tab（替代原 56px 图标列 + 380px 抽屉）----
+        self.tabs = TopTabs(["曲线", "模型", "历史"])
+        root.addWidget(self.tabs)
 
-        # ---- 主界面（自带内核 + 抽屉）----
-        self.console = MainConsole(parent=self, db=self.db, archetype_key=self._archetype_key)
-        rl.addWidget(self.console, 1)
-        root.addWidget(right, 1)
+        # ---- 主控制台（自带三页；外壳只负责导航）----
+        self.console = MainConsole(parent=central, db=self.db,
+                                   archetype_key=self._archetype_key)
+        root.addWidget(self.console, 1)
+
+        self.tabs.currentChanged.connect(self.console.show_page)
 
     # ------------------------------------------------------------
     # 精力人群先验：读取 / 开局选择 / 重选
@@ -229,61 +226,18 @@ class MainWindow(QMainWindow):
                 "精力 · " + get_archetype(self._archetype_key).label + " ▾")
 
     # ------------------------------------------------------------
-    # 图标列（56px）
-    # ------------------------------------------------------------
-    def _build_rail(self):
-        rail = QFrame()
-        rail.setObjectName("Rail")
-        rail.setFixedWidth(METRICS['rail_w'])
-        rail.setStyleSheet(
-            f"QFrame#Rail {{ background: {COLORS['paper_2']};"
-            f" border: none; border-right: 1px solid {COLORS['rule']}; }}"
-        )
-        lay = QVBoxLayout(rail)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
-
-        # 字标：竖排「心潮」（构成主义：竖排 + 硬边）
-        mark = QLabel("心\n潮")
-        mark.setFont(app_font(13, QFont.DemiBold))
-        mark.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
-        mark.setStyleSheet(
-            f"color: {COLORS['ink']}; padding: 14px 0 10px 0;"
-            f" letter-spacing: 2px; background: transparent;"
-        )
-        lay.addWidget(mark)
-
-        self.btn_curve = IconButton('curve', "情绪曲线（主界面）")
-        self.btn_drawer = IconButton('drawer', "抽屉：基线 / 个人模型 / 回顾与历史")
-        self.btn_curve.clicked.connect(self._select_curve)
-        self.btn_drawer.clicked.connect(self._toggle_drawer)
-        self.btn_curve.set_active(True)          # 启动即主界面（情绪曲线）
-        for b in (self.btn_curve, self.btn_drawer):
-            lay.addWidget(b, 0, Qt.AlignHCenter)
-
-        lay.addStretch(1)
-
-        ver = QLabel("v3")
-        ver.setFont(app_font(9))
-        ver.setAlignment(Qt.AlignHCenter)
-        ver.setStyleSheet(f"color: {COLORS['muted']}; padding-bottom: 10px;"
-                          f" background: transparent;")
-        lay.addWidget(ver)
-        return rail
-
-    # ------------------------------------------------------------
-    # 页头（46px，无菜单栏）
+    # 页头（44px，无菜单栏）
     # ------------------------------------------------------------
     def _build_header(self):
         head = QFrame()
         head.setObjectName("TopBar")
         head.setFixedHeight(METRICS['topbar_h'])
         lay = QHBoxLayout(head)
-        lay.setContentsMargins(20, 0, 16, 0)
-        lay.setSpacing(10)
+        lay.setContentsMargins(14, 0, 10, 0)
+        lay.setSpacing(8)
 
         title = QLabel("情绪曲线")
-        title.setFont(app_font(13, QFont.DemiBold))
+        title.setFont(app_font(12, QFont.DemiBold))
         title.setStyleSheet(f"color: {COLORS['ink']}; background: transparent;")
         lay.addWidget(title)
         lay.addStretch(1)
@@ -291,7 +245,7 @@ class MainWindow(QMainWindow):
         today = datetime.now()
         weekdays = "一二三四五六日"
         date_label = QLabel(today.strftime("%m月%d日") + " 周" + weekdays[today.weekday()])
-        date_label.setFont(app_font(10))
+        date_label.setFont(app_font(9))
         date_label.setStyleSheet(f"color: {COLORS['muted']}; background: transparent;")
         lay.addWidget(date_label)
 
@@ -300,7 +254,7 @@ class MainWindow(QMainWindow):
         self.arch_btn.setCursor(Qt.PointingHandCursor)
         self.arch_btn.setStyleSheet(
             f"QToolButton {{ background: transparent; border: none;"
-            f" color: {COLORS['ink_2']}; font-size: 11px; padding: 2px 6px; }}"
+            f" color: {COLORS['ink_2']}; font-size: 10px; padding: 2px 4px; }}"
             f"QToolButton:hover {{ color: {COLORS['accent']}; }}"
         )
         self.arch_btn.clicked.connect(self._repick_archetype)
@@ -319,20 +273,6 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------
     # 行为
     # ------------------------------------------------------------
-    def _toggle_drawer(self):
-        self.console.toggle_drawer()
-        self._sync_rail_active()
-
-    def _select_curve(self):
-        # 情绪曲线 = 主界面：回到主视图即收起右侧抽屉，让曲线重新占满焦点。
-        self.console.close_drawer()
-        self._sync_rail_active()
-
-    def _sync_rail_active(self):
-        open_ = self.console.drawer.is_open()
-        self.btn_drawer.set_active(open_)
-        self.btn_curve.set_active(not open_)
-
     def _export_data(self):
         if self.db is None:
             QMessageBox.information(self, "暂无数据", "当前会话未连接本地数据库。")
@@ -350,7 +290,7 @@ class MainWindow(QMainWindow):
     def _show_about():
         QMessageBox.about(
             None, "关于心潮",
-            "心潮 EmoWave v3\n\n"
+            "心潮 EmoWave v3.1\n\n"
             "个人情绪状态引擎 · 本地情绪追踪与校准\n"
             "所有数据仅存储在设备本地，不上传任何个人信息。",
         )
@@ -366,6 +306,13 @@ class MainWindow(QMainWindow):
 
 
 def main():
+    # HighDPI：必须在 QApplication 构造**之前**用静态 setAttribute。
+    # v3 曾写成 `Qt.AA_EnableHighDpiScaling = True` —— 那只是给枚举对象
+    # 加了个同名属性，Qt 从不读取，属于空操作（125% 缩放下字体放大而
+    # 区块高度不变，按钮文字会被裁）。
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
     app = QApplication(sys.argv)
     app.setFont(app_font(10))
     app.setStyleSheet(build_app_qss())          # 全局一次注入（QSS 不继承）

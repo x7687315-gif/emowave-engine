@@ -1,11 +1,11 @@
-"""tests/test_main_app.py — v3 主窗口集成测试
+"""tests/test_main_app.py — v3.1 主窗口集成测试
 
-=== 与 v2 的差异 ===
-v2 测的是「8 分区锚点 + 可折叠侧栏 + 隐藏式分区」；v3 信息架构换了：
-  · 外壳 = 56px 图标列 + 极简页头（无菜单栏）
-  · 主界面 = MainConsole 4 区块（状态 / 读数 / 曲线 / 输入台）
-  · 次要区（基线主权 / 个人模型 / 回顾历史）收进右侧抽屉
-  · 纠正 = 底部上滑框（模态，测试走 ingest_corrections 绕开 exec_）
+=== 与 v3 的差异 ===
+v3.1 小窗化（400×680）换了信息架构：
+   · 外壳 = 页头（44px）+ 顶部 Tab 栏（40px），**无菜单栏、无左侧图标列**
+   · 页 0 曲线（4 区块）/ 页 1 模型（基线主权 + 个人模型）/ 页 2 历史（回顾 + 记录）
+   · v3 的右侧 380px 抽屉**已删除**（它比小窗本身还宽，物理上无法并排）
+   · 纠正 = 底部上滑框（模态，测试走 ingest_corrections 绕开 exec_）
 
 因此本文件按新接口重写，而不是改断言凑通过。
 """
@@ -24,7 +24,7 @@ def _make_window(tmp_path):
 
 
 def test_main_window_creates_with_v3_console(qapp, tmp_path):
-    """MainWindow 挂载 v3 控制台：4 区块 + 抽屉，且不再有 v2 的锚点分区"""
+    """MainWindow 挂载 v3.1 控制台：4 区块 + 三页，且不再有 v2 的锚点分区"""
     win, db = _make_window(tmp_path)
 
     console = win.console
@@ -34,9 +34,13 @@ def test_main_window_creates_with_v3_console(qapp, tmp_path):
     for attr in ["status", "readout", "curve", "input_panel"]:
         assert hasattr(console, attr), f"缺少区块 {attr}"
 
-    # 抽屉（基线 / 模型 / 回顾历史）
-    assert console.drawer is not None
-    assert console.drawer.is_open() is False
+    # 三页 + 默认停在曲线页
+    assert win.tabs is not None
+    assert win.tabs.current_index() == 0
+    assert console.stack.currentIndex() == 0
+    assert console.page_curve is not None
+    assert console.page_model is not None
+    assert console.page_history is not None
 
     # v2 的接口已移除
     assert not hasattr(console, "sections")
@@ -44,38 +48,55 @@ def test_main_window_creates_with_v3_console(qapp, tmp_path):
     db.close()
 
 
-def test_rail_is_56px_icon_column(qapp, tmp_path):
-    """外壳：56px 图标列 + 无菜单栏"""
-    import main_app
+def test_window_defaults_to_phone_proportions(qapp, tmp_path):
+    """小窗化：默认 400×680，最小 360×600（约 9:15.5 竖屏）。"""
+    win, db = _make_window(tmp_path)
+
+    assert win.size().width() == 400 and win.size().height() == 680
+    assert win.minimumSize().width() == 360 and win.minimumSize().height() == 600
+    db.close()
+
+
+def test_shell_has_no_rail_and_has_toptabs(qapp, tmp_path):
+    """v3 的 56px 图标列已删除，换成顶部 Tab 栏；菜单栏仍为空。"""
     from theme import METRICS
 
     win, db = _make_window(tmp_path)
 
-    # 菜单栏已删除（v3 用页头图标按钮代替）
+    # 菜单栏已删除（v3.1 用顶部 Tab + 页头图标代替）
     assert win.menuBar().actions() == []
-    assert METRICS['rail_w'] == 56
+    # 左侧图标列已删除
+    assert not hasattr(win, "btn_curve")
+    assert not hasattr(win, "btn_drawer")
+    assert 'rail_w' not in METRICS
+    assert 'drawer_w' not in METRICS
+    # 顶部 Tab 栏就位
+    assert METRICS['tabbar_h'] == 40
+    assert win.tabs.height() == 40
     db.close()
 
 
-def test_drawer_toggles_open_and_closed(qapp, tmp_path):
-    """抽屉：默认关闭 → toggle 打开 → toggle 关闭"""
+def test_tabs_switch_pages(qapp, tmp_path):
+    """顶部 Tab：默认曲线页 → 切模型页 → 切历史页 → 回曲线页。"""
     win, db = _make_window(tmp_path)
     console = win.console
 
-    assert console.drawer.is_open() is False
-    console.toggle_drawer()
-    assert console.drawer.is_open() is True
-    console.toggle_drawer()
-    assert console.drawer.is_open() is False
+    assert console.stack.currentIndex() == 0
+    win.tabs.set_current(1)
+    assert console.stack.currentIndex() == 1
+    win.tabs.set_current(2)
+    assert console.stack.currentIndex() == 2
+    win.tabs.set_current(0)
+    assert console.stack.currentIndex() == 0
     db.close()
 
 
 # ----------------------------------------------------------------
-# 回归：上面只断言 is_open() 标志，正是它放过了两个真实 bug ——
+# 回归：v3 曾用「抽屉实际宽度 0↔380」防住两个真实 bug ——
 #   ① setFixedWidth 把 minimumWidth 钉成 380，maximumWidth 动画收不回 0，
-#      抽屉永远关不上（点抽屉按钮“点不进去”）；
+#      抽屉永远关不上（点抽屉按钮"点不进去"）；
 #   ② 情绪曲线按钮根本没接 clicked（死按钮）。
-# 因此这里断言**实际宽度**与**按钮是否真的生效**，而不是只看标志位。
+# 抽屉随小窗化删除后，等价约束改为「**页面真的切换**」与「**按钮真的被接上**」。
 # ----------------------------------------------------------------
 def _settle(app, ms=320):
     """跑一段事件循环，让 QPropertyAnimation（时间驱动）真正走完。"""
@@ -86,60 +107,94 @@ def _settle(app, ms=320):
     app.processEvents()
 
 
-def test_drawer_starts_actually_collapsed(qapp, tmp_path):
-    """回归①：抽屉初始必须真正收起（宽度 0），不是只把 is_open 设 False。"""
+def test_default_page_is_curve_and_others_hidden(qapp, tmp_path):
+    """回归①等价约束：启动必须真的停在曲线页，模型/历史页不可见。"""
     win, db = _make_window(tmp_path)
     win.show()
     _settle(qapp)
-    assert win.console.drawer.width() == 0
+
+    console = win.console
+    assert console.stack.currentIndex() == 0
+    assert console.page_curve.isVisible()
+    assert not console.page_model.isVisible()
+    assert not console.page_history.isVisible()
     db.close()
 
 
-def test_drawer_toggle_changes_actual_width(qapp, tmp_path):
-    """回归①：点抽屉按钮必须真的展开/收起（宽度 0↔380），而非仅翻转标志。"""
+def test_tab_click_actually_switches_page(qapp, tmp_path):
+    """回归①等价约束：点 Tab 必须真的换页（可见性跟着变），而非只翻标志位。"""
     win, db = _make_window(tmp_path)
     win.show()
     _settle(qapp)
-    d = win.console.drawer
+    console = win.console
 
-    win.btn_drawer.click()
+    win.tabs.button(1).click()
     _settle(qapp)
-    assert d.is_open() is True and d.width() == 380
+    assert console.stack.currentIndex() == 1
+    assert console.page_model.isVisible()
+    assert not console.page_curve.isVisible()
 
-    win.btn_drawer.click()
+    win.tabs.button(0).click()
     _settle(qapp)
-    assert d.is_open() is False and d.width() == 0
+    assert console.stack.currentIndex() == 0
+    assert console.page_curve.isVisible()
+    assert not console.page_model.isVisible()
     db.close()
 
 
-def test_curve_button_is_wired_and_closes_drawer(qapp, tmp_path):
-    """回归②：情绪曲线按钮过去没接 clicked（死按钮）。现在点它必须收起抽屉。"""
+def test_curve_tab_is_wired(qapp, tmp_path):
+    """回归②等价约束：从别的页点「曲线」Tab 必须回到曲线页（过去是死按钮）。"""
     win, db = _make_window(tmp_path)
     win.show()
     _settle(qapp)
-    d = win.console.drawer
+    console = win.console
 
-    win.btn_drawer.click()          # 先开抽屉
+    win.tabs.set_current(2)          # 先去历史页
     _settle(qapp)
-    assert d.width() == 380
+    assert console.stack.currentIndex() == 2
 
-    win.btn_curve.click()           # 点曲线按钮 → 收起抽屉
+    win.tabs.button(0).click()       # 点曲线 Tab → 回曲线页
     _settle(qapp)
-    assert d.is_open() is False and d.width() == 0
+    assert console.stack.currentIndex() == 0
+    assert console.page_curve.isVisible()
     db.close()
 
 
-def test_rail_active_state_follows_view(qapp, tmp_path):
-    """侧栏当前视图高亮：主界面=曲线亮；开抽屉=抽屉亮、曲线灭。"""
+def test_tab_active_state_follows_page(qapp, tmp_path):
+    """当前视图高亮：曲线页=曲线亮、其他灭；切页后随之切换。"""
     win, db = _make_window(tmp_path)
     win.show()
     _settle(qapp)
 
-    assert win.btn_curve._active is True and win.btn_drawer._active is False
-    win.btn_drawer.click(); _settle(qapp)
-    assert win.btn_drawer._active is True and win.btn_curve._active is False
-    win.btn_curve.click(); _settle(qapp)
-    assert win.btn_curve._active is True and win.btn_drawer._active is False
+    assert win.tabs.button(0).isChecked() is True
+    assert win.tabs.button(1).isChecked() is False
+    win.tabs.set_current(1); _settle(qapp)
+    assert win.tabs.button(1).isChecked() is True
+    assert win.tabs.button(0).isChecked() is False
+    win.tabs.set_current(0); _settle(qapp)
+    assert win.tabs.button(0).isChecked() is True
+    assert win.tabs.button(1).isChecked() is False
+    db.close()
+
+
+def test_secondary_pages_are_scrollable(qapp, tmp_path):
+    """回归：次要页内容可滚动，靠下的「事件回顾/历史记录」才够得着。"""
+    from PyQt5.QtWidgets import QScrollArea
+    win, db = _make_window(tmp_path)
+    console = win.console
+    assert console.page_model.findChild(QScrollArea) is not None
+    assert console.page_history.findChild(QScrollArea) is not None
+    db.close()
+
+
+def test_secondary_cards_live_in_their_pages(qapp, tmp_path):
+    """抽屉三段的归属：基线/模型 → 模型页；回顾历史 → 历史页。"""
+    win, db = _make_window(tmp_path)
+    console = win.console
+
+    assert console.baseline_card is not None and console.legacy is not None
+    assert console.page_model.findChild(type(console.baseline_card)) is not None
+    assert console.page_history.findChild(type(console.legacy)) is not None
     db.close()
 
 
@@ -199,7 +254,7 @@ def test_recording_stop_persists_one_event(qapp, tmp_path):
 
 
 def test_legacy_panels_populate_after_recording(qapp, tmp_path):
-    """回归：db 注入后，抽屉的 HistoryWindow 在 refresh 时按今天日期填充事件表。"""
+    """回归：db 注入后，历史页的 HistoryWindow 在 refresh 时按今天日期填充事件表。"""
     win, db = _make_window(tmp_path)
     console = win.console
 
@@ -312,14 +367,6 @@ def test_time_axis_formatting_adapts_to_span(qapp):
     assert _fmt_time(t0, span=30).count(":") == 2        # HH:MM:SS
     assert _fmt_time(t0, span=600).count(":") == 1      # HH:MM
     assert "-" in _fmt_time(t0, span=90000)              # 跨天带日期
-
-
-def test_drawer_is_scrollable(qapp, tmp_path):
-    """回归：抽屉内容可滚动，靠下的「事件回顾/历史记录」才够得着（此前被裁在折叠外）。"""
-    from PyQt5.QtWidgets import QScrollArea
-    win, db = _make_window(tmp_path)
-    assert win.console.drawer.findChild(QScrollArea) is not None
-    db.close()
 
 
 def test_stop_with_data_enters_decay(qapp, tmp_path):
