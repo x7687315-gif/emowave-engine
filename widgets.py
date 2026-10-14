@@ -18,11 +18,18 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPainter, QPen, QColor, QFont
 
 # ================================================================
-# 设计系统：精密仪器色板（Linear × Raycast × macOS × Vercel × Arc）
-#   颜色只用于传达状态或交互，不用于装饰。
+# 设计系统
 # ================================================================
-COLORS = {
-    'bg':        '#FAFAF9',   # 暖白 / 极浅灰（页面底）
+# 小窗化（阶段 2）：widgets.py 曾是 v1 的「精密仪器」冷色板（克制蓝 #1E40AF /
+# 暖白 #FAFAF9 / 6px 圆角）。v3 起全站已统一到 theme.py 的
+# 「构成主义骨架 + 暖色板」（陶土赭红 #BE5E38 / 暖黄纸底 / 全站直角 radius=0）。
+# 遗留窗口（event_summary / history，经 LegacyEmbed 进「历史」Tab）若继续用冷色板，
+# 会和 400×680 小窗其余部分明显割裂 → 这里直接复用 theme.COLORS，
+# 旧冷色板降级为 COLORS_COLD 留档备查（无任何生产代码引用）。
+from theme import COLORS
+
+COLORS_COLD = {
+    'bg':        '#FAFAF9',   # 暖白 / 极浅灰（页面底）【历史冷色板，留档】
     'surface':   '#FFFFFF',   # 白（卡面 / 画布）
     'ink':       '#171716',   # 近黑（主文字 / 数值）
     'ink_soft':  '#555552',   # 次级文字
@@ -172,7 +179,7 @@ class CardFrame(QFrame):
         self.setFrameShape(QFrame.NoFrame)
         self.setStyleSheet(
             f"CardFrame {{ background-color: {COLORS['surface']};"
-            f" border-radius: 6px; border: 1px solid {COLORS['rule']}; }}"
+            f" border-radius: 0px; border: 1px solid {COLORS['rule']}; }}"
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 9, 12, 10)

@@ -48,6 +48,7 @@ from emowave.core.calibration.calibrator import Calibrator
 from .baseline_tools import BaselineToolsCard
 from .model_card import ModelCard
 from .legacy_embed import LegacyEmbed
+from .state_head import StateHead, ParamsExplainCard, derive_state_name
 from .correction_sheet import CorrectionSheet
 
 logger = logging.getLogger(__name__)
@@ -60,217 +61,8 @@ DECAY_DT = 1.0           # 每个定时器 tick 向前推演的秒数（实时�
 
 
 # ================================================================
-# 状态名派生（按 V×A 象限；不作诊断/评判）
+# ① 状态头（合并自 v3 的 StatusCard + ReadoutBar，见 state_head.py）
 # ================================================================
-def derive_state_name(valence: float, arousal: float) -> str:
-    """由 0–1 的 V/A 返回中文状态名（不含主观评价）。"""
-    v = valence >= 0.5
-    a = arousal >= 0.5
-    if v and a:
-        return "兴奋 · 活跃"
-    if v and not a:
-        return "平静 · 偏积极"
-    if not v and a:
-        return "紧张 · 焦虑"
-    # V<0.5 & A<0.5
-    return "低落 · 疲惫"
-
-
-# ================================================================
-# ① 当前情绪状况（状态名 + 参数说明 + 纠正入口）
-# ================================================================
-class StatusCard(QWidget):
-    """顶读数条上方的状态卡：状态名 + 右侧纠正入口 + 参数说明下拉。"""
-
-    def __init__(self, on_correction_clicked, parent=None):
-        super().__init__(parent)
-        self._on_correction_clicked = on_correction_clicked
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-
-        # 第一行：状态名 + 纠正入口
-        row1 = QHBoxLayout()
-        row1.setContentsMargins(22, 18, 22, 0)
-        row1.setSpacing(0)
-
-        self.state_label = QLabel("—")
-        f = app_font(22, QFont.Medium)
-        self.state_label.setFont(f)
-        self.state_label.setStyleSheet(f"color: {COLORS['ink']};")
-        row1.addWidget(self.state_label)
-
-        self.state_hint = QLabel(" · 模型估计（不替你定义）")
-        self.state_hint.setFont(app_font(11))
-        self.state_hint.setStyleSheet(f"color: {COLORS['muted']};")
-        row1.addWidget(self.state_hint, 1, Qt.AlignBottom | Qt.AlignLeft)
-
-        # 纠正入口（"· 情绪有误，点这里纠正"）
-        self.corr_btn = QPushButton("· 情绪有误，点这里纠正")
-        self.corr_btn.setCursor(Qt.PointingHandCursor)
-        self.corr_btn.setFlat(True)
-        self.corr_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; border: 1px solid {COLORS['rule']};"
-            f" color: {COLORS['ink_2']}; padding: 4px 10px; font-size: 11px;"
-            f" border-radius: 0; }}"
-            f"QPushButton:hover {{ border-color: {COLORS['accent']};"
-            f" color: {COLORS['accent']}; background: {COLORS['accent_soft']}; }}"
-        )
-        self.corr_btn.clicked.connect(self._on_correction_clicked)
-        row1.addWidget(self.corr_btn, 0, Qt.AlignRight | Qt.AlignBottom)
-        outer.addLayout(row1)
-
-        # 第二行：参数说明下拉
-        row2 = QHBoxLayout()
-        row2.setContentsMargins(22, 2, 22, 0)
-        row2.setSpacing(0)
-
-        self.params_btn = QToolButton()
-        self.params_btn.setText("▾  参数说明")
-        self.params_btn.setCursor(Qt.PointingHandCursor)
-        self.params_btn.setCheckable(True)
-        self.params_btn.setStyleSheet(
-            f"QToolButton {{ background: transparent; border: none;"
-            f" color: {COLORS['ink_2']}; font-size: 10.5px; padding: 0;"
-            f" letter-spacing: 0.14em; text-transform: uppercase;"
-            f" font-weight: 600; }}"
-            f"QToolButton:hover {{ color: {COLORS['accent']}; }}"
-        )
-        self.params_btn.toggled.connect(self._toggle_params)
-        row2.addWidget(self.params_btn)
-        row2.addStretch(1)
-        outer.addLayout(row2)
-
-        # 参数说明折叠面板
-        self.params_panel = QFrame()
-        self.params_panel.setStyleSheet(
-            f"QFrame {{ background: {COLORS['surface']};"
-            f" border-top: 1px solid {COLORS['rule']};"
-            f" border-bottom: 1px solid {COLORS['rule']}; }}"
-        )
-        pl = QHBoxLayout(self.params_panel)
-        pl.setContentsMargins(22, 14, 22, 14)
-        pl.setSpacing(0)
-        self._params_grid = QHBoxLayout()
-        self._params_grid.setSpacing(0)
-        pl.addLayout(self._params_grid)
-        self.params_panel.setMaximumHeight(0)
-        self.params_panel.setMinimumHeight(0)
-        outer.addWidget(self.params_panel)
-
-        self._params_expanded = False
-
-    def _toggle_params(self, checked):
-        self._params_expanded = checked
-        self.params_btn.setText("▴  参数说明" if checked else "▾  参数说明")
-        target = 220 if checked else 0
-        self._anim = QPropertyAnimation(self.params_panel, b"maximumHeight")
-        self._anim.setDuration(DUR_MID)
-        self._anim.setStartValue(self.params_panel.maximumHeight())
-        self._anim.setEndValue(target)
-        self._anim.setEasingCurve(QEasingCurve(QEasingCurve.OutQuart))
-        self._anim.start()
-        # minimumHeight 也跟随（否则布局可能压扁内容）
-        self._anim2 = QPropertyAnimation(self.params_panel, b"minimumHeight")
-        self._anim2.setDuration(DUR_MID)
-        self._anim2.setStartValue(self.params_panel.minimumHeight())
-        self._anim2.setEndValue(target)
-        self._anim2.setEasingCurve(QEasingCurve(QEasingCurve.OutQuart))
-        self._anim2.start()
-
-    def update_state(self, valence, arousal, params_text):
-        """更新状态名 + 参数说明当前值。"""
-        self.state_label.setText(derive_state_name(valence, arousal))
-        if self._params_expanded:
-            self._render_params_grid(valence, arousal, params_text)
-
-    def _render_params_grid(self, valence, arousal, params_text):
-        # 清除旧内容
-        while self._params_grid.count():
-            item = self._params_grid.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
-
-        cells = [
-            ("效价 VALENCE", f"{int(valence*100)}", "正负方向", f"={int(valence*100)}/100"),
-            ("唤醒 AROUSAL", f"{int(arousal*100)}", "强度 · 能量", f"={int(arousal*100)}/100"),
-            ("置信 CONFIDENCE", params_text.get('confidence', '—'), "0–1 把握度",
-             params_text.get('confidence_desc', '')),
-            ("置信区间 ±1σ", params_text.get('ci', '—'), "模型估计范围",
-             params_text.get('ci_desc', '')),
-        ]
-        for i, (k, v, d, cur) in enumerate(cells):
-            cell = QFrame()
-            cell.setStyleSheet("background: transparent; border: none;")
-            lay = QVBoxLayout(cell)
-            lay.setContentsMargins(0 if i == 0 else 18, 0, 0, 0)
-            lay.setSpacing(3)
-            k_lbl = QLabel(k)
-            k_lbl.setFont(app_font(9, QFont.DemiBold))
-            k_lbl.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 1.4px;")
-            v_lbl = QLabel(v)
-            v_lbl.setFont(app_font_num(20, QFont.Light))
-            v_lbl.setStyleSheet(f"color: {COLORS['ink']};")
-            d_lbl = QLabel(d)
-            d_lbl.setFont(app_font(10))
-            d_lbl.setStyleSheet(f"color: {COLORS['muted']};")
-            c_lbl = QLabel(cur)
-            c_lbl.setFont(app_font(10))
-            c_lbl.setStyleSheet(f"color: {COLORS['accent_ink']};")
-            lay.addWidget(k_lbl)
-            lay.addWidget(v_lbl)
-            lay.addWidget(d_lbl)
-            lay.addWidget(c_lbl)
-            self._params_grid.addWidget(cell)
-        self._params_grid.addStretch(1)
-
-
-# ================================================================
-# ② 读数条
-# ================================================================
-class ReadoutBar(QWidget):
-    """轻量读数条：4 个大数值等距，尾部置信区间说明。"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(22, 8, 22, 8)
-        lay.setSpacing(0)
-        self.v_lbl = self._make_cell("效价 VALENCE")
-        self.a_lbl = self._make_cell("唤醒 AROUSAL")
-        self.c_lbl = self._make_cell("置信 CONFIDENCE")
-        self.ci_lbl = self._make_cell("置信区间 ±1σ")
-        for lbl in (self.v_lbl, self.a_lbl, self.c_lbl, self.ci_lbl):
-            lay.addWidget(lbl, 1)
-        self.setFixedHeight(METRICS['readout_h'])
-
-    def _make_cell(self, key):
-        w = QWidget()
-        v = QVBoxLayout(w)
-        v.setContentsMargins(0, 4, 24, 4)
-        v.setSpacing(4)
-        k = QLabel(key)
-        k.setFont(app_font(9, QFont.DemiBold))
-        k.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 1.6px;")
-        big = QLabel("—")
-        big.setFont(app_font_num(22, QFont.Light))
-        big.setStyleSheet(f"color: {COLORS['ink']};")
-        big.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        v.addWidget(k)
-        v.addWidget(big)
-        # 把大数字标签挂到 widget 上方便外部读
-        w.value_label = big
-        return w
-
-    def update_values(self, valence, arousal, confidence, ci_text):
-        self.v_lbl.value_label.setText(f"{int(valence*100)}")
-        self.a_lbl.value_label.setText(f"{int(arousal*100)}")
-        self.c_lbl.value_label.setText(f"{int(confidence*100)}%")
-        self.ci_lbl.value_label.setText(ci_text)
-
-
 # ================================================================
 # ④ 输入台（双滑块 + 记录按钮）
 # ================================================================
@@ -282,8 +74,9 @@ class InputPanel(QWidget):
         self._on_toggle = on_toggle
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(22, 16, 22, 16)
-        outer.setSpacing(14)
+        # 阶段 2：边距 22→14、间距 14→8，把输入台压到 ~104px
+        outer.setContentsMargins(14, 12, 14, 12)
+        outer.setSpacing(8)
 
         # 行 1：效价滑块
         self.v_row = self._make_slider_row("效价", 50, "50/100")
@@ -294,30 +87,27 @@ class InputPanel(QWidget):
 
         # 行 3：操作
         ctrl = QHBoxLayout()
-        ctrl.setSpacing(14)
+        ctrl.setSpacing(10)
         self.btn_record = QPushButton("●  开始记录")
         self.btn_record.setCursor(Qt.PointingHandCursor)
         self.btn_record.setProperty("primary", True)
         self.btn_record.setStyleSheet(
             f"QPushButton {{ background: {COLORS['accent']}; color: {COLORS['surface']};"
-            f" border: none; padding: 11px 22px; font-size: 11.5px;"
-            f" font-weight: 600; letter-spacing: 1.6px; }}"
+            f" border: none; padding: 10px 16px; font-size: 11.5px;"
+            f" font-weight: 600; letter-spacing: 1.4px; }}"
             f"QPushButton:hover {{ background: {COLORS['accent_ink']}; }}"
             f"QPushButton:pressed {{ background: {COLORS['accent_deep']}; }}"
         )
         self.btn_record.clicked.connect(lambda: self._on_toggle())
         ctrl.addWidget(self.btn_record)
 
-        self.count_label = QLabel("0 个观察")
-        self.count_label.setFont(app_font(11))
+        # 阶段 2：计数与提示合并成一个标签。v3 是两个标签并列，400px 宽下
+        # 计数被挤成"55 个观"（右侧裁掉）——合成一个后两个信息都在。
+        self.count_label = QLabel("0 个观察 · 1 Hz")
+        self.count_label.setFont(app_font(9))
         self.count_label.setStyleSheet(f"color: {COLORS['muted']};")
         ctrl.addWidget(self.count_label)
         ctrl.addStretch(1)
-
-        self.tip_label = QLabel("拖动滑块即时采样，1 Hz 喂给模型估计器")
-        self.tip_label.setFont(app_font(10))
-        self.tip_label.setStyleSheet(f"color: {COLORS['muted']};")
-        ctrl.addWidget(self.tip_label)
         outer.addLayout(ctrl)
 
         self.v_row['slider'].valueChanged.connect(
@@ -327,18 +117,19 @@ class InputPanel(QWidget):
 
     def _make_slider_row(self, key, default, num_text):
         layout = QHBoxLayout()
-        layout.setSpacing(14)
+        layout.setSpacing(10)
         k = QLabel(key)
-        k.setFont(app_font(11))
+        k.setFont(app_font(10))
         k.setStyleSheet(f"color: {COLORS['ink_2']};")
-        k.setFixedWidth(56)
+        k.setFixedWidth(40)
         slider = QSlider(Qt.Horizontal)
         slider.setRange(0, 100)
         slider.setValue(default)
         num = QLabel(num_text)
         num.setFont(app_font_num(12, QFont.Light))
         num.setStyleSheet(f"color: {COLORS['muted']};")
-        num.setFixedWidth(58)
+        num.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        num.setFixedWidth(46)
         layout.addWidget(k)
         layout.addWidget(slider, 1)
         layout.addWidget(num)
@@ -387,7 +178,7 @@ class InputPanel(QWidget):
                 self.a_row['slider'].value() / 100.0)
 
     def set_count(self, n):
-        self.count_label.setText(f"{n} 个观察")
+        self.count_label.setText(f"{n} 个观察 · 1 Hz")
 
 
 # ================================================================
@@ -455,13 +246,12 @@ class MainConsole(QWidget):
         ml.setContentsMargins(0, 0, 0, 0)
         ml.setSpacing(0)
 
-        # ① 当前情绪状况
-        self.status = StatusCard(on_correction_clicked=self._open_correction_sheet)
+        # ① 状态头（状态名 + 四读数合并，v3 的 StatusCard/ReadoutBar 合一）
+        self.status = StateHead(on_correction_clicked=self._open_correction_sheet)
+        # 读数条已并入状态头；保留 readout 别名以维持 v3 的公开属性契约
+        # （console.readout.v_lbl.value_label 这类访问在测试/文档里出现过）
+        self.readout = self.status
         ml.addWidget(self.status)
-
-        # ② 读数条
-        self.readout = ReadoutBar()
-        ml.addWidget(self.readout)
 
         # ③ 曲线（视觉主角）
         curve_frame = QFrame()
@@ -485,9 +275,8 @@ class MainConsole(QWidget):
         head.addWidget(legend)
         cf.addLayout(head)
         self.curve = EmotionCurveWidget(series='valence')
-        # 阶段 1 临时值：从 280 压到 220，让 400×680 容得下全部 4 区块。
-        # 阶段 2 把 StatusCard 与 ReadoutBar 合并成 56px 状态头后，曲线可回到 ~340。
-        self.curve.setMinimumHeight(220)
+        # 阶段 2：状态头合并 + 参数说明移入「模型」Tab 后，曲线可回到 ~340px
+        self.curve.setMinimumHeight(340)
         cf.addWidget(self.curve)
         ml.addWidget(curve_frame, 1)
 
@@ -512,6 +301,9 @@ class MainConsole(QWidget):
         body.setSpacing(14)
         body.addWidget(self.baseline_card)
         body.addWidget(model_card)
+        # 参数说明：v3 是状态卡里 220px 折叠面板，小窗放不下 → 常驻模型页
+        self.params_card = ParamsExplainCard()
+        body.addWidget(self.params_card)
         body.addStretch(1)
         self.page_model = self._make_scroll_page(body)
         self.stack.addWidget(self.page_model)
@@ -804,10 +596,9 @@ class MainConsole(QWidget):
         self._clear_active_wave()
 
     def _reset_readouts(self):
-        for lbl in (self.readout.v_lbl, self.readout.a_lbl,
-                    self.readout.c_lbl, self.readout.ci_lbl):
-            lbl.value_label.setText("—")
-        self.status.state_label.setText("—")
+        # 状态头内含四读数，一次复位（v3 是逐个标签 setText）
+        self.status.reset_values()
+        self.params_card.reset_params()
 
     def _store_active_wave(self):
         if self.db is None:
@@ -908,6 +699,12 @@ class MainConsole(QWidget):
         ts, st = self.states[-1]
         lo, hi = st.confidence_interval("valence", z=1.0)
         ci = f"{int(lo*100)} – {int(hi*100)}"
+        params_text = {
+            'confidence': f"{int(st.confidence*100)}%",
+            'confidence_desc': f"={int(st.confidence*100)}%",
+            'ci': ci,
+            'ci_desc': f"估 {int(st.valence*100)}±{int((hi-lo)*50)}",
+        }
         self.readout.update_values(
             valence=st.valence,
             arousal=st.arousal,
@@ -917,13 +714,10 @@ class MainConsole(QWidget):
         self.status.update_state(
             valence=st.valence,
             arousal=st.arousal,
-            params_text={
-                'confidence': f"{int(st.confidence*100)}%",
-                'confidence_desc': f"={int(st.confidence*100)}%",
-                'ci': ci,
-                'ci_desc': f"估 {int(st.valence*100)}±{int((hi-lo)*50)}",
-            },
+            params_text=params_text,
         )
+        # 参数说明常驻「模型」Tab，同一份数据双处展示
+        self.params_card.update_params(st.valence, st.arousal, params_text)
 
     def _refresh_curve(self):
         if len(self.observations) < 2:

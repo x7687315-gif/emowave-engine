@@ -20,7 +20,8 @@ class CorrectionCanvas(EmotionCurveWidget):
 
     def __init__(self, timestamps, model_v, model_a, baseline_v, parent=None):
         super().__init__(parent, series='both', compact=True)
-        self.setMinimumHeight(220)
+        # 阶段 2：400×480 的上滑框里，画布按剩余空间给；220 是下限兜底
+        self.setMinimumHeight(180)
         self.set_data(timestamps, model_v, model_a,
                       var_v=[0.003] * len(model_v),
                       var_a=[0.003] * len(model_a),
@@ -76,11 +77,14 @@ class CorrectionCanvas(EmotionCurveWidget):
         # 简化：当前 pos 在哪个 panel 就改哪个，另一个保持原值
         x0, y0_v, pw_v, ph_v = self._plot_rect(0, 2)
         x0, y0_a, pw_a, ph_a = self._plot_rect(1, 2)
+        # 命中容差按子图高度取比例（v3 是硬编码 6px，小窗下面板被压扁后
+        # 6px 占比过大，会把"中间空白区"也变成可拖区）
+        tol = max(4.0, ph_v * 0.12)
         new_v = self._edits.get(idx, (self.model_v[idx], self.model_a[idx]))[0]
         new_a = self._edits.get(idx, (self.model_v[idx], self.model_a[idx]))[1]
-        if e.pos().y() < y0_v + ph_v + 6:    # 在效价图附近
+        if e.pos().y() < y0_v + ph_v + tol:    # 在效价图附近
             new_v = self.y_to_value(e.pos().y(), 0, 2)
-        elif e.pos().y() > y0_a - 6:          # 在唤醒图附近
+        elif e.pos().y() > y0_a - tol:          # 在唤醒图附近
             new_a = self.y_to_value(e.pos().y(), 1, 2)
         else:
             return    # 中间空白区

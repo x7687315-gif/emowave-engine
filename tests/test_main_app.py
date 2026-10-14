@@ -369,6 +369,63 @@ def test_time_axis_formatting_adapts_to_span(qapp):
     assert "-" in _fmt_time(t0, span=90000)              # 跨天带日期
 
 
+def test_state_head_merges_status_and_readout(qapp, tmp_path):
+    """阶段 2：状态卡与读数条合并成一条状态头，v3 的属性名全部保留。"""
+    win, db = _make_window(tmp_path)
+    console = win.console
+
+    # 四读数 + 状态名 + 纠正入口都还在（v3 契约）
+    for attr in ("state_label", "state_hint", "corr_btn",
+                 "v_lbl", "a_lbl", "c_lbl", "ci_lbl"):
+        assert hasattr(console.status, attr), f"状态头缺少 {attr}"
+    # readout 是兼容别名，指向同一个状态头
+    assert console.readout is console.status
+    # update_values / update_state 两个 v3 入口都可用
+    console.readout.update_values(0.62, 0.44, 0.91, "58 – 66")
+    assert console.status.v_lbl.value_label.text() == "62"
+    assert console.status.ci_lbl.value_label.text() == "58 – 66"
+    console.status.update_state(0.62, 0.44)
+    assert console.status.state_label.text() == "平静 · 偏积极"
+    db.close()
+
+
+def test_params_explain_moved_to_model_page(qapp, tmp_path):
+    """阶段 2：220px 参数说明折叠面板移出状态头，常驻「模型」Tab。"""
+    win, db = _make_window(tmp_path)
+    console = win.console
+
+    assert console.params_card is not None
+    assert console.page_model.findChild(type(console.params_card)) is not None
+    # 刷新一次读数后四格有值（不是占位符）
+    console._toggle_recording(True)
+    console._sample()
+    for cell in console.params_card._cells:
+        assert cell[0].text() not in ("", "—")
+    db.close()
+
+
+def test_curve_min_height_restored(qapp, tmp_path):
+    """阶段 2：状态头合并后曲线下限回到 340px（阶段 1 曾压到 220）。"""
+    win, db = _make_window(tmp_path)
+    assert win.console.curve.minimumHeight() == 340
+    db.close()
+
+
+def test_widgets_palette_unified(qapp, tmp_path):
+    """阶段 2：widgets.py 复用 theme.COLORS，抽屉遗留窗口不再用冷色板。"""
+    win, db = _make_window(tmp_path)
+
+    import widgets
+    from theme import COLORS
+
+    assert widgets.COLORS is COLORS
+    # 遗留窗口的键在 theme 里都有（不会 KeyError）
+    for key in ("accent", "bg", "cyan", "ink_soft", "muted", "rule", "surface",
+                "accent_soft", "ink", "ink_2"):
+        assert key in widgets.COLORS
+    db.close()
+
+
 def test_stop_with_data_enters_decay(qapp, tmp_path):
     """回归：有数据时停止记录 → 进入"衰减回基线"，不清空、按钮转推演中。"""
     win, db = _make_window(tmp_path)

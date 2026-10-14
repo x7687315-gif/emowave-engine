@@ -56,7 +56,7 @@ class EmotionCurveWidget(QWidget):
     """
 
     def __init__(self, parent=None, series="valence", show_legend=True,
-                 show_axis_label=True, compact=False):
+                 show_axis_label=True, compact=False, min_width=None):
         super().__init__(parent)
         self.series = series
         self.show_legend = show_legend
@@ -75,7 +75,11 @@ class EmotionCurveWidget(QWidget):
         self._static_cache = None
         self._static_key = None
 
-        self.setMinimumSize(320, 180 if not compact else 96)
+        # 320 是原写死的下限（留 Y 轴刻度 38px + 左右内边距 62px）。
+        # 小窗化后新增 min_width 参数：迷你置顶窗（阶段 4）只有 360px 宽，
+        # 需要把左内边距一并收窄，否则控件比窗还宽、根本摆不进去。
+        self._min_w = 320 if min_width is None else min_width
+        self.setMinimumSize(self._min_w, 180 if not compact else 96)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
     # ================================================================

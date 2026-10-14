@@ -34,7 +34,9 @@ class CorrectionSheet(QDialog):
         super().__init__(parent, Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
         self.setWindowTitle("纠正")
         self.setModal(True)
-        self.setMinimumSize(900, 520)
+        # 阶段 2 小窗化：v3 是 900×520 的左右 2:1 布局，400px 宽根本放不下
+        # → 改成上曲线 + 下手动输入的上下布局，宽高对齐主窗
+        self.setMinimumSize(400, 480)
 
         self.applied = []   # 提交时填充 [(ts, v_new, a_new), ...]
 
@@ -50,39 +52,39 @@ class CorrectionSheet(QDialog):
 
         # 头部
         head = QFrame()
-        head.setFixedHeight(56)
+        head.setFixedHeight(44)
         head.setStyleSheet(
             f"QFrame {{ background: {COLORS['paper_2']};"
             f" border-bottom: 1px solid {COLORS['rule']}; }}"
         )
         hl = QHBoxLayout(head)
-        hl.setContentsMargins(22, 0, 18, 0)
+        hl.setContentsMargins(14, 0, 12, 0)
         t = QLabel("纠正  ·  拖动你觉得不对的点")
-        t.setFont(app_font(11, QFont.DemiBold))
+        t.setFont(app_font(10, QFont.DemiBold))
         t.setStyleSheet(f"color: {COLORS['ink']}; letter-spacing: 1.4px;")
         hl.addWidget(t)
         hl.addStretch(1)
 
         # 修改计数
         self.count_lbl = QLabel("已修改 0 个点")
-        self.count_lbl.setFont(app_font(10))
+        self.count_lbl.setFont(app_font(9))
         self.count_lbl.setStyleSheet(f"color: {COLORS['muted']};")
         hl.addWidget(self.count_lbl)
         outer.addWidget(head)
 
-        # 主体：左 2/3 曲线 + 右 1/3 手动输入
+        # 主体：上曲线 + 下手动输入（400×480 上下布局）
         body = QFrame()
         body.setStyleSheet(f"QFrame {{ background: {COLORS['paper']}; }}")
-        bl = QHBoxLayout(body)
+        bl = QVBoxLayout(body)
         bl.setContentsMargins(0, 0, 0, 0)
         bl.setSpacing(0)
 
-        # ---- 左：双曲线（捕获鼠标拖点）----
+        # ---- 上：双曲线（捕获鼠标拖点）----
         left = QFrame()
         left.setStyleSheet(f"QFrame {{ background: {COLORS['surface']};"
-                           f" border-right: 1px solid {COLORS['rule']}; }}")
+                           f" border-bottom: 1px solid {COLORS['rule']}; }}")
         ll = QVBoxLayout(left)
-        ll.setContentsMargins(0, 8, 0, 0)
+        ll.setContentsMargins(0, 6, 0, 6)
 
         # 拦截鼠标：用我们自己画的曲线 + 事件过滤
         from .correction_canvas import CorrectionCanvas
@@ -93,90 +95,75 @@ class CorrectionSheet(QDialog):
         self.canvas.point_selected.connect(self._on_select)
         self.canvas.point_dragged.connect(self._on_drag)
         ll.addWidget(self.canvas, 1)
-        bl.addWidget(left, 2)
+        bl.addWidget(left, 1)
 
-        # ---- 右：手动输入面板 ----
+        # ---- 下：手动输入一行（时刻 / 效价 / 唤醒）----
         right = QFrame()
-        right.setStyleSheet(f"QFrame {{ background: {COLORS['paper_2']}; }}")
-        rl = QVBoxLayout(right)
-        rl.setContentsMargins(22, 18, 22, 18)
-        rl.setSpacing(12)
+        right.setStyleSheet(
+            f"QFrame {{ background: {COLORS['paper_2']};"
+            f" border-top: 1px solid {COLORS['rule']}; }}"
+        )
+        rl = QHBoxLayout(right)
+        rl.setContentsMargins(14, 10, 14, 10)
+        rl.setSpacing(10)
 
-        rt = QLabel("手动输入")
-        rt.setFont(app_font(9, QFont.DemiBold))
-        rt.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 1.6px;")
-        rl.addWidget(rt)
+        def _field(key, widget, extra=None):
+            """一格：极小标签在上，控件在下。"""
+            g = QFrame()
+            g.setStyleSheet("background: transparent; border: none;")
+            gl = QVBoxLayout(g)
+            gl.setContentsMargins(0, 0, 0, 0)
+            gl.setSpacing(3)
+            k = QLabel(key)
+            k.setFont(app_font(8, QFont.DemiBold))
+            k.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 1.2px;")
+            gl.addWidget(k)
+            gl.addWidget(widget)
+            if extra is not None:
+                extra.setFont(app_font(9))
+                extra.setStyleSheet(f"color: {COLORS['muted']};")
+                gl.addWidget(extra)
+            return g
 
         # 选中点时间
         self.tm_lbl = QLabel("—")
         self.tm_lbl.setFont(app_font_num(13, QFont.Light))
         self.tm_lbl.setStyleSheet(f"color: {COLORS['ink']};")
-        self.tm_lbl_k = QLabel("时刻")
-        self.tm_lbl_k.setFont(app_font(9, QFont.DemiBold))
-        self.tm_lbl_k.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 1.4px;")
-        rl.addWidget(self.tm_lbl_k)
-        rl.addWidget(self.tm_lbl)
+        rl.addWidget(_field("时刻", self.tm_lbl), 1)
 
         # 效价
         self._v_orig_lbl = QLabel("原 —")
-        self._v_orig_lbl.setFont(app_font(10))
-        self._v_orig_lbl.setStyleSheet(f"color: {COLORS['muted']};")
         self.v_sb = QDoubleSpinBox()
         self.v_sb.setRange(0.0, 1.0)
         self.v_sb.setSingleStep(0.01)
         self.v_sb.setDecimals(2)
-        self.v_sb.setFont(app_font(12))
+        self.v_sb.setFont(app_font(11))
         self.v_sb.valueChanged.connect(lambda v: self._on_manual_edit(0, v))
-        v_lay = QVBoxLayout()
-        v_k = QLabel("效价")
-        v_k.setFont(app_font(9, QFont.DemiBold))
-        v_k.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 1.4px;")
-        v_lay.addWidget(v_k)
-        v_lay.addWidget(self.v_sb)
-        v_lay.addWidget(self._v_orig_lbl)
-        rl.addLayout(v_lay)
+        rl.addWidget(_field("效价", self.v_sb, self._v_orig_lbl), 2)
 
         # 唤醒
         self._a_orig_lbl = QLabel("原 —")
-        self._a_orig_lbl.setFont(app_font(10))
-        self._a_orig_lbl.setStyleSheet(f"color: {COLORS['muted']};")
         self.a_sb = QDoubleSpinBox()
         self.a_sb.setRange(0.0, 1.0)
         self.a_sb.setSingleStep(0.01)
         self.a_sb.setDecimals(2)
-        self.a_sb.setFont(app_font(12))
+        self.a_sb.setFont(app_font(11))
         self.a_sb.valueChanged.connect(lambda v: self._on_manual_edit(1, v))
-        a_lay = QVBoxLayout()
-        a_k = QLabel("唤醒")
-        a_k.setFont(app_font(9, QFont.DemiBold))
-        a_k.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 1.4px;")
-        a_lay.addWidget(a_k)
-        a_lay.addWidget(self.a_sb)
-        a_lay.addWidget(self._a_orig_lbl)
-        rl.addLayout(a_lay)
+        rl.addWidget(_field("唤醒", self.a_sb, self._a_orig_lbl), 2)
 
-        rl.addStretch(1)
-
-        hint = QLabel("提示：双曲线共用同一时间轴，拖动效价点会同步映射唤醒到原值；\n"
-                      "若需同时改唤醒，请用右侧手动输入或在双图同步调整。")
-        hint.setFont(app_font(10))
-        hint.setStyleSheet(f"color: {COLORS['muted']};")
-        hint.setWordWrap(True)
-        rl.addWidget(hint)
-
-        bl.addWidget(right, 1)
+        bl.addWidget(right)
 
         outer.addWidget(body, 1)
 
         # 底部按钮
         footer = QFrame()
-        footer.setFixedHeight(64)
+        footer.setFixedHeight(52)
         footer.setStyleSheet(
             f"QFrame {{ background: {COLORS['paper_2']};"
             f" border-top: 1px solid {COLORS['rule']}; }}"
         )
         fl = QHBoxLayout(footer)
-        fl.setContentsMargins(22, 0, 18, 0)
+        fl.setContentsMargins(14, 0, 12, 0)
         fl.setSpacing(10)
         fl.addStretch(1)
 
