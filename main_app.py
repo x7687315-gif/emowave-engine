@@ -251,7 +251,13 @@ class MainWindow(QMainWindow):
 
         today = datetime.now()
         weekdays = "一二三四五六日"
-        date_label = QLabel(today.strftime("%m月%d日") + " 周" + weekdays[today.weekday()])
+        # ⚠️ 不要用 `today.strftime("%m月%d日")`：strftime 会把格式串里的
+        # 中文字面量按**系统 locale 代码页**编码，非中文 ANSI 代码页的机器
+        # （如 en-US/1252 的 CI runner）会直接 UnicodeEncodeError。
+        # 格式化只让 strftime 做 %m/%d（纯 ASCII 指令），中文由 f-string 拼。
+        date_label = QLabel(
+            f"{today.strftime('%m')}月{today.strftime('%d')}日"
+            f" 周{weekdays[today.weekday()]}")
         date_label.setFont(app_font(9))
         date_label.setStyleSheet(f"color: {COLORS['muted']}; background: transparent;")
         lay.addWidget(date_label)

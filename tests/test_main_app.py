@@ -12,6 +12,7 @@ v3.1 小窗化（400×680）换了信息架构：
 import time
 
 import pytest
+from PyQt5.QtWidgets import QLabel
 
 
 def _make_window(tmp_path):
@@ -367,6 +368,41 @@ def test_time_axis_formatting_adapts_to_span(qapp):
     assert _fmt_time(t0, span=30).count(":") == 2        # HH:MM:SS
     assert _fmt_time(t0, span=600).count(":") == 1      # HH:MM
     assert "-" in _fmt_time(t0, span=90000)              # 跨天带日期
+
+
+def test_header_date_label_is_locale_safe(qapp, tmp_path):
+    """回归：页头日期不能依赖系统 locale 代码页编码中文。
+
+    v3/v3.1 曾写 `today.strftime("%m月%d日")`——strftime 会把格式串里的中文字面量
+    按**系统 ANSI 代码页**编码。本机是 936(GBK) 所以看不出问题，而 en-US(1252)
+    的 CI runner 上直接 UnicodeEncodeError，连带 29 条测试全红。
+    现在中文由 f-string 拼接，strftime 只做纯 ASCII 的 %m/%d。
+    """
+    win, db = _make_window(tmp_path)
+    win.show()
+    _settle(qapp)
+
+    header = win.centralWidget().layout().itemAt(0).widget()
+    labels = header.findChildren(QLabel)
+    date_texts = [l.text() for l in labels if "月" in l.text() or "周" in l.text()]
+    assert date_texts, "页头应显示含 月/日/周 的日期"
+    assert any("月" in t and "日" in t and "周" in t for t in date_texts)
+
+    # 源码层面：所有 strftime 调用的格式串必须是纯 ASCII
+    # （不能出现"月"这类中文字面量，否则依赖系统 ANSI 代码页）
+    import ast
+    import main_app
+    src = open(main_app.__file__, encoding="utf-8").read()
+    bad = []
+    for node in ast.walk(ast.parse(src)):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "strftime" and node.args):
+            arg = node.args[0]
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                if not arg.value.isascii():
+                    bad.append((arg.lineno, arg.value))
+    assert not bad, f"strftime 格式串含非 ASCII（会被 locale 代码页编码失败）: {bad}"
+    db.close()
 
 
 def test_state_head_merges_status_and_readout(qapp, tmp_path):
