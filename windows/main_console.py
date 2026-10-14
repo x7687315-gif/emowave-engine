@@ -16,13 +16,9 @@
 4. 曲线支持双序列（效价 + 唤醒上下 small multiples 共用时间轴）
 5. 主界面不再有菜单栏；用页头图标按钮替代
 """
-import time
-import json
-import math
-import uuid
 import logging
 
-from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, pyqtProperty
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider, QPushButton, QFrame,
     QSizePolicy, QGraphicsOpacityEffect, QToolButton, QButtonGroup, QScrollArea,
@@ -30,7 +26,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QFont
 
-from theme import COLORS, app_font, app_font_num, METRICS, EASE_OUT, DUR_MID
+from theme import COLORS, app_font, app_font_num
 from curve_widget import EmotionCurveWidget
 
 from emowave import (
@@ -38,26 +34,20 @@ from emowave import (
     CorrectionDimension, CorrectionSource,
     get_archetype, DEFAULT_ARCHETYPE_KEY,
 )
-from emowave.core.domain.baseline import Baseline
-from emowave.core.estimator.estimator import StateEstimator
-from emowave.core.curve.smoother import RTSSmoother
-from emowave.core.calibration.baseline_control import BaselineController
-from emowave.core.calibration.calibrator import Calibrator
 
 # 子模块（抽屉、首项、上滑框）
 from .baseline_tools import BaselineToolsCard
 from .model_card import ModelCard
 from .legacy_embed import LegacyEmbed
 from .state_head import StateHead, ParamsExplainCard, derive_state_name
+# 注意用绝对导入：windows 是顶层包，`..presenters` 会越过顶层包报错。
+from presenters.console_presenter import (
+    ConsolePresenter, SETTLE_EPS, SETTLE_MIN_SEC, MAX_DECAY_SEC, DECAY_DT,
+)
 from .correction_sheet import CorrectionSheet
 
 logger = logging.getLogger(__name__)
 
-# ---- 情绪波生命周期常量（记录→衰减回基线→消失→待下次记录）----
-SETTLE_EPS = 0.05        # 距基线小于此值视为"回归基线"
-SETTLE_MIN_SEC = 3.0     # 至少衰减这么久才允许判定结束（避免刚停就消失）
-MAX_DECAY_SEC = 600.0    # 衰减外推的硬上限（防止无限外推）
-DECAY_DT = 1.0           # 每个定时器 tick 向前推演的秒数（实时、无需后台进程）
 
 
 # ================================================================
@@ -185,45 +175,109 @@ class InputPanel(QWidget):
 # 主：MainConsole
 # ================================================================
 class MainConsole(QWidget):
-    """新版主界面：4 区块 + 抽屉。"""
+    """小窗化主界面（三页）：曲线 / 模型 / 历史。
+
+    === 阶段 3 之后本类只是"视图" ===
+    内核状态与编排全部搬到 `presenters.console_presenter.ConsolePresenter`，
+    本类只做三件事：
+      1. 造控件、摆布局（`_build`）
+      2. 把 presenter 的信号接到控件更新槽（`_wire_presenter`）
+      3. 把用户的动作（滑杆/按钮）翻译成 presenter 的方法调用
+
+    v3 时代它还直接持有 estimator/calibrator/db/QTimer 并手写 Matérn 衰减；
+    现在这些一律通过 `self.presenter` 访问。为兼容既有调用/测试，
+    常用属性（observations/states/params/estimator/…）以 property 转发。
+    """
 
     def __init__(self, parent=None, db=None, archetype_key=None):
         super().__init__(parent)
-
-        # 数据库（事件表数据源）：抽屉「事件回顾/历史记录」与停止记录落库都靠它
-        self.db = db
-
-        # 精力人群先验：开局选一类 → 用它 seed 默认曲线（ModelParameters）+ 中心（Baseline）
-        self.archetype_key = archetype_key or DEFAULT_ARCHETYPE_KEY
-        self.archetype = get_archetype(self.archetype_key)
-
-        # ---- 2.0 内核会话 ----
-        self.params = self.archetype.to_params()
-        self.baseline_ctrl = BaselineController(initial_baseline=self.archetype.to_baseline())
-        self.estimator = StateEstimator(params=self.params,
-                                        baseline=self.baseline_ctrl.current)
-        self.calibrator = Calibrator(population=self.archetype.to_params())
-        self.observations = []
-        self.states = []
-        self.recording = False
-        self._segment = []          # 本次「开始→停止记录」采集到的观察，停止时聚合成一条 event
-        self._edits = []            # 用户对曲线点的编辑（伪观察），驱动显示曲线的 RTS 重拟合
-
-        # 情绪波生命周期：idle → recording → decaying(外推回基线) → 回归基线后消失 → idle
-        self._wave_active = False
-        self._last_obs_ts = 0.0
-        self._decay_now = 0.0
-
-        self.timer = QTimer(self)
-        self.timer.setInterval(1000)
-        self.timer.timeout.connect(self._tick)
+        # ---- 内核编排层（唯一持有 emowave 对象的地方）----
+        self.presenter = ConsolePresenter(db=db, archetype_key=archetype_key)
 
         self._build()
+        self._wire_presenter()
+
         self._refresh_readouts()
-        self._resume_active_wave()   # 上次未走完的波：开机后"慢慢推演"
+        self.presenter.resume_active_wave()   # 上次未走完的波：开机后"慢慢推演"
+
+    # ------------------------------------------------------------
+    # v3 兼容：把 presenter 的状态以 property 暴露出来
+    # （tests/test_main_app.py 等 30 条回归按这些名字访问）
+    # ------------------------------------------------------------
+    @property
+    def db(self):
+        return self.presenter.db
+
+    @property
+    def archetype_key(self):
+        return self.presenter.archetype_key
+
+    @property
+    def archetype(self):
+        return self.presenter.archetype
+
+    @property
+    def params(self):
+        return self.presenter.params
+
+    @property
+    def estimator(self):
+        return self.presenter.estimator
+
+    @property
+    def calibrator(self):
+        return self.presenter.calibrator
+
+    @property
+    def baseline_ctrl(self):
+        return self.presenter.baseline_ctrl
+
+    @property
+    def observations(self):
+        return self.presenter.observations
+
+    @property
+    def states(self):
+        return self.presenter.states
+
+    @property
+    def recording(self):
+        return self.presenter.recording
+
+    @recording.setter
+    def recording(self, value):
+        self.presenter.recording = bool(value)
+
+    @property
+    def _segment(self):
+        return self.presenter._segment
+
+    @property
+    def _edits(self):
+        return self.presenter._edits
+
+    @property
+    def _wave_active(self):
+        return self.presenter._wave_active
+
+    @_wave_active.setter
+    def _wave_active(self, value):
+        self.presenter._wave_active = bool(value)
+
+    @property
+    def _last_obs_ts(self):
+        return self.presenter._last_obs_ts
+
+    @property
+    def _decay_now(self):
+        return self.presenter._decay_now
+
+    @property
+    def timer(self):
+        return self.presenter.timer
 
     # ================================================================
-    # 布局（小窗化 · 阶段 1：三页 Tab 取代「主区 + 右侧抽屉」）
+    # 布局（小窗化 · 阶段 1）
     # ================================================================
     def _build(self):
         """三页结构：
@@ -239,7 +293,7 @@ class MainConsole(QWidget):
         self.stack = QStackedWidget()
         outer.addWidget(self.stack, 1)
 
-        # ---- 页 0：曲线（4 区块）----
+        # ---- 页 0：曲线（状态头 + 曲线 + 输入台）----
         main = QWidget()
         main.setStyleSheet(f"background: {COLORS['paper']};")
         ml = QVBoxLayout(main)
@@ -249,11 +303,10 @@ class MainConsole(QWidget):
         # ① 状态头（状态名 + 四读数合并，v3 的 StatusCard/ReadoutBar 合一）
         self.status = StateHead(on_correction_clicked=self._open_correction_sheet)
         # 读数条已并入状态头；保留 readout 别名以维持 v3 的公开属性契约
-        # （console.readout.v_lbl.value_label 这类访问在测试/文档里出现过）
         self.readout = self.status
         ml.addWidget(self.status)
 
-        # ③ 曲线（视觉主角）
+        # ② 曲线（视觉主角）
         curve_frame = QFrame()
         curve_frame.setObjectName("CurvePanel")
         curve_frame.setStyleSheet(
@@ -275,14 +328,12 @@ class MainConsole(QWidget):
         head.addWidget(legend)
         cf.addLayout(head)
         self.curve = EmotionCurveWidget(series='valence')
-        # 阶段 2：状态头合并 + 参数说明移入「模型」Tab 后，曲线可回到 ~340px
         self.curve.setMinimumHeight(340)
         cf.addWidget(self.curve)
         ml.addWidget(curve_frame, 1)
 
-        # ④ 输入台
+        # ③ 输入台
         self.input_panel = InputPanel(on_toggle=self._toggle_recording)
-        # 输入台用一条顶部细边与曲线分隔
         sep = QFrame()
         sep.setFixedHeight(1)
         sep.setStyleSheet(f"background: {COLORS['rule']}; border: none;")
@@ -292,7 +343,7 @@ class MainConsole(QWidget):
         self.page_curve = main
         self.stack.addWidget(main)
 
-        # ---- 页 1：模型（基线主权 + 个人模型）----
+        # ---- 页 1：模型（基线主权 + 个人模型 + 参数说明）----
         self.baseline_card = BaselineToolsCard(self.baseline_ctrl, self.estimator)
         model_card = ModelCard(self.params, self.calibrator,
                                on_learn=self._learn)
@@ -319,11 +370,7 @@ class MainConsole(QWidget):
         self.stack.addWidget(self.page_history)
 
     def _make_scroll_page(self, body_layout):
-        """把若干区块包成一个可滚动的整页。
-
-        400×680 下「模型 / 历史」内容必然超出屏高，必须可滚
-        （v3 抽屉时代靠 SideDrawer 的 QScrollArea，这里保留同一约束）。
-        """
+        """把若干区块包成一个可滚动的整页。"""
         page = QWidget()
         lay = QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -344,11 +391,52 @@ class MainConsole(QWidget):
         """切换页（外壳 TopTabs.currentChanged 接这里）。"""
         self.stack.setCurrentIndex(index)
         if index == 2:
-            # 进「历史」页才刷新：v3 是开抽屉时刷，语义等价
-            self.legacy.refresh()
+            self.legacy.refresh()      # 进「历史」页才刷新：落库后立刻可见
 
     # ================================================================
-    # 纠正上滑框
+    # presenter → 视图 的信号接线（解耦后唯一的耦合点）
+    # ================================================================
+    def _wire_presenter(self):
+        p = self.presenter
+        p.mode_changed.connect(self.input_panel.set_mode)
+        p.count_changed.connect(self.input_panel.set_count)
+        p.readouts_changed.connect(self._on_readouts)
+        p.readouts_reset.connect(self._reset_readouts)
+        p.curve_changed.connect(self._on_curve_data)
+        p.curve_cleared.connect(self.curve.clear)
+        p.history_changed.connect(self._refresh_history)
+        p.baseline_changed.connect(self.baseline_card.refresh)
+
+        # 滑条 → presenter：记录中 1Hz 用"当前滑条值"采样（v3 同语义）
+        for row in (self.input_panel.v_row, self.input_panel.a_row):
+            row['slider'].valueChanged.connect(self._push_input)
+        self._push_input()
+
+    def _push_input(self, *_):
+        """把当前滑条值告诉 presenter（心跳采样时用）。"""
+        self.presenter.set_input(*self.input_panel.get_values())
+
+    def _on_readouts(self, valence, arousal, confidence, ci_text, params_text):
+        self.readout.update_values(valence, arousal, confidence, ci_text)
+        self.status.update_state(valence, arousal, params_text)
+        # 参数说明常驻「模型」Tab，同一份数据双处展示
+        self.params_card.update_params(valence, arousal, params_text)
+
+    def _on_curve_data(self, payload):
+        self.curve.set_data(
+            payload["ts"], payload["mv"], payload["ma"],
+            payload["vv"], payload["va"],
+            baseline_v=payload["baseline_v"], raw=payload["raw"],
+        )
+
+    def _refresh_history(self):
+        try:
+            self.legacy.refresh()
+        except Exception as exc:            # 刷新失败不该打断记录流程
+            logger.warning("历史面板刷新失败：%s", exc)
+
+    # ================================================================
+    # 视图 → presenter 的动作转发（方法名与 v3 完全一致）
     # ================================================================
     def _open_correction_sheet(self):
         if not self.states:
@@ -365,368 +453,53 @@ class MainConsole(QWidget):
         self.ingest_corrections(sheet.applied)
 
     def ingest_corrections(self, applied, source=None):
-        """把「时刻 → (v, a)」的纠正列表写进 calibrator 数据集。
+        return self.presenter.ingest_corrections(applied, source)
 
-        单独抽出：上滑框是模态的，测试无法走 exec_()，直接喂本方法即可。
-
-        注意 **UserCorrection 是单维度的**（dimension + predicted/corrected
-        单个数值），没有 corrected_valence/corrected_arousal 双字段——
-        所以一次拖点若同时改了效价和唤醒，会产出 2 条纠正记录。
-        """
-        if not applied:
-            return 0
-        if source is None:
-            source = CorrectionSource.DRAG
-
-        n = 0
-        for ts, v, a in applied:
-            pred = next((s for t, s in self.states if abs(t - ts) < 0.5), None)
-            if pred is None:
-                continue
-            for dim, pv, cv in (
-                (CorrectionDimension.VALENCE, pred.valence, v),
-                (CorrectionDimension.AROUSAL, pred.arousal, a),
-            ):
-                if abs(cv - pv) < 1e-9:
-                    continue        # 该维度没动，不产生纠正
-                uc = UserCorrection(
-                    timestamp=ts,
-                    dimension=dim,
-                    predicted_value=pv,
-                    corrected_value=cv,
-                    source=source,
-                    created_at=time.time(),
-                )
-                self.calibrator.ingest_correction(uc)
-                # 同时作为伪观察喂给显示曲线 → 改点即时重拟合整条曲线
-                self._edits.append({
-                    "timestamp": ts,
-                    "channel": dim.value,
-                    "value": cv,
-                    "reliability_weight": uc.reliability_weight,
-                })
-                n += 1
-        if n:
-            self._refresh_curve()
-        return n
-
-    # ================================================================
-    # 基线主权（薄封装，委托给抽屉里的 BaselineToolsCard）
-    # ================================================================
-    def _nudge(self, delta: float):
-        self.baseline_card._nudge(delta)
-
-    def _fork(self):
-        self.baseline_card._fork()
-
-    def _reset_baseline(self):
-        self.baseline_card._reset()
-
-    def observations_ts_for_curve(self):
-        return [t for t, _ in self.states]
-
-    # ================================================================
-    # 数据采集
-    # ================================================================
     def _toggle_recording(self, want_running=None):
-        """开始/停止记录。停止后不清空，而是进入"外推衰减回基线"，回归后曲线消失。"""
-        if want_running is None:
-            want_running = not self.recording
-        if want_running:
-            if self._wave_active and not self.recording:
-                self._end_wave()                 # 上一波还在衰减 → 先收尾
-            self.recording = True
-            self._wave_active = True
-            self._segment = []
-            self.input_panel.set_mode("recording")
-            self.timer.start(1000)
-        else:
-            if not self.recording:
-                return
-            self.recording = False
-            self._persist_segment_event()        # 落库 + 自动学习（保留 states/observations）
-            if not self.states:                  # 没采到点 → 直接回 idle
-                self._end_wave()
-                return
-            self._last_obs_ts = self.states[-1][0]
-            self._decay_now = self._last_obs_ts
-            self.input_panel.set_mode("decaying")
-            self._store_active_wave()            # 存快照：关掉重开也能"慢慢推演"
-            self.timer.start(1000)               # 继续跑 → _decay_step 衰减回基线
-
-    def _tick(self):
-        """1Hz 心跳：记录中采样；衰减中向前推演。"""
-        if self.recording:
-            self._sample()
-        elif self._wave_active:
-            self._decay_step()
+        self.presenter.toggle_recording(want_running)
+        # 开始记录时立刻把当前滑条值推过去，避免首拍用到初始值
+        self._push_input()
 
     def _sample(self):
-        ts = time.time()
         v, a = self.input_panel.get_values()
-        obs = Observation(timestamp=ts, valence=v, arousal=a,
-                          source=ObservationSource.USER)
-        self.observations.append(obs)
-        self._segment.append(obs)
-        self._last_obs_ts = ts
-        if not self.estimator.is_initialized:
-            self.estimator.initialize(timestamp=ts, valence=v, arousal=a)
-        state = self.estimator.update(obs)
-        self.states.append((ts, state))
-        self.input_panel.set_count(len(self.observations))
-        self._refresh_readouts()
-        self._refresh_curve()
+        self.presenter.sample(v, a)
 
-    def _persist_segment_event(self):
-        """把本次「开始→停止」采集到的观察聚合成一条 emotion_events 落库。
-
-        v3 的连续记录此前从不写事件表（只有旧 SessionController.process_event 写），
-        导致抽屉「事件回顾/历史记录」永远空。这里补上落库，面板才有真实数据。
-        """
-        if self.db is None or not self._segment:
-            return
-        seg = self._segment
-        peak_obs = max(seg, key=lambda o: o.arousal)
-        # Russell 环状模型：中性点 (0.5, 0.5)，强度=到中性点距离 / 最大距离
-        def _intensity(o):
-            return math.sqrt((o.valence - 0.5) ** 2 + (o.arousal - 0.5) ** 2) / math.sqrt(0.5)
-        event = {
-            "event_id": uuid.uuid4().hex,
-            "start_time": seg[0].timestamp,
-            "end_time": seg[-1].timestamp,
-            "peak_valence": peak_obs.valence,
-            "peak_arousal": peak_obs.arousal,
-            "peak_intensity": max(_intensity(o) for o in seg),
-            "sample_count": len(seg),
-            "trigger_tags": [],
-            "coping_methods": [],
-            "coping_ratings": {},
-            "body_symptoms": [],
-            "user_peak_rating": None,
-            "raw_data": json.dumps([[o.timestamp, o.valence, o.arousal] for o in seg]),
-        }
-        try:
-            self.db.save_event(event)
-        except Exception as exc:                       # 落库失败不打断 UI，仅记日志
-            logger.warning("情绪事件落库失败（%d 个采样）：%s", len(seg), exc)
-        finally:
-            self._segment = []                         # 无论成败都消费掉，避免重复落库
-        # 停止即自动个性化一步（用本次记录 + 已有纠正），不再只靠手点「学习一步」
-        try:
-            self._learn()
-            self._refresh_curve()
-        except Exception as exc:
-            logger.warning("停止记录后自动学习失败：%s", exc)
-        self.legacy.refresh()                          # 新事件即时出现在抽屉里
-
-    # ================================================================
-    # 情绪波衰减：记录停止后外推回基线，回归即消失（无需后台进程）
-    # ================================================================
     def _decay_step(self):
-        if not self.states:
-            self._end_wave()
-            return
-        self._decay_now += DECAY_DT
-        horizon = self._decay_now - self._last_obs_ts
-        if horizon <= 0:
-            return
-        pts = self._decay_points(horizon)          # 向基线（GP 均值函数）衰减，而非向 0
-        self._refresh_curve_wave(pts)
-        bv = self.baseline_ctrl.current.valence
-        ba = self.baseline_ctrl.current.arousal
-        if pts:
-            last_v, last_a = pts[-1][1], pts[-1][2]
-        else:
-            last_v, last_a = self.states[-1][1].valence, self.states[-1][1].arousal
-        settled = (abs(last_v - bv) < SETTLE_EPS and abs(last_a - ba) < SETTLE_EPS
-                   and horizon >= SETTLE_MIN_SEC)
-        if settled or horizon >= MAX_DECAY_SEC:
-            self._end_wave()                       # 回归基线 → 曲线消失
+        self.presenter.decay_step()
 
-    def _decay_points(self, horizon: float):
-        """从末态按 Matérn 位置衰减因子 d(Δt)=e^(-λΔt)(1+λΔt) 外推回基线。
+    def observations_ts_for_curve(self):
+        return self.presenter.observations_ts_for_curve()
 
-        返回 [(ts, valence, arousal, var_v, var_a)]，与 predict_forward 的
-        "偏离空间回复到基线"同一套数学（estimator.extrapolate 是向 0 收，不适用）。
-        """
-        bv = self.baseline_ctrl.current.valence
-        ba = self.baseline_ctrl.current.arousal
-        last = self.states[-1][1]
-        lv, la = last.valence, last.arousal
-        lv_var, la_var = last.variance_valence, last.variance_arousal
-        lam_v = self.params.lambda_valence()
-        lam_a = self.params.lambda_arousal()
-        pts = []
-        n = int(horizon // DECAY_DT)
-        for i in range(1, n + 1):
-            dt = i * DECAY_DT
-            dv = math.exp(-lam_v * dt) * (1 + lam_v * dt)
-            da = math.exp(-lam_a * dt) * (1 + lam_a * dt)
-            v = max(0.0, min(1.0, bv + (lv - bv) * dv))
-            a = max(0.0, min(1.0, ba + (la - ba) * da))
-            pts.append((self._last_obs_ts + dt, v, a, lv_var, la_var))
-        return pts
+    def _nudge(self, delta: float):
+        self.presenter.nudge(delta)
 
-    def _refresh_curve_wave(self, pts):
-        """显示 = 已记录的真实状态 + 外推衰减尾巴（一条会自己往基线收的波）。"""
-        ts_list = [t for t, _ in self.states] + [p[0] for p in pts]
-        mv = [s.valence for _, s in self.states] + [p[1] for p in pts]
-        ma = [s.arousal for _, s in self.states] + [p[2] for p in pts]
-        vv = [s.variance_valence for _, s in self.states] + [p[3] for p in pts]
-        va = [s.variance_arousal for _, s in self.states] + [p[4] for p in pts]
-        raw = [(o.timestamp, o.valence) for o in self.observations]
-        self.curve.set_data(ts_list, mv, ma, vv, va,
-                            baseline_v=self.baseline_ctrl.current.valence, raw=raw)
+    def _fork(self):
+        self.presenter.fork()
 
-    def _end_wave(self):
-        """一波结束：曲线消失、读数复位、估计器重置回基线，回到待记录(idle)。"""
-        self.timer.stop()
-        self.recording = False
-        self._wave_active = False
-        self.curve.clear()
-        self._reset_readouts()
-        self.states = []
-        self.observations = []
-        self._edits = []
-        self._segment = []
-        self.estimator = StateEstimator(params=self.params,
-                                        baseline=self.baseline_ctrl.current)
-        self.input_panel.set_mode("idle")
-        self.input_panel.set_count(0)
-        self._clear_active_wave()
+    def _reset_baseline(self):
+        self.presenter.reset()
+
+    def _learn(self):
+        self.presenter.learn()
+        self._refresh_readouts()
+
+    def set_archetype(self, key: str):
+        """切换精力人群先验：重 seed + 清空会话（委托 presenter）。"""
+        self.presenter.set_archetype(key)
+        # presenter 重建了 estimator/calibrator/params：把卡片上的旧引用换掉
+        # （v3 的隐患：卡片仍写给已退役的对象）
+        self.baseline_card.set_estimator(self.estimator)
+        self.baseline_card.refresh()
+        self._push_input()
+
+    # ================================================================
+    # 刷新（现在都由 presenter 信号驱动；保留两个入口供外部主动调）
+    # ================================================================
+    def _refresh_readouts(self):
+        if self.states:
+            self._on_readouts(*self.presenter._readout_payload())
 
     def _reset_readouts(self):
         # 状态头内含四读数，一次复位（v3 是逐个标签 setText）
         self.status.reset_values()
         self.params_card.reset_params()
-
-    def _store_active_wave(self):
-        if self.db is None:
-            return
-        try:
-            snap = {"end_ts": self._last_obs_ts,
-                    "samples": [[o.timestamp, o.valence, o.arousal] for o in self.observations]}
-            self.db.set_state("active_wave", json.dumps(snap))
-        except Exception as exc:
-            logger.warning("保存活动情绪波快照失败：%s", exc)
-
-    def _clear_active_wave(self):
-        if self.db is None:
-            return
-        try:
-            self.db.set_state("active_wave", "")
-        except Exception as exc:
-            logger.debug("清除 active_wave 快照失败：%s", exc)
-
-    def _resume_active_wave(self):
-        """开机若有未走完的波：重放观察、重建估计器，进入衰减"慢慢推演"。"""
-        if self.db is None:
-            return
-        try:
-            raw = self.db.get_state("active_wave", "") or ""
-        except Exception as exc:
-            logger.debug("读取 active_wave 快照失败：%s", exc)
-            return
-        if not raw:
-            return
-        try:
-            data = json.loads(raw)
-            samples = data.get("samples", [])
-            end_ts = float(data.get("end_ts", 0.0))
-        except Exception as exc:
-            logger.warning("active_wave 快照损坏，已清除：%s", exc)
-            self._clear_active_wave()
-            return
-        if not samples:
-            self._clear_active_wave()
-            return
-        for ts, v, a in samples:
-            obs = Observation(timestamp=ts, valence=v, arousal=a,
-                              source=ObservationSource.USER)
-            self.observations.append(obs)
-            if not self.estimator.is_initialized:
-                self.estimator.initialize(timestamp=ts, valence=v, arousal=a)
-            state = self.estimator.update(obs)
-            self.states.append((ts, state))
-        self._last_obs_ts = end_ts or self.states[-1][0]
-        self._decay_now = self._last_obs_ts
-        self._wave_active = True
-        self.recording = False
-        self.input_panel.set_mode("decaying")
-        self.input_panel.set_count(len(self.observations))
-        self.timer.start(1000)                         # 前台心跳推演（无后台进程）
-
-    # ================================================================
-    # 学习（个人模型）
-    # ================================================================
-    def _learn(self):
-        self.params = self.calibrator.learn(self.params)
-        self.estimator.params = self.params
-
-    def set_archetype(self, key: str):
-        """切换精力人群先验：用新类的默认曲线 + 基线重新 seed，清空当前会话。
-
-        换人群 = 换起点先验，历史曲线随之作废（从零重新按新先验演化）。
-        """
-        self.archetype_key = key
-        self.archetype = get_archetype(key)
-        self.params = self.archetype.to_params()
-        self.baseline_ctrl = BaselineController(initial_baseline=self.archetype.to_baseline())
-        self.estimator = StateEstimator(params=self.params,
-                                        baseline=self.baseline_ctrl.current)
-        self.calibrator = Calibrator(population=self.archetype.to_params())
-        self.observations = []
-        self.states = []
-        self._segment = []
-        self._edits = []
-        self.recording = False
-        self._wave_active = False
-        self._last_obs_ts = 0.0
-        self._decay_now = 0.0
-        self.timer.stop()
-        self.input_panel.set_mode("idle")
-        self.input_panel.set_count(0)
-        self._reset_readouts()
-        self.curve.clear()
-        self._clear_active_wave()
-
-    # ================================================================
-    # 刷新
-    # ================================================================
-    def _refresh_readouts(self):
-        if not self.states:
-            return
-        ts, st = self.states[-1]
-        lo, hi = st.confidence_interval("valence", z=1.0)
-        ci = f"{int(lo*100)} – {int(hi*100)}"
-        params_text = {
-            'confidence': f"{int(st.confidence*100)}%",
-            'confidence_desc': f"={int(st.confidence*100)}%",
-            'ci': ci,
-            'ci_desc': f"估 {int(st.valence*100)}±{int((hi-lo)*50)}",
-        }
-        self.readout.update_values(
-            valence=st.valence,
-            arousal=st.arousal,
-            confidence=st.confidence,
-            ci_text=ci,
-        )
-        self.status.update_state(
-            valence=st.valence,
-            arousal=st.arousal,
-            params_text=params_text,
-        )
-        # 参数说明常驻「模型」Tab，同一份数据双处展示
-        self.params_card.update_params(st.valence, st.arousal, params_text)
-
-    def _refresh_curve(self):
-        if len(self.observations) < 2:
-            return
-        # 显示曲线 = RTS 非因果平滑（原始观察 + 用户编辑伪观察共同参与）：
-        # 用户改任一点，整条曲线按核函数光滑地重新收敛（"拉函数图像"的手感）。
-        traj = RTSSmoother(self.params).smooth(self.observations, self._edits)
-        raw = [(o.timestamp, o.valence) for o in self.observations]
-        self.curve.set_data(traj.timestamps, traj.mean_valence, traj.mean_arousal,
-                            traj.var_valence, traj.var_arousal,
-                            baseline_v=self.baseline_ctrl.current.valence,
-                            raw=raw)

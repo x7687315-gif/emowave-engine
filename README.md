@@ -104,36 +104,37 @@ emowave/                          零第三方依赖 · 纯标准库 · pip 可�
 
 ---
 
-## UI 预览（v3 实拍 · PyQt5 桌面端）
+## UI 预览（v3.1 小窗化实拍 · PyQt5 桌面端）
 
-> **左 56px 图标列**（心潮字标 + 曲线 / 抽屉两个动作，当前视图高亮）→ **中部主界面**（状态 · 读数 · 曲线 · 输入四区块）→ **右侧抽屉**（基线主权 · 个人模型 · 事件回顾与历史记录）。开局弹出"选精力人群"，页头可随时重选。
-> 构成主义骨架（大块面 · 不对称 · 硬边直角 · 粗无衬线） + 暖色板（暖黄纸底 · 陶土赭红 · 低饱和 · 单一色相）。
+> **400×680 手机比例小窗**（最小 360×600，单列布局）：**页头 44px**（标题 + 日期 + 精力·X ▾ + 导出/关于）→ **顶部 Tab 栏 40px**（曲线 / 模型 / 历史）→ 曲线页 = **状态头**（状态名 + 效价/唤醒/置信/区间四读数）+ **曲线**（视觉主角，最小 340px）+ **输入台**（双滑块 + 开始/停止记录）。模型页 = 基线主权 + 个人模型 + 参数说明；历史页 = 事件回顾 + 历史记录。开局弹出"选精力人群"，页头可随时重选。
+> 构成主义骨架（大块面 · 不对称 · 硬边直角 · 粗无衬线）+ 暖色板（暖黄纸底 · 陶土赟红 · 低饱和 · 单一色相）
 
-| 01 · 主界面（情绪曲线） | 02 · 右侧抽屉（可滚动） | 03 · 纠正上滑框（双曲线拖点 + 手动输入） |
-|:---:|:---:|:---:|
-| ![主界面](docs/screenshots/01-main.png) | ![右侧抽屉](docs/screenshots/02-drawer.png) | ![纠正上滑框](docs/screenshots/03-correct-sheet.png) |
+| 01 · 主界面 | 02 · 模型页 | 03 · 历史页 | 04 · 纠正框（400×480） |
+|:---:|:---:|:---:|:---:|
+| [主界面](docs/screenshots/01-main.png) | [模型页](docs/screenshots/02-model.png) | [历史页](docs/screenshots/03-history.png) | [纠正框](docs/screenshots/04-correct-sheet.png) |
 
 > 设计稿（HTML 模拟）：[`docs/ui-draft-v1.html`](docs/ui-draft-v1.html) · 调研依据：[`docs/UI_PREFLIGHT_视觉传达与UI设计调研.md`](docs/UI_PREFLIGHT_视觉传达与UI设计调研.md) · 设计令牌：[`theme.py`](theme.py)
+> 小窗化重构（阶段 0～4，含读码报告 / 检索台账 / 方案）：[`docs/ui-compact-refactor/`](docs/ui-compact-refactor/)
 
 **桌面端结构**（PyQt5，与内核解耦，`emowave/` 不反向依赖任何 UI 代码）：
 
 ```
-main_app.py            外壳 · 56px 图标列 + 极简页头（无菜单栏）· HighDPI 前置
-│                      开局选精力人群 + 页头"精力·X ▾"随时重选
+main_app.py            外壳 · 页头(44px) + 顶部 Tab 栏(40px，曲线/模型/历史三页) · 窗口 400×680 · HighDPI 在 QApplication 构造前 setAttribute
+│                     开局选精力人群 + 页头"精力·X ▾"随时重选
 ├─ theme.py            设计令牌 + 一份 app 级 QSS（修 QSS 不继承 font/color）
 ├─ curve_widget.py     曲线 · 双序列 · 单次描边 · 时间轴按跨度自适应（短记录显示到秒）
 └─ windows/
-   ├─ main_console.py       主界面 4 区块 + 情绪波生命周期（记录→衰减回基线→消失）
-   ├─ archetype_dialog.py   开局/重选"高·中·低精力"人群
-   ├─ drawer.py             右侧滑出抽屉（maximumWidth 动画 + 内容可滚动）
-   ├─ baseline_tools.py     基线主权：步进 ±0.02 · ◆ 分叉 · ↺ 重置
-   ├─ model_card.py         个人模型：学习进度 · 惯性 ℓ · 阶段
-   ├─ legacy_embed.py       事件回顾 · 历史记录（注入 db，可刷新）
+   ├─ top_tabs.py          顶部分段 Tab（当前页底部 2px accent 硬边条）——取代 v3 的 56px 图标列
+   ├─ state_head.py        状态头（状态名 + 四读数）+ 参数说明卡
+   ├─ main_console.py      三页主界面 + 情绪波生命周期（记录→衰减回基线→消失）
+   ├─ archetype_dialog.py  开局/重选"高·中·低精力"人群
+   ├─ baseline_tools.py    基线主权：步进 ±0.02 · ♦ 分叉 · ↺ 重置
+   ├─ model_card.py        个人模型：学习进度 · 惯性 ℓ · 阶段
+   ├─ legacy_embed.py      事件回顾 · 历史记录（注入 db，可刷新）
    ├─ event_detail_dialog.py 补全/修正事件：触发·躯体·应对·自评
-   └─ correction_sheet.py + correction_canvas.py   底部上滑纠正框（双曲线拖点 + 手动输入）
+   └─ correction_sheet.py + correction_canvas.py   上滑纠正框（400×480，双曲线拖点 + 手动输入）
 ```
 
-**事件补全/修正窗口**：记录产生的事件里"触发因素 / 躯体症状 / 自评峰值"默认留空，事件回顾面板有「补全/修正」按钮、历史记录双击某行即可打开同一窗口补录（只更新可补全字段，保留事件原始时间）。
 
 **这一路修掉的关键问题**：
 
