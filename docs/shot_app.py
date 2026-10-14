@@ -105,6 +105,7 @@ STEPS = [
     (lambda: (win.tabs.set_current(0), None), 300),
     (open_sheet, 700),
     (lambda: shot(holder['sheet'], "04-correct-sheet.png"), 400),
+    (lambda: (win._toggle_mini(), shot(win.mini, "05-mini.png")), 500),
 ]
 
 QTimer.singleShot(300, lambda: run(0))

@@ -426,6 +426,54 @@ def test_widgets_palette_unified(qapp, tmp_path):
     db.close()
 
 
+def test_mini_window_shares_presenter(qapp, tmp_path):
+    """阶段 4：迷你挂件与主窗共用同一个 presenter（解耦的验收点）。"""
+    win, db = _make_window(tmp_path)
+
+    assert win.mini is not None
+    assert win.mini.presenter is win.console.presenter
+    # 默认隐藏（用户主动唤起）
+    assert win.mini.isVisible() is False
+    # 页头有唤起按钮且能切换显隐
+    assert win.b_mini is not None
+    win._toggle_mini()
+    assert win.mini.isVisible() is True
+    win._toggle_mini()
+    assert win.mini.isVisible() is False
+    db.close()
+
+
+def test_mini_window_mirrors_main_view(qapp, tmp_path):
+    """阶段 4：主窗采样后，挂件的读数/状态名/按钮三态必须实时跟上。"""
+    win, db = _make_window(tmp_path)
+    mini = win.mini
+    mini.show()
+    _settle(qapp)
+
+    # 主窗采样（ presenter 驱动）
+    win.console._toggle_recording(True)
+    for _ in range(3):
+        win.console._sample()
+    _settle(qapp)
+
+    assert mini.v_cell.value_label.text() != "—"
+    assert mini.a_cell.value_label.text() != "—"
+    assert mini.state_label.text() != "—"
+    assert mini.btn_record.text().startswith("■")     # 记录中
+
+    # 挂件自己的滑杆也能作为输入源（共用同一 presenter）
+    mini.a_slider['slider'].setValue(70)
+    _settle(qapp)
+    assert win.console.presenter._input_a == pytest.approx(0.70)
+
+    # 推演中按钮禁用态
+    win.console._toggle_recording(False)
+    _settle(qapp)
+    assert mini.btn_record.text().startswith("◌")
+    assert mini.btn_record.isEnabled() is False
+    db.close()
+
+
 def test_stop_with_data_enters_decay(qapp, tmp_path):
     """回归：有数据时停止记录 → 进入"衰减回基线"，不清空、按钮转推演中。"""
     win, db = _make_window(tmp_path)

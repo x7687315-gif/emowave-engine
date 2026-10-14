@@ -22,8 +22,9 @@ MainConsole 与既有测试按这些名字访问，一个都不能少：
 参数说明（原来的 220px 折叠面板）**移出小窗**，进「模型」Tab 的 ParamsExplainCard。
 """
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
-from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+                             QFrame)
+from PyQt5.QtGui import QFont, QFontMetrics
 
 from theme import COLORS, app_font, app_font_num
 
@@ -47,11 +48,18 @@ class StateHead(QWidget):
         self.state_label = QLabel("—")
         self.state_label.setFont(app_font(17, QFont.Medium))
         self.state_label.setStyleSheet(f"color: {COLORS['ink']};")
+        # 状态名是全窗口最重要的一个词，绝不能被旁边元素挤掉。
+        longest = max(("兴奋 · 活跃", "平静 · 偏积极",
+                       "紧张 · 焦虑", "低落 · 疲惫"), key=len)
+        self.state_label.setMinimumWidth(
+            QFontMetrics(self.state_label.font()).horizontalAdvance(longest) + 4)
         row1.addWidget(self.state_label)
 
-        self.state_hint = QLabel(" · 模型估计（不替你定义）")
+        self.state_hint = QLabel(" · 模型估计")
         self.state_hint.setFont(app_font(10))
         self.state_hint.setStyleSheet(f"color: {COLORS['muted']};")
+        # 让提示语在极端窄/高缩放下先让位（可被压缩）
+        self.state_hint.setMinimumWidth(0)
         row1.addWidget(self.state_hint, 1, Qt.AlignBottom | Qt.AlignLeft)
 
         self.corr_btn = QPushButton("· 情绪有误，点这里纠正")

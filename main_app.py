@@ -34,6 +34,7 @@ from theme import (
     COLORS, METRICS, app_font, app_font_num, build_app_qss,
 )
 from windows.top_tabs import TopTabs
+from windows.mini_window import MiniWindow
 from windows.main_console import MainConsole
 from windows.archetype_dialog import ArchetypeDialog
 from emowave import ARCHETYPES, DEFAULT_ARCHETYPE_KEY, get_archetype
@@ -67,6 +68,8 @@ class IconButton(QToolButton):
         'export': [((8, 2), (8, 9)), ((5, 6), (8, 9), (11, 6)), ((3, 12), (13, 12))],
         # 设置：两条滑杆（杆 + 游标方块）
         'settings': [((2, 6), (14, 6)), ((2, 10), (14, 10))],
+        # 迷你挂件：右下角小窗（一个实心方块 + 右下指向的角标）
+        'mini': [((2, 4), (9, 4), (9, 11), (2, 11), (2, 4))],
     }
     _KNOBS = {'settings': ((6, 6), (10, 10))}        # 游标方块中心
 
@@ -175,6 +178,10 @@ class MainWindow(QMainWindow):
                                    archetype_key=self._archetype_key)
         root.addWidget(self.console, 1)
 
+        # ---- 迷你置顶窗（与主窗共用同一个 presenter；阶段 4）----
+        # 必须持有引用，否则无父窗口对象会被 GC 回收，表现为"点开就闪退"
+        self.mini = MiniWindow(self.console.presenter)
+
         self.tabs.currentChanged.connect(self.console.show_page)
 
     # ------------------------------------------------------------
@@ -262,6 +269,12 @@ class MainWindow(QMainWindow):
 
         lay.addWidget(_vline())
 
+        # 迷你挂件开关（置顶悬浮窗，与主窗共用同一内核状态）
+        self.b_mini = IconButton('mini', "迷你挂件（置顶悬浮窗）", size=28)
+        self.b_mini.set_active(True)
+        self.b_mini.clicked.connect(self._toggle_mini)
+        lay.addWidget(self.b_mini, 0, Qt.AlignVCenter)
+
         b_export = IconButton('export', "导出数据（JSON）", size=28)
         b_export.clicked.connect(self._export_data)
         b_about = IconButton('settings', "关于 / 参数", size=28)
@@ -269,6 +282,15 @@ class MainWindow(QMainWindow):
         for b in (b_export, b_about):
             lay.addWidget(b, 0, Qt.AlignVCenter)
         return head
+
+    def _toggle_mini(self):
+        """唤起/收起迷你挂件。挂件与主窗共享 presenter，两边状态实时一致。"""
+        if self.mini.isVisible():
+            self.mini.hide()
+            self.b_mini.set_active(False)
+        else:
+            self.mini.show()
+            self.b_mini.set_active(True)
 
     # ------------------------------------------------------------
     # 行为
@@ -300,6 +322,12 @@ class MainWindow(QMainWindow):
         if getattr(self, 'db', None):
             try:
                 self.db.close()
+            except Exception:
+                pass
+        # 主窗关闭时一起收掉挂件，避免残留一个置顶小窗
+        if getattr(self, 'mini', None) is not None:
+            try:
+                self.mini.close()
             except Exception:
                 pass
         super().closeEvent(event)
