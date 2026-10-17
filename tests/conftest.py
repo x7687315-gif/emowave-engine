@@ -1,8 +1,9 @@
 import os
 import sys
+
 import pytest
 
-# 确保能 import 引擎模块
+# 确保能 import 应用层模块（main_app / windows / presenters / db / session）
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 无头模式运行 Qt

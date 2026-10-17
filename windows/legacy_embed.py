@@ -9,20 +9,13 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QFrame, QLabel
 from PyQt5.QtGui import QFont
 
 from theme import COLORS, app_font
+from session import SessionController
 
 # 直接复用旧窗口 —— 它们自带数据驱动，无须改业务
 from .event_summary_window import EventSummaryWindow
 from .history_window import HistoryWindow
 
 logger = logging.getLogger(__name__)
-
-
-class _DbSession:
-    """最小 session 适配器：旧窗口只用到 session.db，这里把 db 包一层喂给它。"""
-    __slots__ = ("db",)
-
-    def __init__(self, db):
-        self.db = db
 
 
 class LegacyEmbed(QFrame):
@@ -44,7 +37,7 @@ class LegacyEmbed(QFrame):
 
         # 旧窗口按 session.db 读事件表；这里注入真实 db（此前写死 session=None，
         # 是 v3 重写遗留的 TODO，导致两个面板永远是空壳）。
-        session = _DbSession(db)
+        session = SessionController(db)
         self.summary = EventSummaryWindow(session=session, parent=self)
         self.history = HistoryWindow(session=session, parent=self)
 

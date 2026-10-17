@@ -1,27 +1,7 @@
 """tests/test_event_summary_window.py — 事件回顾窗口测试"""
-import time
-
 import pytest
 
-from models import TimeSeriesSample
-
-
-def _seed_event(session):
-    """向数据库写入一条情绪事件，返回其 event_id。"""
-    now = time.time()
-    samples = [
-        TimeSeriesSample(timestamp=now + i, valence=0.6 - i * 0.01,
-                         arousal=0.3 + i * 0.05)
-        for i in range(30)
-    ]
-    result = session.process_event(
-        samples=samples,
-        trigger_tags=['工作压力', 'deadline'],
-        coping_methods=['深呼吸'],
-        body_symptoms=['肩膀紧绷', '胸口压抑'],
-        user_peak_rating=7.0,
-    )
-    return result['event_id']
+from tests.helpers import seed_event
 
 
 def test_event_summary_window_creates(qapp, tmp_path):
@@ -54,7 +34,7 @@ def test_event_summary_window_shows_real_event(qapp, tmp_path):
 
     db = DatabaseManager(str(tmp_path / "test.db"))
     session = SessionController(db)
-    event_id = _seed_event(session)
+    event_id = seed_event(db, body_symptoms=["肩膀紧绷", "胸口压抑"])
 
     win = EventSummaryWindow(session)
     win.show_event(event_id)

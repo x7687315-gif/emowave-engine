@@ -19,8 +19,8 @@ jobs:
           python-version: "3.9"
 
       - name: Install dependencies
-        # PyQt5 5.15.11 + pytest-qt；numpy 只被根目录 1.x 遗留模块使用，
-        # 但全量测试会 import 它们，所以一起装。
+        # 瘦身后只剩 GUI + 测试依赖：内核 emowave/core 零第三方依赖，
+        # 1.x 遗留引擎与 numpy/cryptography 已退役（见 docs/slim-refactor/）。
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
