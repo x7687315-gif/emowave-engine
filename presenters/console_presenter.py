@@ -55,7 +55,7 @@ class ConsolePresenter(QObject):
     mode_changed = pyqtSignal(str)        # idle / recording / decaying
     count_changed = pyqtSignal(int)
     history_changed = pyqtSignal()        # 有新事件落库 → 历史页该刷新了
-    wave_active_changed = pyqtSignal(bool)
+    input_changed = pyqtSignal(float, float)   # 输入源变更 → 各视图镜像滑杆
     baseline_changed = pyqtSignal(float, float)   # 基线变了 → 基线卡显示该刷新
 
     def __init__(self, db=None, archetype_key=None, parent=None):
@@ -92,10 +92,19 @@ class ConsolePresenter(QObject):
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self._on_tick)
 
-    def set_input(self, valence: float, arousal: float):
-        """视图滑杆变化时调用：记住当前输入，供 1Hz 心跳采样使用。"""
-        self._input_v = float(valence)
-        self._input_a = float(arousal)
+    def set_input(self, valence=None, arousal=None, source=None):
+        """视图滑杆变化时调用。
+
+        分通道更新（valence=None 表示该通道不动）：主窗只碰效价时，
+        不会再把挂件刚调好的唤醒打回原值——这是多视图共享 presenter
+        必然遇到的输入源争抢（阶段 4 引入、阶段 6 修）。
+        变更后广播 input_changed，让另一个视图的滑杆镜像过来。
+        """
+        if valence is not None:
+            self._input_v = float(valence)
+        if arousal is not None:
+            self._input_a = float(arousal)
+        self.input_changed.emit(self._input_v, self._input_a)
 
     # ================================================================
     # 录制 / 采样
@@ -105,7 +114,12 @@ class ConsolePresenter(QObject):
         if want_running is None:
             want_running = not self.recording
         if want_running:
-            if self._wave_active and not self.recording:
+            # 守卫：已在记录中再按"开始"，旧实现会跳过收尾并直接清空 _segment，
+            # 把本次已采集的观察吃掉（落库 sample_count 与曲线长度不一致），
+            # 且按钮没有视觉反馈。明确拒绝比静默清空好。
+            if self.recording:
+                return
+            if self._wave_active:
                 self._end_wave()                 # 上一波还在衰减 → 先收尾
             self.recording = True
             self._wave_active = True
@@ -125,7 +139,6 @@ class ConsolePresenter(QObject):
             self.mode_changed.emit("decaying")
             self._store_active_wave()            # 存快照：关掉重开也能"慢慢推演"
             self.timer.start(1000)               # 继续跑 → _decay_step 衰减回基线
-            self.wave_active_changed.emit(True)
 
     def sample(self, valence: float, arousal: float):
         """1Hz 采样：喂一个观察给内核，并把新状态推给视图。"""
@@ -210,7 +223,6 @@ class ConsolePresenter(QObject):
         self.mode_changed.emit("idle")
         self.count_changed.emit(0)
         self._clear_active_wave()
-        self.wave_active_changed.emit(False)
 
     # ================================================================
     # 落库 / 快照
@@ -311,7 +323,6 @@ class ConsolePresenter(QObject):
         self.mode_changed.emit("decaying")
         self.count_changed.emit(len(self.observations))
         self.timer.start(1000)                         # 前台心跳推演（无后台进程）
-        self.wave_active_changed.emit(True)
 
     # ================================================================
     # 纠正 → calibrator + RTS 重拟合
@@ -403,8 +414,15 @@ class ConsolePresenter(QObject):
     # 学习 / 换人群
     # ================================================================
     def learn(self):
-        self.params = self.calibrator.learn(self.params)
-        self.estimator.params = self.params
+        # 先算到局部变量，再一次性赋两处：若中途抛异常，不会留下
+        # presenter.params 已是新的、estimator.params 还是旧的 这种混合状态。
+        new_params = self.calibrator.learn(self.params)
+        self.params = new_params
+        self.estimator.params = new_params
+        # 学习改变了 λ → 整条显示曲线必须按新参数重拟合。
+        # v3 是 _learn() 之后紧跟 _refresh_curve()；漏掉这一步时，
+        # 紧接着的衰减 tick 会输出"旧参数历史主体 + 新参数外推尾"。
+        self._emit_curve(refit=True)
 
     def set_archetype(self, key: str):
         """切换精力人群先验。换人群 = 换起点先验，历史曲线随之作废。"""
@@ -434,6 +452,36 @@ class ConsolePresenter(QObject):
     # ================================================================
     # 推给视图的数据封装
     # ================================================================
+    # ================================================================
+    # 现状快照（供「晚于构造函数接线」的视图做初始同步）
+    # ================================================================
+    def current_mode(self) -> str:
+        """当前生命周期模式：recording / decaying / idle。"""
+        if self.recording:
+            return "recording"
+        if self._wave_active:
+            return "decaying"
+        return "idle"
+
+    def current_count(self) -> int:
+        return len(self.observations)
+
+    def current_curve_payload(self):
+        """当前应显示的曲线数据；无数据返回 None。"""
+        if len(self.states) < 2 or len(self.observations) < 2:
+            return None
+        traj = RTSSmoother(self.params).smooth(self.observations, self._edits)
+        raw = [(o.timestamp, o.valence) for o in self.observations]
+        return {
+            "ts": list(traj.timestamps),
+            "mv": list(traj.mean_valence),
+            "ma": list(traj.mean_arousal),
+            "vv": list(traj.var_valence),
+            "va": list(traj.var_arousal),
+            "baseline_v": self.baseline_ctrl.current.valence,
+            "raw": raw,
+        }
+
     def _readout_payload(self):
         """算出读数 payload（视图主动要一份时用，如启动时的首次刷新）。"""
         if not self.states:
@@ -490,3 +538,4 @@ class ConsolePresenter(QObject):
             "ts": ts_list, "mv": mv, "ma": ma, "vv": vv, "va": va,
             "baseline_v": baseline_v, "raw": raw,
         })
+

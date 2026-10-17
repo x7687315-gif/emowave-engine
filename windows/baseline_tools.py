@@ -1,10 +1,18 @@
-"""windows/baseline_tools.py — 抽屉首项：基线主权
+"""windows/baseline_tools.py — 「模型」页首项：基线主权
 
 实现 ui-draft-v1.html §02 「基线主权」分区。
 三个控件：步进器（−/值/+）+ 分叉（新起点）+ 重置。
 
-调用方传入 BaselineController 和 StateEstimator，按钮触发后写回控制器
-并把 estimator.baseline 同步到当前控制器状态。
+=== 阶段 6 起：本卡片是纯视图 ===
+v3 时代它直接改内核（`ctrl.nudge()` + `est.baseline = ...`）。MVP 解耦后这些
+副作用归 presenter，因此构造参数从「传 estimator / controller 对象」改为：
+
+  · `baseline_provider`：callable，返回**当前** BaselineController
+    —— 换精力人群后 presenter 会 replace 新 controller，卡片若持有旧对象
+    就会把 nudge 写进一个已退役的 controller（阶段 5 的 bug：estimator 被污染
+    成 0.60 而曲线基线仍画 0.50）。
+  · `on_nudge / on_fork / on_reset`：回调，由视图接到 presenter，
+    顺带拿回 provenance（reason="user_nudge"）与 baseline_changed 信号。
 """
 import time
 
@@ -20,11 +28,16 @@ _STEP = 0.02   # 一次微调的步长
 
 
 class BaselineToolsCard(QFrame):
-    def __init__(self, baseline_ctrl, estimator, parent=None):
+    """基线主权卡：步进器 + 分叉 + 重置（只显示、不直接改内核）。"""
+
+    def __init__(self, baseline_provider, on_nudge, on_fork, on_reset,
+                 parent=None):
         super().__init__(parent)
         self.setObjectName("Section")
-        self._ctrl = baseline_ctrl
-        self._est = estimator
+        self._get_ctrl = baseline_provider
+        self._on_nudge = on_nudge
+        self._on_fork = on_fork
+        self._on_reset = on_reset
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(16, 14, 16, 16)
@@ -81,9 +94,9 @@ class BaselineToolsCard(QFrame):
         self.btn_minus.setFixedWidth(32)
         self.btn_minus.setCursor(Qt.PointingHandCursor)
         self.btn_minus.setFont(app_font(13, QFont.Medium))
-        self.btn_minus.clicked.connect(lambda: self._nudge(-_STEP))
+        self.btn_minus.clicked.connect(lambda: self._on_nudge(-_STEP))
 
-        self.value_lbl = QLabel(f"{self._ctrl.current.valence:.2f}")
+        self.value_lbl = QLabel(self._fmt_current())
         self.value_lbl.setAlignment(Qt.AlignCenter)
         self.value_lbl.setFont(app_font_num(11, QFont.Light))
         self.value_lbl.setStyleSheet(
@@ -97,7 +110,7 @@ class BaselineToolsCard(QFrame):
         self.btn_plus.setFixedWidth(32)
         self.btn_plus.setCursor(Qt.PointingHandCursor)
         self.btn_plus.setFont(app_font(13, QFont.Medium))
-        self.btn_plus.clicked.connect(lambda: self._nudge(+_STEP))
+        self.btn_plus.clicked.connect(lambda: self._on_nudge(+_STEP))
 
         stepper_lay.addWidget(self.btn_minus)
         stepper_lay.addWidget(self.value_lbl, 1)
@@ -109,7 +122,7 @@ class BaselineToolsCard(QFrame):
         self.btn_fork = QPushButton("◆  分叉（新起点）")
         self.btn_fork.setCursor(Qt.PointingHandCursor)
         self.btn_fork.setStyleSheet(self._neutral_btn_qss())
-        self.btn_fork.clicked.connect(self._fork)
+        self.btn_fork.clicked.connect(self._on_fork)
         lay.addWidget(self.btn_fork)
 
         # 重置按钮（danger）
@@ -121,7 +134,7 @@ class BaselineToolsCard(QFrame):
         self.btn_reset.setCursor(Qt.PointingHandCursor)
         self.btn_reset.setProperty("danger", True)
         self.btn_reset.setStyleSheet(self._danger_btn_qss())
-        self.btn_reset.clicked.connect(self._reset)
+        self.btn_reset.clicked.connect(self._on_reset)
         lay.addWidget(self.btn_reset)
 
         self._refresh()
@@ -151,50 +164,21 @@ class BaselineToolsCard(QFrame):
         )
 
     # ================================================================
-    # 对外接口（阶段 3 解耦后由 presenter 触发，而非按钮直接改内核）
+    # 对外接口
     # ================================================================
-    def set_estimator(self, est):
-        """换 estimator 引用（换精力人群后 presenter 会重建 estimator）。
-
-        v3 的隐患：卡片构造时抓住 estimator 对象，而 `set_archetype` 会
-        replace 一个新的 estimator，卡片于是写给一个已退役的对象。
-        """
-        self._est = est
-
     def refresh(self):
-        """公开刷新入口：presenter 改了基线后由视图调用。"""
+        """从 provider 重新拉当前基线并刷新显示（换人群 / nudge 后由视图调）。
+
+        换精力人群后 presenter 会 **replace** 新的 BaselineController，
+        所以这里必须每次都从 provider 拿，不能缓存引用。
+        """
         self._refresh()
 
     # ================================================================
-    # 行为
+    # 行为（纯显示：按钮一律走回调到 presenter，自身不改内核）
     # ================================================================
     def _refresh(self):
-        v = self._ctrl.current.valence
-        self.value_lbl.setText(f"{v:.2f}")
+        self.value_lbl.setText(f"{self._get_ctrl().current.valence:.2f}")
 
     def _fmt_current(self):
-        return f"{self._ctrl.current.valence:.2f}"
-
-    def _nudge(self, delta):
-        bl = self._ctrl.current
-        new_v = max(0.0, min(1.0, bl.valence + delta))
-        try:
-            self._ctrl.nudge(valence=new_v)
-        except AttributeError:
-            # 兼容旧 controller 接口（无 valence 入参）
-            self._ctrl.nudge(new_v)
-        self._est.baseline = self._ctrl.current
-        self._refresh()
-
-    def _fork(self):
-        bl = self._ctrl.current
-        self._ctrl.fork(time.time(), new_baseline=Baseline(
-            valence=bl.valence, arousal=bl.arousal))
-        self._est.baseline = self._ctrl.current
-        self._refresh()
-
-    def _reset(self):
-        """L3 重置：回到群体先验（Baseline() 默认 0.55/0.42），并开新 regime。"""
-        self._ctrl.reset()
-        self._est.baseline = self._ctrl.current
-        self._refresh()
+        return f"{self._get_ctrl().current.valence:.2f}"

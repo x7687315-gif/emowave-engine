@@ -18,6 +18,11 @@ import json
 import csv
 import hashlib
 import base64
+import warnings
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
 import secrets
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any, Set
@@ -53,7 +58,9 @@ class DataExporter:
 
     功能：
       - 将用户的情绪事件、日常数据、模型参数导出为 JSON 或 CSV
-      - 可选加密导出（AES-256-GCM 风格，使用 XOR + base64 简化实现）
+      - 可选的加密导出（**真 AES-256-GCM**，PBKDF2 派生密钥，格式 EMW2）。
+        历史 EMW1 格式是 XOR+base64 的演示实现，已实证可被已知明文攻破，
+        仅保留只读解密以兼容旧文件。
       - 时间模糊化：精确时间戳可模糊到"周"级别
       - 自动嵌入数据解读指南
     """
@@ -434,88 +441,114 @@ class DataExporter:
         """
         return DATA_GUIDE_TEXT
 
+    #: KDF 迭代次数。OWASP 2023 对 PBKDF2-HMAC-SHA256 的建议值是 600k。
+    _PBKDF2_ITERATIONS = 600_000
+
+    def _derive_key(self, password: str, salt: bytes) -> bytes:
+        """PBKDF2-HMAC-SHA256 派生 32 字节密钥。
+
+        旧实现是单次 SHA-256(password+salt)：无迭代、无内存硬度，
+        弱密码可被秒级爆破，且密钥完全由密码决定、不可扩展。
+        """
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=self._PBKDF2_ITERATIONS,
+        )
+        return kdf.derive(password.encode("utf-8"))
+
     def _simple_encrypt(self, plaintext: str, password: str) -> str:
         """
-        简化的加密（XOR + base64，用于演示。生产环境应使用 cryptography 库）。
+        AES-256-GCM 加密（含认证标签，篡改会被发现）。
 
         加密流程：
-          1. 从密码派生密钥（SHA-256 哈希）
-          2. 生成随机盐值（16字节）
-          3. 将明文 UTF-8 编码为字节
-          4. 逐字节异或加密
-          5. 密文经 base64 编码后输出
-          6. 格式: "EMW1:" + base64(salt + ciphertext)
+          1. 生成随机盐值（16 字节）与随机 nonce（12 字节，GCM 标准长度）
+          2. PBKDF2-HMAC-SHA256(password, salt) 派生 32 字节密钥
+          3. AES-256-GCM 加密明文（输出自带 16 字节认证标签）
+          4. base64 编码后输出，格式: "EMW2:" + base64(salt + nonce + ciphertext)
 
-        参数：
-          plaintext: 明文字符串
-          password: 加密密码
-
-        返回：加密后的字符串
+        历史格式 EMW1 = XOR + base64，可被已知明文恢复密钥（已实证），
+        故本方法不再生成 EMW1；`_decrypt_xor_legacy` 只保留只读兼容。
         """
-        # 生成随机盐值，增加密码破解难度
         salt = secrets.token_bytes(16)
+        nonce = secrets.token_bytes(12)
 
-        # 从密码派生密钥：SHA-256(password + salt)，取前32字节
-        key_material = hashlib.sha256(password.encode("utf-8") + salt).digest()
-        key = key_material[:32]
+        key = self._derive_key(password, salt)
 
-        # 将明文转为字节
         plaintext_bytes = plaintext.encode("utf-8")
+        # AESGCM.encrypt 返回值 = 密文 || 16 字节认证标签
+        ciphertext = AESGCM(key).encrypt(nonce, plaintext_bytes, None)
 
-        # XOR 加密：循环使用密钥
-        ciphertext_bytes = bytearray(len(plaintext_bytes))
-        for i in range(len(plaintext_bytes)):
-            ciphertext_bytes[i] = plaintext_bytes[i] ^ key[i % len(key)]
-
-        # 组装：salt(16字节) + ciphertext
-        combined = salt + bytes(ciphertext_bytes)
-
-        # Base64 编码，添加版本前缀
+        combined = salt + nonce + ciphertext
         encoded = base64.b64encode(combined).decode("ascii")
-        return "EMW1:" + encoded
+        return "EMW2:" + encoded
 
     def _simple_decrypt(self, ciphertext: str, password: str) -> str:
         """
-        简化的解密。
+        解密，按版本前缀分流。
 
-        参数：
-          ciphertext: 由 _simple_encrypt 产生的密文字符串
-          password: 加密时使用的密码
-
-        返回：解密后的明文字符串
+          · EMW2 = AES-256-GCM（当前格式）
+          · EMW1 = 旧版 XOR+base64，**安全上等于没有加密**，仅作只读兼容，
+            解密时发出 UserWarning 提醒用户改用新版本重新导出。
 
         异常：
-          ValueError: 格式不正确或密码错误
+          ValueError: 格式不正确、密码错误、或（GCM 场景）数据被篡改。
+                    刻意不区分"密码错"与"被篡改"，避免给攻击者反馈。
         """
-        # 检查格式前缀
-        if not ciphertext.startswith("EMW1:"):
-            raise ValueError("密文格式不正确，应以 'EMW1:' 开头")
+        if ciphertext.startswith("EMW2:"):
+            return self._decrypt_aesgcm(ciphertext, password)
+        if ciphertext.startswith("EMW1:"):
+            warnings.warn(
+                "检测到 EMW1 旧格式加密导出：它使用可被已知明文攻破的 XOR，"
+                "安全上等同未加密；请用当前版本重新导出。",
+                UserWarning,
+                stacklevel=2,
+            )
+            return self._decrypt_xor_legacy(ciphertext, password)
+        raise ValueError("密文格式不正确，应以 'EMW2:' 或 'EMW1:' 开头")
 
-        # 去除前缀并 base64 解码
-        encoded = ciphertext[5:]
+    def _decrypt_aesgcm(self, ciphertext: str, password: str) -> str:
+        """EMW2：AES-256-GCM 解密（认证失败 = 密码错或数据被篡改）。"""
+        encoded = ciphertext[len("EMW2:"):]
         try:
             combined = base64.b64decode(encoded)
         except Exception as e:
             raise ValueError(f"Base64 解码失败: {e}")
+        # salt(16) + nonce(12) + 密文(>=16 含认证标签)
+        if len(combined) < 16 + 12 + 16:
+            raise ValueError("密文数据不完整")
+        salt, nonce, ct = combined[:16], combined[16:28], combined[28:]
+        key = self._derive_key(password, salt)
+        try:
+            plaintext = AESGCM(key).decrypt(nonce, ct, None)
+        except Exception:
+            raise ValueError("解密失败：密码错误或数据已被篡改")
+        try:
+            return plaintext.decode("utf-8")
+        except UnicodeDecodeError:
+            raise ValueError("解密结果不是合法文本")
 
-        # 提取盐值（前16字节）
+    def _decrypt_xor_legacy(self, ciphertext: str, password: str) -> str:
+        """EMW1：旧版 XOR+base64 的只读解密（不再生成）。
+
+        保留它只是为了还能打开历史导出；安全上它等于没有加密。
+        """
+        encoded = ciphertext[len("EMW1:"):]
+        try:
+            combined = base64.b64decode(encoded)
+        except Exception as e:
+            raise ValueError(f"Base64 解码失败: {e}")
         if len(combined) < 16:
             raise ValueError("密文数据不完整")
         salt = combined[:16]
-        ciphertext_bytes = combined[16:]
-
-        # 从密码派生密钥（与加密过程一致）
-        key_material = hashlib.sha256(password.encode("utf-8") + salt).digest()
-        key = key_material[:32]
-
-        # XOR 解密
-        plaintext_bytes = bytearray(len(ciphertext_bytes))
-        for i in range(len(ciphertext_bytes)):
-            plaintext_bytes[i] = ciphertext_bytes[i] ^ key[i % len(key)]
-
-        # 验证解密结果是否为合法 UTF-8
+        ct = combined[16:]
+        key = hashlib.sha256(password.encode("utf-8") + salt).digest()
+        out = bytearray(len(ct))
+        for i in range(len(ct)):
+            out[i] = ct[i] ^ key[i % len(key)]
         try:
-            return plaintext_bytes.decode("utf-8")
+            return out.decode("utf-8")
         except UnicodeDecodeError:
             raise ValueError("密码错误或数据损坏，解密结果不是合法文本")
 

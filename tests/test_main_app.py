@@ -540,6 +540,59 @@ def test_model_card_pulls_latest_params(qapp, tmp_path):
     db.close()
 
 
+def test_mini_window_syncs_state_on_late_attach(qapp, tmp_path):
+    """回归：挂件创建晚于 resume_active_wave，必须初始同步 presenter 现状。
+
+    场景：上次未走完的波 → 主窗构造时就进入 decaying，而迷你窗那时还不存在。
+    不同步的话：主窗显示"推演中/禁用"，挂件却显示"开始/可用"，
+    用户会在挂件上点"开始"去打断一场正在进行的衰减。
+    """
+    from windows.main_console import MainConsole
+    from db import DatabaseManager
+    db = DatabaseManager(str(tmp_path / "s.db"))
+    c = MainConsole(db=db, archetype_key="medium")
+    c._toggle_recording(True)
+    for _ in range(5):
+        c._sample()
+    c._toggle_recording(False)
+    assert c._wave_active is True
+
+    import main_app
+    win = main_app.MainWindow(db)
+    win.mini._sync_from_presenter()          # 显式同步（构造时也会调一次）
+    _settle(qapp)
+
+    assert win.mini.btn_record.text().startswith("◌"), "挂件应显示推演中"
+    assert win.mini.btn_record.isEnabled() is False
+    assert win.mini.v_cell.value_label.text() != "—"
+    db.close()
+
+
+def test_input_mirrors_between_views(qapp, tmp_path):
+    """回归：两个视图的输入不能互相覆盖，且变更要镜像到另一侧滑杆。"""
+    win, db = _make_window(tmp_path)
+    mini = win.mini
+    mini.show()
+    _settle(qapp)
+
+    # 挂件只改唤醒 → 主窗唤醒滑杆应镜像过来，且主窗效价不受影响
+    mini.a_slider['slider'].setValue(90)
+    _settle(qapp)
+    assert win.console.presenter._input_a == pytest.approx(0.90)
+    assert win.console.input_panel.a_row['slider'].value() == 90
+    assert win.console.input_panel.v_row['slider'].value() == 50   # 效价没被动过
+
+    # 主窗只改效价 → 挂件唤醒应保持 0.90，不被整体覆盖打回 0.40
+    win.console.input_panel.v_row['slider'].setValue(70)
+    _settle(qapp)
+    assert win.console.presenter._input_v == pytest.approx(0.70)
+    assert win.console.presenter._input_a == pytest.approx(0.90), \
+        "主窗碰效价不应把挂件调的唤醒打回原值"
+    assert mini.v_slider['slider'].value() == 70
+    assert mini.a_slider['slider'].value() == 90
+    db.close()
+
+
 def test_stop_with_data_enters_decay(qapp, tmp_path):
     """回归：有数据时停止记录 → 进入"衰减回基线"，不清空、按钮转推演中。"""
     win, db = _make_window(tmp_path)

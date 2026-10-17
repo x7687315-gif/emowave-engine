@@ -39,6 +39,9 @@ from curve_widget import EmotionCurveWidget
 logger = logging.getLogger(__name__)
 
 WIN_W, WIN_H = METRICS['mini_w'], METRICS['mini_h']
+#: 曲线两侧留白 = 布局 10px 边距 ×2；min_width 必须由 WIN_W 派生，
+#: 否则两处数字各自漂移后，超出部分会被 setFixedSize 静默裁掉。
+CURVE_GUTTER = 20
 
 
 class MiniCloseButton(QPushButton):
@@ -185,7 +188,7 @@ class MiniWindow(QWidget):
 
         # ---- 迷你曲线（compact：去掉图例与时间轴，只留形状）----
         self.curve = EmotionCurveWidget(series='valence', compact=True,
-                                        min_width=WIN_W - 24)
+                                        min_width=WIN_W - CURVE_GUTTER)
         self.curve.setMinimumHeight(58)
         self.curve.setMaximumHeight(74)
         self.curve.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -236,7 +239,8 @@ class MiniWindow(QWidget):
         s = QSlider(Qt.Horizontal)
         s.setRange(0, 100)
         s.setValue(default)
-        s.valueChanged.connect(self._push_input)
+        s.valueChanged.connect(
+            lambda *_: self._on_slider("v" if key == "效价" else "a"))
         layout.addWidget(k)
         layout.addWidget(s, 1)
         return {'layout': layout, 'slider': s, 'key': key}
@@ -252,7 +256,35 @@ class MiniWindow(QWidget):
         p.curve_cleared.connect(self.curve.clear)
         p.mode_changed.connect(self._on_mode)
         p.count_changed.connect(self._on_count)
+        p.input_changed.connect(self._on_input_changed)
         self._push_input()
+        self._sync_from_presenter()
+
+    def _sync_from_presenter(self):
+        """初始同步：把 presenter 的**现状**拉一遍。
+
+        必要原因：`MainConsole.__init__` 会调 `resume_active_wave()`，
+        那时本窗还不存在——上一波未走完的衰减只会通知到主窗。
+        不同步的话：主窗显示"推演中/禁用"，挂件却显示"开始/可用"，
+        用户会在挂件上点"开始"去打断一场正在进行的衰减。
+        """
+        p = self.presenter
+        self._on_mode(p.current_mode())
+        self._on_count(p.current_count())
+        if p.states:
+            self._on_readouts(*p._readout_payload())
+        payload = p.current_curve_payload()
+        if payload:
+            self._on_curve(payload)
+
+    def _on_input_changed(self, valence, arousal):
+        """另一个视图改了输入 → 本窗滑杆镜像过来（避免显示与内核不一致）。"""
+        for sl, val in ((self.v_slider['slider'], int(valence * 100)),
+                        (self.a_slider['slider'], int(arousal * 100))):
+            if sl.value() != val:
+                sl.blockSignals(True)
+                sl.setValue(val)
+                sl.blockSignals(False)
 
     def _on_readouts(self, valence, arousal, confidence, ci_text, params_text):
         self.v_cell.value_label.setText(f"{int(valence * 100)}")
@@ -291,9 +323,26 @@ class MiniWindow(QWidget):
     # 本视图 → presenter
     # ------------------------------------------------------------
     def _push_input(self, *_):
-        """挂件自己的滑杆也可以作为输入源（与主窗滑杆是同一份 presenter 状态）。"""
+        """挂件自己的滑杆也可以作为输入源（与主窗滑杆是同一份 presenter 状态）。
+
+        两个参数都传：本方法作为"整体设定"用（初次接线时）。
+        单个滑杆变化走 _on_slider（分通道），不会覆盖另一个通道。
+        """
         self.presenter.set_input(self.v_slider['slider'].value() / 100.0,
-                                 self.a_slider['slider'].value() / 100.0)
+                                 self.a_slider['slider'].value() / 100.0,
+                                 source="mini")
+
+    def _on_slider(self, channel):
+        """单通道更新：只推变化的那一维，另一维保持 presenter 里的现值。
+
+        否则会出现"在挂件上调好唤醒 → 回主窗碰一下效价 → 唤醒被弹回原值"。
+        """
+        if channel == "v":
+            self.presenter.set_input(valence=self.v_slider['slider'].value() / 100.0,
+                                     source="mini")
+        else:
+            self.presenter.set_input(arousal=self.a_slider['slider'].value() / 100.0,
+                                     source="mini")
 
     def _toggle(self):
         self.presenter.toggle_recording()

@@ -344,7 +344,14 @@ class MainConsole(QWidget):
         self.stack.addWidget(main)
 
         # ---- 页 1：模型（基线主权 + 个人模型 + 参数说明）----
-        self.baseline_card = BaselineToolsCard(self.baseline_ctrl, self.estimator)
+        # 卡片是纯视图：provider 保证换人群后拿到**新** controller，
+        # 三个回调一律走 presenter（顺带拿回 provenance 与 baseline_changed）
+        self.baseline_card = BaselineToolsCard(
+            baseline_provider=lambda: self.presenter.baseline_ctrl,
+            on_nudge=self._nudge,
+            on_fork=self._fork,
+            on_reset=self._reset_baseline,
+        )
         # provider 形式传入：换人群/学习一步后 params 会被 replace，
         # 卡片必须从源头拉最新值（v3 遗留 bug，持有对象会显示旧值）
         self.model_card = ModelCard(
@@ -413,13 +420,45 @@ class MainConsole(QWidget):
         p.baseline_changed.connect(self.baseline_card.refresh)
 
         # 滑条 → presenter：记录中 1Hz 用"当前滑条值"采样（v3 同语义）
-        for row in (self.input_panel.v_row, self.input_panel.a_row):
-            row['slider'].valueChanged.connect(self._push_input)
+        self.input_panel.v_row['slider'].valueChanged.connect(
+            lambda *_: self._on_slider("v"))
+        self.input_panel.a_row['slider'].valueChanged.connect(
+            lambda *_: self._on_slider("a"))
+        self.presenter.input_changed.connect(self._on_input_changed)
         self._push_input()
 
     def _push_input(self, *_):
-        """把当前滑条值告诉 presenter（心跳采样时用）。"""
-        self.presenter.set_input(*self.input_panel.get_values())
+        """把当前滑条值整体告诉 presenter（初次接线 / 编程式设定用）。
+
+        单个滑杆变化走 _on_slider（分通道），避免覆盖另一维。
+        """
+        self.presenter.set_input(*self.input_panel.get_values(), source="main")
+
+    def _on_slider(self, channel):
+        """分通道推送：只推变化的那一维。
+
+        修的是多视图共享 presenter 的输入源争抢——若主窗每次都整体推，
+        主窗碰一下效价就会把挂件刚调好的唤醒打回原值（且无任何提示）。
+        """
+        if channel == "v":
+            self.presenter.set_input(
+                valence=self.input_panel.v_row['slider'].value() / 100.0,
+                source="main")
+        else:
+            self.presenter.set_input(
+                arousal=self.input_panel.a_row['slider'].value() / 100.0,
+                source="main")
+
+    def _on_input_changed(self, valence, arousal):
+        """另一个视图改了输入 → 主窗滑杆镜像过来。"""
+        for row, val in ((self.input_panel.v_row, int(valence * 100)),
+                         (self.input_panel.a_row, int(arousal * 100))):
+            sl = row['slider']
+            if sl.value() != val:
+                sl.blockSignals(True)
+                sl.setValue(val)
+                sl.blockSignals(False)
+            row['num'].setText(f"{val}/100")
 
     def _on_readouts(self, valence, arousal, confidence, ci_text, params_text):
         self.readout.update_values(valence, arousal, confidence, ci_text)
@@ -492,8 +531,10 @@ class MainConsole(QWidget):
     def set_archetype(self, key: str):
         """切换精力人群先验：重 seed + 清空会话（委托 presenter）。"""
         self.presenter.set_archetype(key)
-        # presenter 重建了 estimator/calibrator/params：把卡片上的旧引用换掉
-        self.baseline_card.set_estimator(self.estimator)
+        # presenter 重建了 estimator/calibrator/params。
+        # 两张卡都已是 provider 形式（每次 refresh 从源头拉最新值），
+        # 所以这里只需触发刷新，不再需要手动换引用——v3/阶段5 的
+        # "卡片持失效引用" 隐患到此彻底消除。
         self.baseline_card.refresh()
         self.model_card.refresh()
         self._push_input()

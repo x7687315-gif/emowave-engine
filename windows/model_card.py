@@ -102,7 +102,11 @@ class ModelCard(QFrame):
         p = self._get(self._params_ref)
         self._lbl_n.value_label.setText(str(getattr(p, 'n_events_fitted', 0)))
         self._lbl_ell.value_label.setText(f"{getattr(p, 'ell_valence', 0):.0f}")
-        self._lbl_stage.value_label.setText(getattr(p.stage, 'value', '—'))
+        # 注意不能写 getattr(p.stage, 'value', '—')：那会先求值 p.stage，
+        # provider 返回 None 时直接 AttributeError，而 refresh() 在 __init__
+        # 里就会被调用 → 「模型」页整个建不起来。
+        stage = getattr(p, 'stage', None)
+        self._lbl_stage.value_label.setText(getattr(stage, 'value', '—'))
         self._lbl_shrink.value_label.setText(
             f"{int(getattr(p, 'shrinkage_alpha', 0)*100)}%")
 

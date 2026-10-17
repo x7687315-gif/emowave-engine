@@ -2,3 +2,6 @@ PyQt5==5.15.11
 numpy>=1.21
 pytest>=7.0
 pytest-qt>=4.2.0
+# 根目录 privacy_export.py 的加密导出（AES-256-GCM + PBKDF2）。
+# 不属于 emowave/ 内核，内核本身仍是零运行时依赖。
+cryptography>=42.0.0
