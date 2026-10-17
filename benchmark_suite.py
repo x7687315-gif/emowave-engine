@@ -16,7 +16,8 @@ benchmark_suite.py — 心潮 EmoWave 基准测试套件
 """
 
 import sys
-sys.path.insert(0, "/workspace/emowave-engine")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import os
 import json
@@ -1056,8 +1057,8 @@ def main():
       5. 打印摘要
     """
     suite = BenchmarkSuite(
-        data_dir="/workspace/emowave-engine/test_data",
-        output_dir="/workspace/emowave-engine/benchmark_results",
+        data_dir=str(Path(__file__).resolve().parent / "test_data"),
+        output_dir=str(Path(__file__).resolve().parent / "benchmark_results"),
     )
 
     # 运行所有基准测试

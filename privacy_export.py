@@ -11,7 +11,8 @@ privacy_export.py — 心潮 EmoWave 数据导出与隐私控制模块
 """
 
 import sys
-sys.path.insert(0, "/workspace/emowave-engine")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import os
 import json

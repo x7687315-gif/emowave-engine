@@ -9,7 +9,8 @@ whitepaper_generator.py — 心潮 EmoWave 技术白皮书自动生成器
 """
 
 import sys
-sys.path.insert(0, "/workspace/emowave-engine")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import os
 import json
@@ -824,9 +825,9 @@ def main():
     print("=" * 60)
 
     generator = WhitepaperGenerator(
-        output_path="/workspace/emowave-engine/TECHNICAL_WHITEPAPER.md",
-        benchmark_results_path="/workspace/emowave-engine/benchmark_results/benchmark_results.json",
-        benchmark_report_path="/workspace/emowave-engine/benchmark_results/BENCHMARK_REPORT.md",
+        output_path=str(Path(__file__).resolve().parent / "TECHNICAL_WHITEPAPER.md"),
+        benchmark_results_path=str(Path(__file__).resolve().parent / "benchmark_results/benchmark_results.json"),
+        benchmark_report_path=str(Path(__file__).resolve().parent / "benchmark_results/BENCHMARK_REPORT.md"),
     )
 
     path = generator.save()

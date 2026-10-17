@@ -26,7 +26,7 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Run full test suite (offscreen)
-        # 桌面端 55+ 条集成测试靠 tests/conftest.py 的 qapp fixture + offscreen 平台
+        # 桌面端 86+ 条集成测试靠 tests/conftest.py 的 qapp fixture + offscreen 平台
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q --tb=short

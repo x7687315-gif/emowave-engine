@@ -15,7 +15,8 @@ test_recommender.py — 心潮 EmoWave · LinUCB 上下文老虎机推荐引擎 
 """
 
 import sys
-sys.path.insert(0, "/workspace/emowave-engine")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import random
 import copy

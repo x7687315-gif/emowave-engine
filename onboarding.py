@@ -12,7 +12,8 @@ onboarding.py — 心潮 EmoWave 新用户引导与首次评估模块
 """
 
 import sys
-sys.path.insert(0, "/workspace/emowave-engine")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import json
 import os

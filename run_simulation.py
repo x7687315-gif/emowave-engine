@@ -10,7 +10,8 @@ run_simulation.py — 心潮 EmoWave 全系统端到端模拟运行
 """
 
 import sys
-sys.path.insert(0, "/workspace/emowave-engine")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import json
 import random

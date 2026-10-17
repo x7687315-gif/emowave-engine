@@ -12,7 +12,8 @@ demo.py — 心潮 EmoWave 实时情绪状态估计与极点预警 · Demo
 """
 
 import sys
-sys.path.insert(0, "/workspace/emowave-engine")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import numpy as np
 from typing import List, Tuple

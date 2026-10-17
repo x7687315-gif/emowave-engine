@@ -22,7 +22,8 @@ data_simulator_v2.py — 心潮 EmoWave 多用户画像数据集生成器（V2�
 """
 
 import sys
-sys.path.insert(0, "/workspace/emowave-engine")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import os
 import json
@@ -45,7 +46,7 @@ from kalman_filter import SliderObservation, PhysioInput
 from simulator import TrajectoryPoint
 
 # 输出目录
-OUTPUT_DIR = "/workspace/emowave-engine/test_data"
+OUTPUT_DIR = str(Path(__file__).resolve().parent / "test_data")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ================================================================

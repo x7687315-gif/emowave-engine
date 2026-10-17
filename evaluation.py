@@ -18,7 +18,8 @@ evaluation.py — 心潮 EmoWave 离线评估与参数敏感性分析
 """
 
 import sys
-sys.path.insert(0, "/workspace/emowave-engine")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import os
 import json
@@ -60,7 +61,7 @@ from simulator import (
 # ================================================================
 # 输出目录
 # ================================================================
-OUTPUT_DIR = "/workspace/emowave-engine/evaluation_report"
+OUTPUT_DIR = str(Path(__file__).resolve().parent / "evaluation_report")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 

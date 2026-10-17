@@ -12,7 +12,8 @@ crisis_protocol.py — 心潮 EmoWave 危机协议模块
 """
 
 import sys
-sys.path.insert(0, "/workspace/emowave-engine")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import os
 import json
@@ -561,7 +562,7 @@ def main():
     print("=" * 60)
 
     protocol = CrisisProtocol(
-        data_dir="/workspace/emowave-engine/test_data/crisis_logs",
+        data_dir=str(Path(__file__).resolve().parent / "test_data/crisis_logs"),
         user_id="demo_user"
     )
     protocol.reset()  # 演示前清空状态

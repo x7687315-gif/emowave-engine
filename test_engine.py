@@ -10,10 +10,11 @@ test_engine.py — 心潮 EmoWave 引擎集成测试
 """
 
 import sys
+from pathlib import Path
 import random
 
 # 确保 import 路径正确
-sys.path.insert(0, "/workspace/emowave-engine")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from engine import EmoCalibrationEngine
 from models import (
