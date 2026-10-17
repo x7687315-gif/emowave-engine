@@ -1,7 +1,5 @@
 """tests/test_db.py — DatabaseManager 持久化层测试"""
-import os, json
 from datetime import datetime
-import pytest
 
 
 def test_create_tables_no_error(tmp_path):

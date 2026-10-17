@@ -3,7 +3,6 @@
 import pytest
 
 from emowave.core.domain.archetype import (
-    EnergyArchetype,
     ARCHETYPES,
     ARCHETYPE_ORDER,
     DEFAULT_ARCHETYPE_KEY,

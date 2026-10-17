@@ -6,9 +6,8 @@
   - 辅助线：选中点的竖直虚线贯穿两图
   - 编辑点：原位置保留空心小圈，新位置用实心 accent 圆
 """
-from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QPointF, QRectF
-from PyQt5.QtGui import QPainter, QPen, QColor, QFont
-from PyQt5.QtWidgets import QToolTip
+from PyQt5.QtCore import Qt, pyqtSignal, QPointF, QRectF
+from PyQt5.QtGui import QPainter, QPen, QColor
 
 from curve_widget import EmotionCurveWidget
 from theme import COLORS, app_font

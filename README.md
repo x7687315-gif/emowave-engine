@@ -10,7 +10,7 @@
 
 `选人群 → 观测 → 估计 → 查看 → 修正 → 学习 → 校准 → 循环`
 
-![测试 662 通过](https://img.shields.io/badge/%E6%B5%8B%E8%AF%95-662%20%E9%80%9A%E8%BF%87-64748B)
+![测试 663 通过](https://img.shields.io/badge/%E6%B5%8B%E8%AF%95-663%20%E9%80%9A%E8%BF%87-64748B)
 ![运行时依赖 零](https://img.shields.io/badge/%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96-%E9%9B%B6-2E6BE6)
 ![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-64748B)
 ![版本 v3.0.0](https://img.shields.io/badge/version-v3.0.0-2E6BE6)
@@ -256,11 +256,11 @@ for i in range(60):
 
 ## 10 · 测试与质量
 
-**662 个测试全通过**（内核 `emowave/tests/` 587 + 桌面端 `tests/` 75），TDD 全程：写测试 → 看失败 → 最小实现 → 看通过 → 重构。其中 4 条是**架构护栏**（零依赖内核 / 无孤儿模块 / 入口可 import / 白名单防腐）。
+**663 个测试全通过**（内核 `emowave/tests/` 587 + 桌面端 `tests/` 76），TDD 全程：写测试 → 看失败 → 最小实现 → 看通过 → 重构。其中 5 条是**架构护栏**（零依赖内核 / 无孤儿模块 / 入口可 import / 白名单防腐 / 代码体积预算）。
 
 ```bash
 python -m pytest emowave/tests/ -v       # 587 内核测试
-python -m pytest tests/ -v               # 75 桌面端集成 + 架构护栏
+python -m pytest tests/ -v               # 76 桌面端集成 + 架构护栏
 ```
 
 覆盖：领域模型不变式 · Matérn 闭式解数学性质 · RTS 优于滤波 · 可编辑曲线不发散 · 精力人群先验与锚点收缩 · 情绪波衰减回基线 · 事件落库与补全 · 基线主权 · 双向降级 · SQLite 不可变与并发 · CLI。
@@ -286,7 +286,7 @@ EmoWave 作为 Amiya 的**可选外部状态引擎**，不反向依赖 Amiya。A
 
 **MIT** · 架构见 [`docs/architecture/`](docs/architecture/)（情绪模型 / 轻量内核 / 移动端），重构执行日志见 [`docs/history/refactor-progress.md`](docs/history/refactor-progress.md)。
 
-**2026-10 瘦身**：清除 1.x 引擎栈与研究脚手架，代码 41k → 22k 行（−47%），依赖仅剩 `PyQt5`（内核仍零依赖）。过程与证据见 [`docs/slim-refactor/`](docs/slim-refactor/)。
+**2026-10 瘦身**：清除 1.x 引擎栈与研究脚手架，代码 41k → 21.9k 行（−47%），仓库 22MB → 7.8MB，依赖仅剩 `PyQt5`（内核仍零依赖）。过程与证据见 [`docs/slim-refactor/`](docs/slim-refactor/)。
 
 ---
 

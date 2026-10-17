@@ -26,12 +26,12 @@
 """
 import logging
 
-from PyQt5.QtCore import Qt, QPoint
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QSlider,
     QSizePolicy,
 )
-from PyQt5.QtGui import QPainter, QPen, QColor, QFont, QPainterPath
+from PyQt5.QtGui import QPainter, QPen, QColor, QFont
 
 from theme import COLORS, app_font, app_font_num, METRICS
 from curve_widget import EmotionCurveWidget

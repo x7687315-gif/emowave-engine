@@ -5,7 +5,7 @@
 """
 import logging
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QFrame, QLabel
+from PyQt5.QtWidgets import QVBoxLayout, QFrame, QLabel
 from PyQt5.QtGui import QFont
 
 from theme import COLORS, app_font

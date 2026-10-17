@@ -21,6 +21,7 @@
 | [`slim-refactor/12-阶段2-WaveB-引擎栈退役.md`](slim-refactor/12-阶段2-WaveB-引擎栈退役.md) | 1.x 引擎栈退役 + 三处代码收敛（−9,509 行） |
 | [`slim-refactor/13-阶段3-架构护栏.md`](slim-refactor/13-阶段3-架构护栏.md) | 让尾巴无法再长回来（4 条护栏） |
 | [`slim-refactor/14-阶段4-文档收敛与多轮验证.md`](slim-refactor/14-阶段4-文档收敛与多轮验证.md) | 文档收敛 + 多轮验证报告 |
+| [`slim-refactor/15-阶段5-符号清理与磁盘收尾.md`](slim-refactor/15-阶段5-符号清理与磁盘收尾.md) | 未使用 import / 死方法 / 磁盘 22MB→7.9MB / 体积预算护栏 |
 
 ## UI 重构（历史）
 

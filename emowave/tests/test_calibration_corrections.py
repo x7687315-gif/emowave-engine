@@ -7,7 +7,6 @@
   - 验证"修正越多，误差是否下降"（Phase 4 完成标准）
 """
 
-import math
 
 import pytest
 

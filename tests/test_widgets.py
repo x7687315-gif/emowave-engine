@@ -1,5 +1,4 @@
 """tests/test_widgets.py — 共享自定义控件测试"""
-import pytest
 
 
 def test_risk_ring_widget_creates(qapp):

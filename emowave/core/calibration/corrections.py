@@ -26,7 +26,7 @@ ARCHITECTURE part1 §4.4 系统性拖动 = 超参数错了，不是数据错了�
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence
 
 from emowave.core import linalg

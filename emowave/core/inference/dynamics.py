@@ -30,7 +30,6 @@ from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Sequence
 
 from emowave.core import linalg
-from emowave.core.domain.emotion_state import EmotionState
 from emowave.core.domain.model_parameters import ModelParameters
 from emowave.core.domain.observation import Observation
 from emowave.core.estimator.matern import (

@@ -30,7 +30,7 @@ import os
 import sqlite3
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, List, Optional
 
 from emowave.core.domain.baseline import Baseline, BaselineShiftEvent
 from emowave.core.domain.correction import UserCorrection

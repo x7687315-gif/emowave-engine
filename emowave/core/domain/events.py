@@ -21,7 +21,6 @@ REFACTOR_PLAN.md §4.6 EventStream：
 
 from __future__ import annotations
 
-import time
 from collections import deque
 from dataclasses import dataclass, field, asdict
 from enum import Enum

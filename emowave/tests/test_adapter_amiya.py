@@ -12,9 +12,6 @@
   - §28 完成标准：EmoWave without Amiya / Amiya without EmoWave / 两者并存
 """
 
-import time
-
-import pytest
 
 from emowave.adapters.agent.amiya import (
     EMOTION_KEYS,
@@ -29,7 +26,6 @@ from emowave.core.protocol.schemas import (
     AmiyaInputType,
     EmotionStateOutput,
     SCHEMA_VERSION,
-    PROTOCOL_VERSION,
 )
 
 

@@ -14,15 +14,19 @@
 """
 import time
 
-from PyQt5.QtCore import Qt, QPoint, QPointF, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
-    QDoubleSpinBox, QSizePolicy,
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QFrame,
+    QDoubleSpinBox,
 )
-from PyQt5.QtGui import QFont, QPainter, QPen, QColor, QPainterPath, QPolygonF
+from PyQt5.QtGui import QFont
 
-from theme import COLORS, app_font, app_font_num, EASE_OUT, DUR_MID
-from curve_widget import EmotionCurveWidget
+from theme import COLORS, app_font, app_font_num, DUR_MID
 
 
 class CorrectionSheet(QDialog):

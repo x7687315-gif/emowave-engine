@@ -1,5 +1,4 @@
 """tests/test_history_window.py — 历史记录窗口测试"""
-import pytest
 
 from tests.helpers import seed_event
 

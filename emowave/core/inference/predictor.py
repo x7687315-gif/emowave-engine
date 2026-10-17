@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 from emowave.core.domain.emotion_state import EmotionState, Trend
 from emowave.core.domain.model_parameters import ModelParameters

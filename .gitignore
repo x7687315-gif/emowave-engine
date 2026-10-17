@@ -1,3 +1,4 @@
+# Python 产物
 __pycache__/
 *.pyc
 *.pyo
@@ -5,29 +6,21 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-.env
-*.db
-simulation_output.json
-benchmark_results/
-evaluation_report/
-profiling_output/
-test_data/
+.venv/
 
-# 编辑器 / 本地工具配置
+# 本地数据（情绪库仅存本机，不进版本库）
+*.db
+.env
+
+# 编辑器 / 本地工具
 .idea/
 .vscode/
 .qoder/
 
-# 本地备份（改稿过程中的中间态，保留在本地但不进版本库）
+# 本地备份（改稿中间态）
 *.bak
 *.bak.html
 *.bak2.html
 
-# 设计稿 mock 渲染（docs/shot.py 的中间产物，不进版本库）
-*.mock.png
-
-# AI 走查工具输出（一次性审计留痕）
-spark-output/
-
-# 虚拟环境（.venv 内层有自己的 .gitignore=*，这里显式声明双保险）
-.venv/
+# Agent 本地记忆（不属于项目源码）
+.workbuddy-ai/

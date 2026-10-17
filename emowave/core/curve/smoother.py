@@ -29,7 +29,7 @@ numpy 36ms @ N=2000）。解法是降低 N：在节点网格（N≈300）上平�
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from emowave.core import linalg
 from emowave.core.domain.observation import Observation

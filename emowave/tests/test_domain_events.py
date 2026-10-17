@@ -9,7 +9,6 @@
   - 序列化往返
 """
 
-import time
 
 import pytest
 

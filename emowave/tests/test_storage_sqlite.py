@@ -9,7 +9,6 @@
   - §22 Migration Test
 """
 
-import json
 import sqlite3
 import time
 

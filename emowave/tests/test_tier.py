@@ -12,13 +12,7 @@
 import pytest
 
 from emowave.core import tier
-from emowave.core.tier import (
-    Tier,
-    TierCapabilities,
-    capabilities_for,
-    detect_tier,
-    resolve_capabilities,
-)
+from emowave.core.tier import Tier, capabilities_for, detect_tier, resolve_capabilities
 
 
 # ============================================================

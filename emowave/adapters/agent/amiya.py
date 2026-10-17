@@ -36,9 +36,9 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
-from emowave.core.domain.emotion_state import EmotionState, compute_intensity
+from emowave.core.domain.emotion_state import EmotionState
 from emowave.core.domain.model_parameters import ModelParameters
 from emowave.core.domain.observation import Observation, ObservationSource
 from emowave.core.estimator.estimator import EstimatorConfig, StateEstimator
@@ -46,7 +46,6 @@ from emowave.core.protocol.schemas import (
     AmiyaCapability,
     AmiyaHandshake,
     AmiyaInput,
-    AmiyaInputType,
     EmotionStateOutput,
     Envelope,
     PROTOCOL_VERSION,

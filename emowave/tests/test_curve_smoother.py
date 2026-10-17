@@ -14,7 +14,6 @@ import math
 import pytest
 
 from emowave.core.curve.smoother import RTSSmoother, SmoothedTrajectory
-from emowave.core.domain.model_parameters import ModelParameters
 from emowave.core.domain.observation import Observation, ObservationSource
 from emowave.core.estimator.estimator import EstimatorConfig, StateEstimator
 

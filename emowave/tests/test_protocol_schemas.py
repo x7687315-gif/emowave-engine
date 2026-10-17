@@ -9,7 +9,6 @@
   - Graceful Degradation：版本不兼容时拒绝，不崩溃
 """
 
-import time
 
 import pytest
 

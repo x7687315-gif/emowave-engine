@@ -9,7 +9,6 @@
   2. 衰减必须走内核 `predict_forward`（特征：方差随外推时长递增）
   3. 视图层不得再直接 import/使用内核类
 """
-import time
 
 import pytest
 

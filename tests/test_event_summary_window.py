@@ -1,5 +1,4 @@
 """tests/test_event_summary_window.py — 事件回顾窗口测试"""
-import pytest
 
 from tests.helpers import seed_event
 

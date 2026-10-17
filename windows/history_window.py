@@ -7,14 +7,19 @@ import json
 from datetime import datetime
 
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QCalendarWidget, QTableWidget, QTableWidgetItem,
-    QPushButton, QHeaderView,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QCalendarWidget,
+    QTableWidget,
+    QTableWidgetItem,
+    QPushButton,
+    QHeaderView,
 )
-from PyQt5.QtCore import QDate, Qt
+from PyQt5.QtCore import QDate
 from PyQt5.QtGui import QTextCharFormat, QColor, QFont
 
-from widgets import CardFrame, COLORS, app_font
+from widgets import CardFrame, COLORS
 
 
 class HistoryWindow(QWidget):

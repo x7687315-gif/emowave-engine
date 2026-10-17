@@ -189,3 +189,23 @@ def test_entrypoints_import_without_display():
     import windows.legacy_embed                            # noqa: F401
     import windows.mini_window                             # noqa: F401
     from emowave import __version__                        # noqa: F401
+
+
+# 代码体积预算（棘轮）：21.9k 行是 2026-10 瘦身后的水位，留 ~5% 余量。
+# 要加功能就删等价代码；确实需要上调时，连同本注释一起改，并在 commit 里写清理由。
+LOC_BUDGET = 23000
+
+
+def test_python_line_budget():
+    """总量预算：防止"每次只加一点点"把尾巴慢慢养回来。"""
+    total = 0
+    for path in ROOT.rglob("*.py"):
+        if any(part in SKIP_DIRS for part in path.relative_to(ROOT).parts):
+            continue
+        total += len(path.read_text(encoding="utf-8", errors="ignore").splitlines())
+
+    assert total <= LOC_BUDGET, (
+        "Python 代码 %d 行，超出预算 %d 行（+%d）。\n"
+        "要么删掉等价代码，要么在 tests/test_architecture.py 上调 LOC_BUDGET 并说明理由。"
+        % (total, LOC_BUDGET, total - LOC_BUDGET)
+    )

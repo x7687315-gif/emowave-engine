@@ -30,7 +30,7 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from emowave.core.curve.smoother import RTSSmoother, SmoothedTrajectory
+from emowave.core.curve.smoother import RTSSmoother
 from emowave.core.domain.correction import compute_reliability_weight, CorrectionSource
 from emowave.core.domain.observation import Observation
 

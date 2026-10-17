@@ -13,7 +13,7 @@ import math
 
 import pytest
 
-from emowave.core.domain.emotion_state import EmotionState, Trend, compute_intensity
+from emowave.core.domain.emotion_state import EmotionState, Trend
 from emowave.core.domain.model_parameters import ModelParameters
 from emowave.core.domain.observation import Observation, ObservationSource
 from emowave.core.inference.dynamics import (

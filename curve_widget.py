@@ -30,13 +30,11 @@
 """
 import math
 
-from PyQt5.QtCore import Qt, QPointF, QRectF, QSize
-from PyQt5.QtGui import (
-    QPainter, QPen, QColor, QPolygonF, QPainterPath, QPixmap, QFont,
-)
+from PyQt5.QtCore import Qt, QPointF, QRectF
+from PyQt5.QtGui import QPainter, QPen, QColor, QPolygonF, QPainterPath, QPixmap
 from PyQt5.QtWidgets import QWidget, QSizePolicy
 
-from theme import COLORS, app_font, app_font_num
+from theme import COLORS, app_font
 
 # 绘图内边距（留出刻度与轴标签空间）
 _PAD_L, _PAD_R = 46, 16
@@ -294,30 +292,6 @@ class EmotionCurveWidget(QWidget):
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(COLORS['accent']))
             p.drawEllipse(QPointF(cx, cy), 4.0, 4.0)
-
-    # ================================================================
-    # 命中测试（纠正上滑框拖点用）
-    # ================================================================
-    def point_at(self, pos, panel_index=0, count=1):
-        """把鼠标位置映射到数据索引；返回 (index, timestamp) 或 None。"""
-        if not self.has_data():
-            return None
-        x0, y0, pw, ph = self._plot_rect(panel_index, count)
-        t0, t1 = self.timestamps[0], self.timestamps[-1]
-        span = t1 - t0 if t1 > t0 else 1.0
-        x = max(x0, min(x0 + pw, pos.x()))
-        ts = t0 + (x - x0) / pw * span
-        # 最近点
-        best, bd = 0, float('inf')
-        for i, t in enumerate(self.timestamps):
-            d = abs(t - ts)
-            if d < bd:
-                best, bd = i, d
-        return best, self.timestamps[best]
-
-    def value_to_y(self, value, panel_index=0, count=1):
-        _, y0, _, ph = self._plot_rect(panel_index, count)
-        return self._y(value, y0, ph)
 
     def y_to_value(self, y, panel_index=0, count=1):
         _, y0, _, ph = self._plot_rect(panel_index, count)

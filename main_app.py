@@ -25,14 +25,20 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QToolButton, QLabel, QFrame, QFileDialog, QMessageBox, QSizePolicy,
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QToolButton,
+    QLabel,
+    QFrame,
+    QFileDialog,
+    QMessageBox,
 )
 from PyQt5.QtGui import QPainter, QPen, QColor, QFont
 
-from theme import (
-    COLORS, METRICS, app_font, app_font_num, build_app_qss,
-)
+from theme import COLORS, METRICS, app_font, build_app_qss
 from windows.top_tabs import TopTabs
 from windows.mini_window import MiniWindow
 from windows.main_console import MainConsole

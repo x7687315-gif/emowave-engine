@@ -20,8 +20,14 @@ import logging
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider, QPushButton, QFrame,
-    QSizePolicy, QGraphicsOpacityEffect, QToolButton, QButtonGroup, QScrollArea,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QSlider,
+    QPushButton,
+    QFrame,
+    QScrollArea,
     QStackedWidget,
 )
 from PyQt5.QtGui import QFont
@@ -29,25 +35,17 @@ from PyQt5.QtGui import QFont
 from theme import COLORS, app_font, app_font_num
 from curve_widget import EmotionCurveWidget
 
-from emowave import (
-    Observation, ObservationSource, ModelParameters, UserCorrection,
-    CorrectionDimension, CorrectionSource,
-    get_archetype, DEFAULT_ARCHETYPE_KEY,
-)
 
 # 子模块（抽屉、首项、上滑框）
 from .baseline_tools import BaselineToolsCard
 from .model_card import ModelCard
 from .legacy_embed import LegacyEmbed
-from .state_head import StateHead, ParamsExplainCard, derive_state_name
+from .state_head import StateHead, ParamsExplainCard
 # 注意用绝对导入：windows 是顶层包，`..presenters` 会越过顶层包报错。
-from presenters.console_presenter import (
-    ConsolePresenter, SETTLE_EPS, SETTLE_MIN_SEC, MAX_DECAY_SEC, DECAY_DT,
-)
+from presenters.console_presenter import ConsolePresenter
 from .correction_sheet import CorrectionSheet
 
 logger = logging.getLogger(__name__)
-
 
 
 # ================================================================
@@ -158,10 +156,6 @@ class InputPanel(QWidget):
             btn.setText("●  开始记录")
             btn.setEnabled(True)
             btn.setStyleSheet(self._BTN_PRIMARY)
-
-    def set_recording(self, running: bool):
-        """兼容旧接口：True→recording，False→idle。"""
-        self.set_mode("recording" if running else "idle")
 
     def get_values(self):
         return (self.v_row['slider'].value() / 100.0,

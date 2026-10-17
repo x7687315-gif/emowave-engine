@@ -4,7 +4,6 @@
 特别是 4×4 / 10×10 求逆（Kalman 新息协方差与 LinUCB 的核心运算）。
 """
 
-import math
 
 import pytest
 

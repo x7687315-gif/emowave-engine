@@ -14,10 +14,9 @@ v3 时代它直接改内核（`ctrl.nudge()` + `est.baseline = ...`）。MVP 解
   · `on_nudge / on_fork / on_reset`：回调，由视图接到 presenter，
     顺带拿回 provenance（reason="user_nudge"）与 baseline_changed 信号。
 """
-import time
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
+from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 from PyQt5.QtGui import QFont
 
 from theme import COLORS, app_font, app_font_num

@@ -4,7 +4,6 @@
 以及各子命令的正确性。用 capsys 捕获输出，不实际打印到控制台。
 """
 
-import pytest
 
 from emowave.cli import build_parser, main, _ensure_utf8_stdout
 

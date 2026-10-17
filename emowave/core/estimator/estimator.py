@@ -25,20 +25,15 @@ EmotionState.intensity property（到 (0.5,0.5) 的距离），修正 part1 §1.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from emowave.core import linalg
 from emowave.core.domain.baseline import Baseline
-from emowave.core.domain.emotion_state import EmotionState, Trend, compute_intensity
+from emowave.core.domain.emotion_state import EmotionState, Trend
 from emowave.core.domain.model_parameters import ModelParameters
 from emowave.core.domain.observation import Observation
-from emowave.core.estimator.matern import (
-    OBSERVATION_MATRIX,
-    build_process_noise,
-    build_stationary_covariance,
-    build_transition,
-)
+from emowave.core.estimator.matern import OBSERVATION_MATRIX, build_process_noise, build_transition
 
 # 状态维度：x = [v, v̇, a, ȧ]
 _STATE_DIM = 4
