@@ -1,12 +1,16 @@
 # EmoWave 2.0 重构进度追踪
 
+> ⚠️ **已归档 · 重构执行日志（2026-09 ～ 2026-10）**
+> 记录 v2 内核重构的历史过程；其中提到的 1.x 模块已在 2026-10 的瘦身中退役。
+> 当前架构见 [`../architecture/`](../architecture/)，本轮瘦身见 [`../slim-refactor/`](../slim-refactor/)。
+
 > **本文件是重构执行的实时日志。** 每完成一个阶段就在此追加一条记录，包含：做了什么、怎么做的、验证结果、下一步计划。
 >
 > **权威依据**：
 > - `EMOWAVE_REFACTOR_PLAN.md`（用户提供的顶层计划，34 章）
-> - `ARCHITECTURE_EMOTIONpart1.md`（曲线建模与人机协同编辑架构）
-> - `ARCHITECTURE_LIGHTWEIGHTpart2.md`（轻量化内核 / Amiya 集成 / 多平台）
-> - `IMPLEMENTATION_PLAN.md`（旧版桌面应用 TDD 实现计划，已完成，作为基线参考）
+> - `../architecture/emotion-model.md`（曲线建模与人机协同编辑架构）
+> - `../architecture/lightweight-core.md`（轻量化内核 / Amiya 集成 / 多平台）
+> - `implementation-plan-1x.md`（旧版桌面应用 TDD 实现计划，已完成，作为基线参考）
 >
 > **重构分支**：`refactor/v2-core`
 > **稳定基线 tag**：`v1.0-stable`（旧版最后一版可回滚锚点）
@@ -35,9 +39,9 @@
 1. 建立新分支 `refactor/v2-core`
 2. 在当前 `main` HEAD 打 tag `v1.0-stable`（旧版可回滚锚点）
 3. 把三份未追踪的架构文档纳入版本管理：
-   - `ARCHITECTURE_EMOTIONpart1.md`
-   - `ARCHITECTURE_LIGHTWEIGHTpart2.md`
-   - `REFERENCES.md`
+   - `../architecture/emotion-model.md`
+   - `../architecture/lightweight-core.md`
+   - `../references.md`
 4. 创建本追踪文档 `REFACTOR_PROGRESS.md`
 5. 跑全量测试，保存 benchmark baseline
 

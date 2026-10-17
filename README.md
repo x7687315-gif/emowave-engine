@@ -10,7 +10,7 @@
 
 `选人群 → 观测 → 估计 → 查看 → 修正 → 学习 → 校准 → 循环`
 
-![测试 687 通过](https://img.shields.io/badge/%E6%B5%8B%E8%AF%95-687%20%E9%80%9A%E8%BF%87-64748B)
+![测试 662 通过](https://img.shields.io/badge/%E6%B5%8B%E8%AF%95-662%20%E9%80%9A%E8%BF%87-64748B)
 ![运行时依赖 零](https://img.shields.io/badge/%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96-%E9%9B%B6-2E6BE6)
 ![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-64748B)
 ![版本 v3.0.0](https://img.shields.io/badge/version-v3.0.0-2E6BE6)
@@ -113,7 +113,7 @@ emowave/                          零第三方依赖 · 纯标准库 · pip 可�
 |:---:|:---:|:---:|:---:|
 | [主界面](docs/screenshots/01-main.png) | [模型页](docs/screenshots/02-model.png) | [历史页](docs/screenshots/03-history.png) | [纠正框](docs/screenshots/04-correct-sheet.png) |
 
-> 设计稿（HTML 模拟）：[`docs/ui-draft-v1.html`](docs/ui-draft-v1.html) · 调研依据：[`docs/UI_PREFLIGHT_视觉传达与UI设计调研.md`](docs/UI_PREFLIGHT_视觉传达与UI设计调研.md) · 设计令牌：[`theme.py`](theme.py)
+> 调研依据：[`docs/UI_PREFLIGHT_视觉传达与UI设计调研.md`](docs/UI_PREFLIGHT_视觉传达与UI设计调研.md) · 设计令牌：[`theme.py`](theme.py)
 > 小窗化重构（阶段 0～5，含读码报告 / 检索台账 / 方案）：[`docs/ui-compact-refactor/`](docs/ui-compact-refactor/)
 
 **桌面端结构**（PyQt5，与内核解耦，`emowave/` 不反向依赖任何 UI 代码）：
@@ -186,7 +186,7 @@ P∞ = σ² · [1  0  ]      Q(Δt) = P∞ − F·P∞·Fᵀ
 | 跨线程 | SQLite 连接读写全部串行化（`RLock` + `busy_timeout`） |
 | 数据主权 | 用户拥有导出 / 删除 / 重置；可关闭 EmoWave→Amiya 共享 |
 
-> 经 `diegosouzapw-analyze-code` 独立审查 + 两轮 `p3c-code-quality`（按 Python 适配）：无 CRITICAL，核心数学逐行核对正确；已修 NaN/Inf 硬化、SQLite 线程安全、空 catch 改日志等。详见 [`REFACTOR_PROGRESS.md`](REFACTOR_PROGRESS.md) 与 [`docs/测试报告/`](docs/测试报告/)。
+> 经 `diegosouzapw-analyze-code` 独立审查 + 两轮 `p3c-code-quality`（按 Python 适配）：无 CRITICAL，核心数学逐行核对正确；已修 NaN/Inf 硬化、SQLite 线程安全、空 catch 改日志等。详见 [`docs/history/refactor-progress.md`](docs/history/refactor-progress.md) 与 [`docs/测试报告/`](docs/测试报告/)。
 
 ---
 
@@ -256,11 +256,11 @@ for i in range(60):
 
 ## 10 · 测试与质量
 
-**687 个测试全通过**（内核 `emowave/tests/` 587 + 桌面端 `tests/` 86；另有 `test_engine.py` 等 1.x 回归），TDD 全程：写测试 → 看失败 → 最小实现 → 看通过 → 重构。
+**662 个测试全通过**（内核 `emowave/tests/` 587 + 桌面端 `tests/` 75），TDD 全程：写测试 → 看失败 → 最小实现 → 看通过 → 重构。其中 4 条是**架构护栏**（零依赖内核 / 无孤儿模块 / 入口可 import / 白名单防腐）。
 
 ```bash
 python -m pytest emowave/tests/ -v       # 587 内核测试
-python -m pytest tests/ -v               # 55 桌面端集成测试
+python -m pytest tests/ -v               # 75 桌面端集成 + 架构护栏
 ```
 
 覆盖：领域模型不变式 · Matérn 闭式解数学性质 · RTS 优于滤波 · 可编辑曲线不发散 · 精力人群先验与锚点收缩 · 情绪波衰减回基线 · 事件落库与补全 · 基线主权 · 双向降级 · SQLite 不可变与并发 · CLI。
@@ -284,7 +284,9 @@ EmoWave 作为 Amiya 的**可选外部状态引擎**，不反向依赖 Amiya。A
 - 内核 2.0 重构 Phase 0–9 已完成并并入 `main`；1.x 稳定版锚定 tag **`v1.0-stable`**，随时可回退。
 - 功能分支均已合并回 `main` 并清理。
 
-**MIT** · 完整重构执行日志见 [`REFACTOR_PROGRESS.md`](REFACTOR_PROGRESS.md)，架构依据 `EMOWAVE_REFACTOR_PLAN.md` 与 `ARCHITECTURE_*` 文档。
+**MIT** · 架构见 [`docs/architecture/`](docs/architecture/)（情绪模型 / 轻量内核 / 移动端），重构执行日志见 [`docs/history/refactor-progress.md`](docs/history/refactor-progress.md)。
+
+**2026-10 瘦身**：清除 1.x 引擎栈与研究脚手架，代码 41k → 22k 行（−47%），依赖仅剩 `PyQt5`（内核仍零依赖）。过程与证据见 [`docs/slim-refactor/`](docs/slim-refactor/)。
 
 ---
 

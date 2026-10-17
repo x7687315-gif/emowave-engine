@@ -2,7 +2,7 @@
 
 > **文档性质**：技术架构设计提案（供评审）
 > **日期**：2026-09-05
-> **前置文档**：`REFERENCES.md`（本架构的理论与工程参照索引）
+> **前置文档**：`../references.md`（本架构的理论与工程参照索引）
 > **核验说明**：本文档所有引用数来自 OpenAlex / Crossref API（2026-09-05 实测），所有 star 数来自 GitHub REST API（同日实测），所有数值结论均由本文档附带的脚本计算得出，可复现。
 
 ---
@@ -583,7 +583,7 @@ class BaselineRegime:
 - [ ] **验证**：注入人工漂移，确认 BOCPD 能召回，且用户裁决能提升精确率
 
 ### 阶段 6：真实数据验证
-- [ ] 用 **WESAD 数据集**（`REFERENCES.md` §3.1，1,259 引用）验证生理权重 `w_hrv=0.3, w_hr=0.2`
+- [ ] 用 **WESAD 数据集**（`../references.md` §3.1，1,259 引用）验证生理权重 `w_hrv=0.3, w_hr=0.2`
 - [ ] 把白皮书 7.1.1 的"模拟器局限"从自我批评改为已缓解项
 
 ---
@@ -608,7 +608,7 @@ class BaselineRegime:
 
 ## 10. 本轮新增参考文献
 
-> 引用数由 OpenAlex / Crossref API 于 2026-09-05 实测。标注 `[OA]`=OpenAlex，`[CR]`=Crossref。上一轮 `REFERENCES.md` 已收录的文献此处不重复。
+> 引用数由 OpenAlex / Crossref API 于 2026-09-05 实测。标注 `[OA]`=OpenAlex，`[CR]`=Crossref。上一轮 `../references.md` 已收录的文献此处不重复。
 
 ### 10.1 核心方法论（状态空间 GP）
 

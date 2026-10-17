@@ -1,5 +1,10 @@
 # EmoWave 桌面应用 TDD 实现计划
 
+> ⚠️ **已归档 · 仅作历史参考（2026-10-17）**
+> 本文描述的是 **1.x 桌面应用**（`engine.py` / `kalman_filter.py` / `session.py` 那一代）。
+> 这些模块已在瘦身中退役，2.0 的引擎在 `emowave/core/**`、UI 编排在 `presenters/`。
+> 当前架构见 [`../architecture/`](../architecture/) 与 [`../slim-refactor/`](../slim-refactor/)。
+
 > **目标:** 构建一个本地可运行的 PyQt5 桌面情绪追踪应用，完整集成 EmoWave 引擎，支持情绪记录、事件回顾、历史报告等全流程操作。
 
 > **架构:** 三层架构 — UI 层 (PyQt5 窗口) ↔ 控制层 (session.py) ↔ 持久层 (db.py)。引擎模块 (models, kalman_filter, predictor, recommender, engine) 为已有稳定代码，通过 session 控制器桥接。

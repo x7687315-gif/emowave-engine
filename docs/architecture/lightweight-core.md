@@ -3,9 +3,9 @@
 > **文档性质**：技术架构设计提案（供评审）
 > **日期**：2026-09-05
 > **前置文档**：
-> - `ARCHITECTURE_EMOTION_CURVE.md`（第一部分：曲线建模与人机协同编辑）
-> - `REFERENCES.md`（理论与工程参照索引）
-> - `MOBILE_ARCHITECTURE.md`（v1.0 移动端预研 —— **本文档 §4.3 将推翻其核心选型**）
+> - `emotion-model.md`（第一部分：曲线建模与人机协同编辑）
+> - `../references.md`（理论与工程参照索引）
+> - `mobile.md`（v1.0 移动端预研 —— **本文档 §4.3 将推翻其核心选型**）
 >
 > **核验说明**：所有性能数字由 `research/core_bench.py` 实测得出（可复现）；所有依赖分布由逐文件 grep 统计；所有 star/版本来自 GitHub REST API 与 PyPI；所有文献 DOI 经 Crossref 交叉核验。查询日期 2026-09-05。
 
@@ -331,9 +331,9 @@ ft.GestureDetector(
 
 > 这套写法在 Windows 桌面与 Android/iOS 触屏上是**同一份代码** —— `GestureDetector` 同时处理鼠标拖拽与手指触摸。
 
-### 4.3 ⚠️ 推翻 `MOBILE_ARCHITECTURE.md` 的核心选型
+### 4.3 ⚠️ 推翻 `mobile.md` 的核心选型
 
-仓库现有的 `MOBILE_ARCHITECTURE.md`（v1.0, 2026-07-15）推荐 **方案 B：Swift + Kotlin 双原生重写**，估算 4–6 周 × 2 平台。
+仓库现有的 `mobile.md`（v1.0, 2026-07-15）推荐 **方案 B：Swift + Kotlin 双原生重写**，估算 4–6 周 × 2 平台。
 
 **本文档建议推翻该选型**，理由如下：
 
@@ -356,7 +356,7 @@ ft.GestureDetector(
 
 ### 4.4 端侧 ML：为什么不需要 ONNX / TFLite / ExecuTorch
 
-原 `MOBILE_ARCHITECTURE.md` 的方案 C 提到 ONNX Runtime。第一部分 §3.3 的 L3 学习层也涉及优化。**结论是都不需要神经网络推理引擎**：
+原 `mobile.md` 的方案 C 提到 ONNX Runtime。第一部分 §3.3 的 L3 学习层也涉及优化。**结论是都不需要神经网络推理引擎**：
 
 | 组件 | 数学本质 | 规模 | 需要 NN 运行时？ |
 |---|---|---|---|
@@ -561,7 +561,7 @@ dev     = ["pytest>=7.0"]
 
 ## 10. 本轮新增参考文献
 
-> 引用数由 OpenAlex API 实测，**出版年经 Crossref 交叉核验**（OpenAlex 常给"在线优先"年，与正式出刊年不同）。上一轮 `REFERENCES.md` 与 `ARCHITECTURE_EMOTION_CURVE.md` 已收录的此处不重复。
+> 引用数由 OpenAlex API 实测，**出版年经 Crossref 交叉核验**（OpenAlex 常给"在线优先"年，与正式出刊年不同）。上一轮 `../references.md` 与 `emotion-model.md` 已收录的此处不重复。
 
 ### 10.1 资源受限端侧机器学习（§4.4 的依据）
 
