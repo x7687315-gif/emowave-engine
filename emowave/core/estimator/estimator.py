@@ -11,7 +11,7 @@ ARCHITECTURE part1 §3.1 L1 感知层的实现：
 数据流（REFACTOR_PLAN.md §21.1 实时模式）：
     Observation → State Estimator → EmotionState（含 confidence/variance/trend）
 
-与旧版 kalman_filter.py 的关键区别：
+与 1.x 旧实现（已于 2026-10 退役，见 docs/slim-refactor/）的关键区别：
   1. 状态排序 [v, v̇, a, ȧ]（Matérn 标准，块对角）而非旧版 [v, a, v̇, ȧ]
   2. F 由 ℓ 闭式导出，velocity_damping 不再需要（阻尼已内含在 e^(-λΔt) 中）
   3. Q 由稳态协方差导出 Q=P∞-F·P∞·Fᵀ，而非经验值拼凑
