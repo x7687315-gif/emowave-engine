@@ -26,10 +26,14 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Run full test suite (offscreen)
-        # 桌面端 86+ 条集成测试靠 tests/conftest.py 的 qapp fixture + offscreen 平台
+        # 桌面端集成测试靠 tests/conftest.py 的 qapp fixture + offscreen 平台
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q --tb=short
+
+      # 架构护栏：零依赖内核 + 无孤儿模块（防"尾巴"重新长回来）
+      - name: "Guard: architecture (zero-dep core, no orphans)"
+        run: python -m pytest -q tests/test_architecture.py
 
       # 注意：step name 里含冒号时必须加引号，否则 YAML 把 ": " 当键分隔符，
       # 整个 workflow 解析失败（run 秒失败、零 job、注解 Invalid workflow file）
