@@ -57,9 +57,10 @@ logger = logging.getLogger(__name__)
 class InputPanel(QWidget):
     """双滑块 + 开始/停止记录 + 采样数。"""
 
-    def __init__(self, on_toggle, parent=None):
+    def __init__(self, on_toggle, on_note=None, parent=None):
         super().__init__(parent)
         self._on_toggle = on_toggle
+        self._on_note = on_note
 
         outer = QVBoxLayout(self)
         # 阶段 2：边距 22→14、间距 14→8，把输入台压到 ~104px
@@ -89,9 +90,28 @@ class InputPanel(QWidget):
         self.btn_record.clicked.connect(lambda: self._on_toggle())
         ctrl.addWidget(self.btn_record)
 
+        # v4：v4 起"记录"不再每秒自动产生观察，用户需要能主动确认一次感受。
+        # 「记一笔」只在记录中可用，不占新行（与记录按钮同一行）。
+        self.btn_note = QPushButton("记一笔")
+        self.btn_note.setCursor(Qt.PointingHandCursor)
+        self.btn_note.setEnabled(False)
+        self.btn_note.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {COLORS['ink_2']};"
+            f" border: 1px solid {COLORS['rule']}; padding: 9px 10px;"
+            f" font-size: 10.5px; letter-spacing: 1px; }}"
+            f"QPushButton:hover {{ color: {COLORS['accent']};"
+            f" border-color: {COLORS['accent']}; }}"
+            f"QPushButton:disabled {{ color: {COLORS['rule']};"
+            f" border-color: {COLORS['rule']}; }}"
+        )
+        if self._on_note is not None:
+            self.btn_note.clicked.connect(lambda: self._on_note())
+        ctrl.addWidget(self.btn_note)
+
         # 阶段 2：计数与提示合并成一个标签。v3 是两个标签并列，400px 宽下
         # 计数被挤成"55 个观"（右侧裁掉）——合成一个后两个信息都在。
-        self.count_label = QLabel("0 个观察 · 1 Hz")
+        # v4：文案从"个观察 · 1 Hz"改为"次自评"——观察不再按秒产生。
+        self.count_label = QLabel("0 次自评")
         self.count_label.setFont(app_font(9))
         self.count_label.setStyleSheet(f"color: {COLORS['muted']};")
         ctrl.addWidget(self.count_label)
@@ -148,21 +168,24 @@ class InputPanel(QWidget):
             btn.setText("■  停止记录")
             btn.setEnabled(True)
             btn.setStyleSheet(self._BTN_STOP)
+            self.btn_note.setEnabled(True)
         elif mode == "decaying":
             btn.setText("◌  推演中…")
             btn.setEnabled(False)
             btn.setStyleSheet(self._BTN_DECAY)
+            self.btn_note.setEnabled(False)
         else:  # idle
             btn.setText("●  开始记录")
             btn.setEnabled(True)
             btn.setStyleSheet(self._BTN_PRIMARY)
+            self.btn_note.setEnabled(False)
 
     def get_values(self):
         return (self.v_row['slider'].value() / 100.0,
                 self.a_row['slider'].value() / 100.0)
 
     def set_count(self, n):
-        self.count_label.setText(f"{n} 个观察 · 1 Hz")
+        self.count_label.setText(f"{n} 次自评" if n else "还没有自评")
 
 
 # ================================================================
@@ -183,10 +206,11 @@ class MainConsole(QWidget):
     常用属性（observations/states/params/estimator/…）以 property 转发。
     """
 
-    def __init__(self, parent=None, db=None, archetype_key=None):
+    def __init__(self, parent=None, db=None, archetype_key=None, clock=None):
         super().__init__(parent)
         # ---- 内核编排层（唯一持有 emowave 对象的地方）----
-        self.presenter = ConsolePresenter(db=db, archetype_key=archetype_key)
+        # clock 只给测试注入假时钟用；生产环境走默认墙钟
+        self.presenter = ConsolePresenter(db=db, archetype_key=archetype_key, clock=clock)
 
         self._build()
         self._wire_presenter()
@@ -327,7 +351,8 @@ class MainConsole(QWidget):
         ml.addWidget(curve_frame, 1)
 
         # ③ 输入台
-        self.input_panel = InputPanel(on_toggle=self._toggle_recording)
+        self.input_panel = InputPanel(on_toggle=self._toggle_recording,
+                                      on_note=self._commit_note)
         sep = QFrame()
         sep.setFixedHeight(1)
         sep.setStyleSheet(f"background: {COLORS['rule']}; border: none;")
@@ -435,11 +460,11 @@ class MainConsole(QWidget):
         主窗碰一下效价就会把挂件刚调好的唤醒打回原值（且无任何提示）。
         """
         if channel == "v":
-            self.presenter.set_input(
+            self.presenter.submit_input(
                 valence=self.input_panel.v_row['slider'].value() / 100.0,
                 source="main")
         else:
-            self.presenter.set_input(
+            self.presenter.submit_input(
                 arousal=self.input_panel.a_row['slider'].value() / 100.0,
                 source="main")
 
@@ -497,6 +522,11 @@ class MainConsole(QWidget):
         self.presenter.toggle_recording(want_running)
         # 开始记录时立刻把当前滑条值推过去，避免首拍用到初始值
         self._push_input()
+
+    def _commit_note(self):
+        """「记一笔」：把当前滑条值作为一次明确自评立即提交。"""
+        self._push_input()
+        self.presenter.commit_now()
 
     def _sample(self):
         v, a = self.input_panel.get_values()

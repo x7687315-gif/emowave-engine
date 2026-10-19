@@ -148,7 +148,7 @@ def _hrule():
 class MainWindow(QMainWindow):
     """外壳：页头 + 顶部 Tab + 三页（曲线 / 模型 / 历史）。"""
 
-    def __init__(self, db=None):
+    def __init__(self, db=None, clock=None):
         super().__init__()
         self.setWindowTitle("心潮 EmoWave · 个人情绪状态引擎")
         self.setMinimumSize(WIN_MIN_W, WIN_MIN_H)
@@ -181,7 +181,8 @@ class MainWindow(QMainWindow):
 
         # ---- 主控制台（自带三页；外壳只负责导航）----
         self.console = MainConsole(parent=central, db=self.db,
-                                   archetype_key=self._archetype_key)
+                                   archetype_key=self._archetype_key,
+                                   clock=clock)
         root.addWidget(self.console, 1)
 
         # ---- 迷你置顶窗（与主窗共用同一个 presenter；阶段 4）----

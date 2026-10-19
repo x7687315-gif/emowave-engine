@@ -29,3 +29,17 @@ def seed_event(db, **overrides):
     event.update(overrides)
     db.save_event(event)
     return event["event_id"]
+
+
+class FakeClock:
+    """可控时钟：让"过了 30 分钟"变成一行代码，而不是真的 sleep。"""
+
+    def __init__(self, start=1_700_000_000.0):
+        self.t = float(start)
+
+    def __call__(self):
+        return self.t
+
+    def advance(self, seconds):
+        self.t += float(seconds)
+        return self.t

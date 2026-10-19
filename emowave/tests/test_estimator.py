@@ -642,6 +642,12 @@ def test_estimator_uses_matern_not_handwritten_F():
 
     旧版 F[0][2]=dt（位置=旧位置+速度*dt），新版 F[0][1]=decay*(1+λdt)。
     检查 _predict 后状态向量的结构符合 Matérn 而非匀速模型。
+
+    v4 Phase 1 修订：预测步改为在**偏离空间**传播（偏离基线 m 而非 0），
+    与 `inference.predict_forward` 统一。因此期望值改为
+    `m + decay*[(1+λdt)*(v-m) + dt*v̇]`。
+    旧断言 `decay*[(1+λdt)*v + dt*v̇]` 隐含"均值回复到 0"，
+    会让长时间无观察时状态掉向 0 而不是回到用户基线——那正是本次要修的问题。
     """
     params = ModelParameters(ell_valence=300.0, ell_arousal=240.0)
     est = make_estimator(params=params)
@@ -651,9 +657,10 @@ def test_estimator_uses_matern_not_handwritten_F():
     dt = 1.0
     est._predict(dt)
     lam_v = params.lambda_valence()
-    # Matérn: v_new = decay*[(1+λdt)*v + dt*v̇]
+    # Matérn（偏离空间）: v_new = m + decay*[(1+λdt)*(v-m) + dt*v̇]
     decay = math.exp(-lam_v * dt)
-    expected_v = decay * ((1 + lam_v * dt) * 0.5 + dt * 0.1)
+    m = est._baseline_mean()[0]
+    expected_v = m + decay * ((1 + lam_v * dt) * (0.5 - m) + dt * 0.1)
     assert est._x[0] == pytest.approx(expected_v, abs=1e-6)
 
 
@@ -697,3 +704,73 @@ def test_estimator_state_survives_nan_observations():
         assert math.isfinite(last.confidence)
     # 末条正常观察后应仍向 0.6 收敛（未被污染）
     assert last.valence == pytest.approx(0.6, abs=0.05)
+
+
+# ============================================================
+# advance_to：无观察推进（v4 Phase 1）
+# ============================================================
+
+
+def test_advance_to_returns_none_before_initialize():
+    est = make_estimator()
+    assert est.advance_to(2000.0) is None
+
+
+def test_advance_to_does_not_consume_observations():
+    """推进时间不算一次观测更新——否则"没操作"会被记成"又观测了一次"。"""
+    est = make_estimator()
+    est.initialize(timestamp=1000.0, valence=0.6, arousal=0.5)
+    before = est.update_count
+    est.advance_to(1000.0 + 300.0)
+    assert est.update_count == before
+
+
+def _filtered_estimator():
+    """先跑 30 秒 1Hz 观察，再用于长间隔推进（模拟真实使用，而非裸初始化）。"""
+    est = make_estimator(baseline=Baseline(valence=0.5, arousal=0.5))
+    est.initialize(timestamp=1000.0, valence=0.9, arousal=0.8)
+    for i in range(1, 31):
+        est.update(Observation(timestamp=1000.0 + i, valence=0.9, arousal=0.8))
+    return est
+
+
+def test_advance_to_irregular_gaps():
+    """1s / 60s / 600s 三档：时间戳正确，方差随间隔单调增长。"""
+    var_by_gap = {}
+    for gap in (1.0, 60.0, 600.0):
+        est = _filtered_estimator()
+        st = est.advance_to(1030.0 + gap)
+        assert st.timestamp == pytest.approx(1030.0 + gap)
+        assert 0.0 <= st.valence <= 1.0
+        assert 0.0 <= st.arousal <= 1.0
+        var_by_gap[gap] = st.variance_valence
+    assert var_by_gap[1.0] < var_by_gap[60.0] < var_by_gap[600.0]
+
+
+def test_advance_to_reverts_to_baseline_not_zero():
+    """长时间无观察应回到**用户基线**，而不是掉向 0（v4 修的核心语义）。"""
+    est = _filtered_estimator()
+    st = est.advance_to(1030.0 + 3600.0)
+    assert st.valence == pytest.approx(0.5, abs=0.02)
+    assert st.arousal == pytest.approx(0.5, abs=0.02)
+
+
+def test_advance_to_long_gap_is_chunked_not_clamped():
+    """3600s 间隔按 600s 分段推进，而不是被一次性钳到 600s。
+
+    判据：推进 3600s 后应比只推进 600s 更接近基线（分段让均值回复走完）。
+    """
+    far = _filtered_estimator()
+    st_far = far.advance_to(1030.0 + 3600.0)
+
+    near = _filtered_estimator()
+    st_near = near.advance_to(1030.0 + 600.0)
+
+    assert abs(st_far.valence - 0.5) <= abs(st_near.valence - 0.5)
+
+
+def test_advance_to_rejects_backwards_time():
+    est = make_estimator()
+    est.initialize(timestamp=1000.0)
+    with pytest.raises(ValueError):
+        est.advance_to(999.0)

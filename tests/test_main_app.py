@@ -15,12 +15,12 @@ import pytest
 from PyQt5.QtWidgets import QLabel
 
 
-def _make_window(tmp_path):
+def _make_window(tmp_path, clock=None):
     import main_app
     from db import DatabaseManager
 
     db = DatabaseManager(str(tmp_path / "test.db"))
-    win = main_app.MainWindow(db)
+    win = main_app.MainWindow(db, clock=clock)
     return win, db
 
 
@@ -609,18 +609,23 @@ def test_stop_with_data_enters_decay(qapp, tmp_path):
 
 
 def test_decay_settles_back_to_baseline_and_clears(qapp, tmp_path):
-    """回归：衰减外推回基线后曲线消失、回到"开始记录"。"""
-    win, db = _make_window(tmp_path)
+    """回归：衰减外推回基线后曲线消失、回到"开始记录"。
+
+    v4 修订：衰减按墙钟推进，用假时钟让 60 秒过去（旧写法连调 60 次
+    `_decay_step()` 隐含"tick 次数 = 秒数"，正是本次要修的错误语义）。
+    """
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    win, db = _make_window(tmp_path, clock=clock)
     c = win.console
     c._toggle_recording(True)
     for _ in range(4):
+        clock.advance(1)
         c._sample()
     c._toggle_recording(False)
     assert c._wave_active is True
-    for _ in range(60):
-        if not c._wave_active:
-            break
-        c._decay_step()
+    clock.advance(60)
+    c._decay_step()
     assert c._wave_active is False
     assert c.curve.timestamps == []                          # 曲线消失
     assert c.input_panel.btn_record.text().startswith("●")   # 回到开始记录
@@ -783,3 +788,48 @@ def test_curve_widget_render_performance(qapp, tmp_path):
     w.render(pm)
     el = (time.perf_counter() - t0) * 1000
     assert el < 149, f"渲染 {el:.1f}ms 超过 149ms 目标"
+
+
+# ================================================================
+# v4 Phase 1：UI 接线（记一笔 / 状态常驻）
+# ================================================================
+
+def test_note_button_commits_one_observation(qapp, tmp_path):
+    """「记一笔」只在记录中可用，点一次 = 一条自评（不依赖拖动）。"""
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    win, db = _make_window(tmp_path, clock=clock)
+    c = win.console
+    panel = c.input_panel
+
+    assert panel.btn_note.isEnabled() is False      # 未开始记录 → 禁用
+    c._toggle_recording(True)
+    assert panel.btn_note.isEnabled() is True
+
+    panel.btn_note.click()
+    assert len(c.observations) == 1
+    assert panel.count_label.text() == "1 次自评"
+
+    panel.btn_note.click()                          # 再确认一次（值没变也提交）
+    assert len(c.observations) == 2
+    db.close()
+
+
+def test_mini_shows_state_after_wave_ends(qapp, tmp_path):
+    """波结束后挂件仍显示"当前状态"，而不是回到 '—'。"""
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    win, db = _make_window(tmp_path, clock=clock)
+    c = win.console
+    c._toggle_recording(True)
+    clock.advance(1)
+    c._sample()
+    c._toggle_recording(False)
+    clock.advance(60)
+    c._decay_step()
+    assert c._wave_active is False
+
+    win.mini._sync_from_presenter()
+    assert win.mini.v_cell.value_label.text() not in ("", "—")
+    assert win.mini.state_label.text() not in ("", "—")
+    db.close()

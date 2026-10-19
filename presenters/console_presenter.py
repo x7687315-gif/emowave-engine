@@ -33,6 +33,10 @@ from .engine import (
     StateEstimator, RTSSmoother, BaselineController, Calibrator,
     predict_forward,
 )
+from .observation_recorder import ObservationRecorder, DEBOUNCE_MS
+from .snapshot_store import SnapshotStore
+from .state_query import StateQuery
+from .wave_scheduler import WaveScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +45,8 @@ logger = logging.getLogger(__name__)
 SETTLE_EPS = 0.05        # 距基线小于此值视为"回归基线"
 SETTLE_MIN_SEC = 3.0     # 至少衰减这么久才允许判定结束（避免刚停就消失）
 MAX_DECAY_SEC = 600.0    # 衰减外推的硬上限（防止无限外推）
-DECAY_DT = 1.0           # 每个定时器 tick 向前推演的秒数（实时、无需后台进程）
+DECAY_DT = 1.0           # 外推的采样步长（秒）——只影响绘图点密度，不再是"时间来源"
+
 
 
 class ConsolePresenter(QObject):
@@ -58,9 +63,16 @@ class ConsolePresenter(QObject):
     input_changed = pyqtSignal(float, float)   # 输入源变更 → 各视图镜像滑杆
     baseline_changed = pyqtSignal(float, float)   # 基线变了 → 基线卡显示该刷新
 
-    def __init__(self, db=None, archetype_key=None, parent=None):
+    def __init__(self, db=None, archetype_key=None, clock=None, parent=None):
         super().__init__(parent)
         self.db = db
+
+        # ---- 时间与查询（v4 Phase 1：全应用唯一的时间源）----
+        self.scheduler = WaveScheduler(clock=clock)
+        self.query = StateQuery(lambda: self.estimator, self.scheduler.now)
+        self.recorder = ObservationRecorder(clock=self.scheduler.now)
+        self.recorder.committed.connect(self._on_committed)
+        self.store = SnapshotStore(db)
 
         # 精力人群先验：开局选一类 → 用它 seed 默认曲线（ModelParameters）+ 中心（Baseline）
         self.archetype_key = archetype_key or DEFAULT_ARCHETYPE_KEY
@@ -81,7 +93,14 @@ class ConsolePresenter(QObject):
         # 情绪波生命周期：idle → recording → decaying → 回归基线后消失 → idle
         self._wave_active = False
         self._last_obs_ts = 0.0
-        self._decay_now = 0.0
+        self._decay_now = 0.0       # 仅作可读的诊断值（= 最近一次推演时刻）
+        self.last_horizon = 0.0     # 最近一次"距上次自评多久"（秒），供 UI/测试
+
+        # 当前状态估计：**与波生命周期解耦**。
+        # 波消失只是动画结束，latest_state 仍然代表"模型此刻对你的估计"。
+        self.latest_state = None
+        self.latest_state_ts = 0.0
+        self._load_latest_state()
 
         # 记录中 1Hz 采样用的"当前输入值"（由视图滑杆推动；
         # 默认值与 InputPanel 的滑杆初值一致：效价 50 / 唤醒 40）
@@ -106,6 +125,24 @@ class ConsolePresenter(QObject):
             self._input_a = float(arousal)
         self.input_changed.emit(self._input_v, self._input_a)
 
+    def submit_input(self, valence=None, arousal=None, source=None):
+        """用户**主动调整**了滑条：更新输入，并交给 recorder 防抖结算。
+
+        与 `set_input` 的区别：`set_input` 只是"把当前值同步进来"（初始化、
+        视图镜像、程序化设定），**不应该**因此产生一条自评；
+        只有真实的手指操作才走这里。
+        """
+        self.set_input(valence, arousal, source)
+        if self.recording:
+            self.recorder.submit(self._input_v, self._input_a)
+
+    def commit_now(self):
+        """「记一笔」：立即把当前输入结算成一条真实自评（即使值没变）。"""
+        if not self.recording:
+            return
+        self.recorder.submit(self._input_v, self._input_a)
+        self.recorder.flush(force=True)
+
     # ================================================================
     # 录制 / 采样
     # ================================================================
@@ -124,25 +161,34 @@ class ConsolePresenter(QObject):
             self.recording = True
             self._wave_active = True
             self._segment = []
+            self.recorder.set_enabled(True)      # 只有记录态才结算自评
             self.mode_changed.emit("recording")
             self.timer.start(1000)
         else:
             if not self.recording:
                 return
+            self.recorder.flush()                # 停止前把还没结算的拖动提交掉
+            self.recorder.set_enabled(False)
             self.recording = False
             self._persist_segment_event()        # 落库 + 自动学习（保留 states/observations）
             if not self.states:                  # 没采到点 → 直接回 idle
                 self._end_wave()
                 return
             self._last_obs_ts = self.states[-1][0]
-            self._decay_now = self._last_obs_ts
+            self._decay_now = self.scheduler.now()
             self.mode_changed.emit("decaying")
-            self._store_active_wave()            # 存快照：关掉重开也能"慢慢推演"
-            self.timer.start(1000)               # 继续跑 → _decay_step 衰减回基线
+            self._store_active_wave()            # 存快照：关掉重开也能按真实时间续算
+            self.timer.start(1000)               # 前台心跳：只推进显示，不造观察
 
     def sample(self, valence: float, arousal: float):
-        """1Hz 采样：喂一个观察给内核，并把新状态推给视图。"""
-        ts = time.time()
+        """提交**一条真实自评**：喂给内核，并把新状态推给视图。
+
+        v4 起不再由定时器调用（见 `_on_tick`）——只有用户动作才会走到这里。
+        """
+        now = self.scheduler.now()
+        # 防竞态：心跳可能刚把模型时间推到 now 之后几毫秒，观测不能早于模型时间
+        last = self.estimator.last_timestamp or 0.0
+        ts = max(now, last)
         obs = Observation(timestamp=ts, valence=valence, arousal=arousal,
                           source=ObservationSource.USER)
         self.observations.append(obs)
@@ -152,14 +198,38 @@ class ConsolePresenter(QObject):
             self.estimator.initialize(timestamp=ts, valence=valence, arousal=arousal)
         state = self.estimator.update(obs)
         self.states.append((ts, state))
+        self.latest_state = state
+        self.latest_state_ts = ts
         self.count_changed.emit(len(self.observations))
         self._emit_readouts()
         self._emit_curve(refit=True)
 
+    def _on_committed(self, valence: float, arousal: float):
+        """recorder 结算了一次自评 → 记为观察。"""
+        if not self.recording:
+            return
+        self.sample(valence, arousal)
+
+    def _refresh_now(self):
+        """无新自评，但时间过去了：把模型推进到"现在"并刷新读数。
+
+        只做一次预测步 + 读数推送，**不重拟合曲线、不产生观察**。
+        """
+        state = self.query.query_state()
+        if state is None:
+            return
+        self.latest_state = state
+        self.latest_state_ts = state.timestamp
+        self._emit_readouts()
+
     def _on_tick(self):
-        """1Hz 心跳：记录中按当前滑条值采样；衰减中向前推演。"""
+        """1Hz 心跳：记录中只推进"现在"；衰减中按墙钟外推。
+
+        v4 的关键改动：心跳**不再** `sample(_input_v, _input_a)`。
+        心跳只回答"现在几点、状态是什么"，不回答"用户刚刚说了什么"。
+        """
         if self.recording:
-            self.sample(self._input_v, self._input_a)
+            self._refresh_now()
         elif self._wave_active:
             self.decay_step()
 
@@ -170,8 +240,12 @@ class ConsolePresenter(QObject):
         if not self.states:
             self._end_wave()
             return
-        self._decay_now += DECAY_DT
-        horizon = self._decay_now - self._last_obs_ts
+        # v4：horizon 来自墙钟，不再是 `tick 次数 × DECAY_DT`。
+        # 定时器只决定"多久看一次"，不决定"过了多久"。
+        now = self.scheduler.now()
+        self._decay_now = now
+        horizon = now - self._last_obs_ts
+        self.last_horizon = max(0.0, horizon)
         if horizon <= 0:
             return
         pts = self._decay_points(horizon)          # 向基线衰减 + 方差递增
@@ -183,7 +257,7 @@ class ConsolePresenter(QObject):
         settled = (abs(last_v - bv) < SETTLE_EPS and abs(last_a - ba) < SETTLE_EPS
                    and horizon >= SETTLE_MIN_SEC)
         if settled or horizon >= MAX_DECAY_SEC:
-            self._end_wave()                       # 回归基线 → 曲线消失
+            self._end_wave()                       # 回归基线 → 曲线消失（状态保留）
 
     def _decay_points(self, horizon: float):
         """从末态外推回基线。
@@ -208,12 +282,16 @@ class ConsolePresenter(QObject):
                  p["var_valence"], p["var_arousal"]) for p in traj]
 
     def _end_wave(self):
-        """一波结束：曲线消失、读数复位、估计器重置回基线，回到待记录(idle)。"""
+        """一波结束：曲线消失、回到待记录(idle)。
+
+        v4：**只结束动画，不清空"当前状态"**。`latest_state` 是模型对用户的
+        持续估计，波消失不代表"没有状态"——否则悬浮窗大部分时间只能显示 "—"。
+        """
         self.timer.stop()
         self.recording = False
+        self.recorder.set_enabled(False)
         self._wave_active = False
         self.curve_cleared.emit()
-        self.readouts_reset.emit()
         self.states = []
         self.observations = []
         self._edits = []
@@ -223,6 +301,12 @@ class ConsolePresenter(QObject):
         self.mode_changed.emit("idle")
         self.count_changed.emit(0)
         self._clear_active_wave()
+        # 状态常驻：有最新估计就继续显示，没有才复位
+        if self.latest_state is not None:
+            self._emit_readouts()
+            self._persist_latest_state()
+        else:
+            self.readouts_reset.emit()
 
     # ================================================================
     # 落库 / 快照
@@ -266,48 +350,38 @@ class ConsolePresenter(QObject):
             self.learn()
         except Exception as exc:
             logger.warning("停止记录后自动学习失败：%s", exc)
+        self._persist_latest_state()
 
     def _store_active_wave(self):
-        if self.db is None:
-            return
-        try:
-            snap = {"end_ts": self._last_obs_ts,
-                    "samples": [[o.timestamp, o.valence, o.arousal]
-                                for o in self.observations]}
-            self.db.set_state("active_wave", json.dumps(snap))
-        except Exception as exc:
-            logger.warning("保存活动情绪波快照失败：%s", exc)
+        """保存未走完的波（细节见 SnapshotStore）。"""
+        self.store.save_wave(self._last_obs_ts, self.scheduler.now(),
+                             self.observations)
 
     def _clear_active_wave(self):
-        if self.db is None:
-            return
-        try:
-            self.db.set_state("active_wave", "")
-        except Exception as exc:
-            logger.warning("清除活动情绪波快照失败：%s", exc)
+        self.store.clear_wave()
+
+    def _persist_latest_state(self):
+        """把"当前状态"落盘：重启后即使没有未走完的波，挂件也有东西可显示。"""
+        self.store.save_latest(self.latest_state)
+
+    def _load_latest_state(self):
+        state = self.store.load_latest()
+        if state is not None:
+            self.latest_state = state
+            self.latest_state_ts = float(getattr(state, "timestamp", 0.0))
 
     def resume_active_wave(self):
-        """开机若有未走完的波：重放观察、重建估计器，进入衰减"慢慢推演"。"""
-        if self.db is None:
+        """开机若有未走完的波：重放观察、重建估计器，**按真实经过时间**续算。
+
+        与 v1 的区别：不再从关机那一刻逐秒模拟，而是先算
+        `horizon = now - last_obs_ts`，把模型一次性推进到现在；
+        若这期间早已回归基线，则直接结束动画（状态仍保留）。
+        """
+        loaded = self.store.load_wave()
+        if loaded is None:
             return
-        try:
-            raw = self.db.get_state("active_wave", "") or ""
-        except Exception as exc:
-            logger.debug("读取 active_wave 快照失败：%s", exc)
-            return
-        if not raw:
-            return
-        try:
-            data = json.loads(raw)
-            samples = data.get("samples", [])
-            end_ts = float(data.get("end_ts", 0.0))
-        except Exception as exc:
-            logger.warning("active_wave 快照损坏，已清除：%s", exc)
-            self._clear_active_wave()
-            return
-        if not samples:
-            self._clear_active_wave()
-            return
+        samples, last_obs_ts = loaded
+
         for ts, v, a in samples:
             obs = Observation(timestamp=ts, valence=v, arousal=a,
                               source=ObservationSource.USER)
@@ -316,17 +390,30 @@ class ConsolePresenter(QObject):
                 self.estimator.initialize(timestamp=ts, valence=v, arousal=a)
             state = self.estimator.update(obs)
             self.states.append((ts, state))
-        self._last_obs_ts = end_ts or self.states[-1][0]
-        self._decay_now = self._last_obs_ts
+        self._last_obs_ts = last_obs_ts or self.states[-1][0]
+        self._decay_now = self.scheduler.now()
+        self.count_changed.emit(len(self.observations))
+
+        # 把模型推进到"现在"（真实经过的时间），并更新常驻状态
+        state = self.query.query_state()
+        if state is not None:
+            self.latest_state = state
+            self.latest_state_ts = state.timestamp
+            self._emit_readouts()
+
+        horizon = self.scheduler.horizon(self._last_obs_ts)
+        self.last_horizon = horizon
+        if horizon >= MAX_DECAY_SEC:
+            # 关机太久：波已自然结束，不留动画，只留状态
+            logger.debug("active_wave 已过期（%.0fs），只保留状态", horizon)
+            self._end_wave()
+            return
+
         self._wave_active = True
         self.recording = False
         self.mode_changed.emit("decaying")
-        self.count_changed.emit(len(self.observations))
         self.timer.start(1000)                         # 前台心跳推演（无后台进程）
 
-    # ================================================================
-    # 纠正 → calibrator + RTS 重拟合
-    # ================================================================
     def ingest_corrections(self, applied, source=None):
         """把「时刻 → (v, a)」的纠正列表写进 calibrator 数据集。
 
@@ -442,6 +529,11 @@ class ConsolePresenter(QObject):
         self._wave_active = False
         self._last_obs_ts = 0.0
         self._decay_now = 0.0
+        self.last_horizon = 0.0
+        self.latest_state = None
+        self.latest_state_ts = 0.0
+        self.recorder.reset()
+        self.recorder.set_enabled(False)
         self.timer.stop()
         self.curve_cleared.emit()
         self.readouts_reset.emit()
@@ -483,10 +575,15 @@ class ConsolePresenter(QObject):
         }
 
     def _readout_payload(self):
-        """算出读数 payload（视图主动要一份时用，如启动时的首次刷新）。"""
-        if not self.states:
+        """算出读数 payload（视图主动要一份时用，如启动时的首次刷新）。
+
+        v4：优先用 `latest_state`（"现在"的估计），而不是 `states[-1]`
+        （"最后一次自评时"的估计）。两者在波结束后不再相同——
+        前者仍在，后者被清空。
+        """
+        st = self.latest_state or (self.states[-1][1] if self.states else None)
+        if st is None:
             return (0.0, 0.0, 0.0, "—", {})
-        st = self.states[-1][1]
         lo, hi = st.confidence_interval("valence", z=1.0)
         ci = f"{int(lo*100)} – {int(hi*100)}"
         params_text = {
@@ -499,7 +596,7 @@ class ConsolePresenter(QObject):
 
     def _emit_readouts(self):
         """把最新状态推给视图：读数 + 参数说明共用一个 payload。"""
-        if not self.states:
+        if self.latest_state is None and not self.states:
             return
         v, a, c, ci, params_text = self._readout_payload()
         self.readouts_changed.emit(v, a, c, ci, params_text)

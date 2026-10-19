@@ -13,9 +13,9 @@
 import pytest
 
 
-def _presenter(qapp, db=None, archetype_key=None):
+def _presenter(qapp, db=None, archetype_key=None, clock=None):
     from presenters.console_presenter import ConsolePresenter
-    return ConsolePresenter(db=db, archetype_key=archetype_key)
+    return ConsolePresenter(db=db, archetype_key=archetype_key, clock=clock)
 
 
 def _settle(app, ms=250):
@@ -28,12 +28,19 @@ def _settle(app, ms=250):
 
 
 def test_presenter_runs_full_cycle_without_any_widget(qapp):
-    """无控件驱动完整生命周期：记录→采样→停止→衰减收敛→波形消失。"""
-    p = _presenter(qapp)
+    """无控件驱动完整生命周期：记录→采样→停止→衰减收敛→波形消失。
+
+    v4 修订：衰减按**墙钟**推进，所以这里用假时钟"让 60 秒过去"，
+    而不是连调 60 次 decay_step（旧写法隐含"tick 次数 = 秒数"的错误语义）。
+    """
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    p = _presenter(qapp, clock=clock)
 
     p.toggle_recording(True)
     assert p.recording is True
     for _ in range(4):
+        clock.advance(1)
         p.sample(0.60, 0.45)
     p.toggle_recording(False)
 
@@ -41,12 +48,12 @@ def test_presenter_runs_full_cycle_without_any_widget(qapp):
     assert len(p.observations) == 4 and len(p.states) == 4
     assert p._wave_active is True
 
-    for _ in range(60):
-        if not p._wave_active:
-            break
-        p.decay_step()
+    clock.advance(60)
+    p.decay_step()
     assert p._wave_active is False
     assert p.states == []
+    # 波消失 ≠ 没有状态：latest_state 仍代表"模型此刻的估计"
+    assert p.latest_state is not None
 
 
 def test_presenter_corrections_feed_calibrator(qapp):
@@ -258,3 +265,179 @@ def test_view_does_not_use_kernel_classes_directly():
     # 深路径 import 也已从视图层消失
     mods = _imported_modules(m.__file__)
     assert not any(x.startswith("emowave.core") for x in mods), mods
+
+
+# ================================================================
+# v4 Phase 1：观察语义与时间语义
+# ================================================================
+
+def test_tick_does_not_create_observation(qapp):
+    """心跳只推进"现在"，不制造自评。
+
+    v4 之前：记录中每秒 `sample(_input_v,_input_a)`，10 次心跳 = 10 条同值观察。
+    """
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    p = _presenter(qapp, clock=clock)
+    p.toggle_recording(True)
+    p.submit_input(0.30, 0.40)
+    p.recorder.flush()
+
+    assert len(p.observations) == 1
+    for _ in range(10):
+        clock.advance(1)
+        p._on_tick()
+    assert len(p.observations) == 1          # 没有新增
+    assert p.latest_state is not None        # 但"现在"的状态被推进了
+
+
+def test_debounced_drag_commits_once(qapp):
+    """一次连续拖动（20 次 valueChanged）只应产生 1 条自评。"""
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    p = _presenter(qapp, clock=clock)
+    p.toggle_recording(True)
+
+    for i in range(20):
+        p.submit_input(0.30 + i * 0.01, 0.40)
+    assert len(p.observations) == 0          # 防抖未到期，先不提交
+    p.recorder.flush()                       # 模拟防抖到期
+    assert len(p.observations) == 1
+
+    # 值没变 → 不产生"重复自评"
+    p.submit_input(0.49, 0.40)
+    p.recorder.flush()
+    assert len(p.observations) == 1
+
+    # 显式「记一笔」→ 即使值没变也确认一次
+    p.commit_now()
+    assert len(p.observations) == 2
+
+
+def test_input_without_recording_creates_nothing(qapp):
+    """没点"开始记录"时拖滑条只是在预览，不该落成自评。"""
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    p = _presenter(qapp, clock=clock)
+    p.submit_input(0.8, 0.7)
+    p.recorder.flush()
+    assert p.observations == []
+
+
+def test_model_time_follows_wall_clock(qapp):
+    """距上次自评多久 = 墙钟差，而不是 tick 次数。"""
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    p = _presenter(qapp, clock=clock)
+    p.toggle_recording(True)
+    p.submit_input(0.70, 0.60)
+    p.recorder.flush()
+    p.toggle_recording(False)
+
+    clock.advance(30)
+    p.decay_step()
+    assert p.last_horizon == pytest.approx(30.0, abs=0.01)
+
+    # 真实又过 90 秒（期间一次 tick 都没跑）
+    clock.advance(90)
+    p.decay_step()
+    assert p.last_horizon == pytest.approx(120.0, abs=0.01)
+
+
+def test_forecast_is_never_persisted_as_observation(qapp, tmp_path):
+    """衰减推演的预测点不能变成新的真实观察，也不能进 raw_data。"""
+    import json
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    clock = FakeClock()
+    db = DatabaseManager(str(tmp_path / "t.db"))
+    p = _presenter(qapp, db=db, clock=clock)
+    p.toggle_recording(True)
+    for _ in range(3):
+        clock.advance(1)
+        p.sample(0.75, 0.65)
+    p.toggle_recording(False)
+    assert len(p.observations) == 3
+
+    clock.advance(120)
+    p.decay_step()
+    assert len(p.observations) == 3
+
+    events = db.get_recent_events(limit=1)
+    assert len(events) == 1
+    raw = json.loads(events[0]["raw_data"])
+    assert len(raw) == 3                    # 只有 3 条真实观察
+    db.close()
+
+
+def test_wave_end_keeps_latest_state(qapp):
+    """波结束只结束动画，不清空"当前状态"。"""
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    p = _presenter(qapp, clock=clock)
+    p.toggle_recording(True)
+    clock.advance(1)
+    p.sample(0.80, 0.70)
+    p.toggle_recording(False)
+
+    p._end_wave()
+    assert p._wave_active is False
+    assert p.states == []
+    assert p.latest_state is not None
+    assert p.current_mode() == "idle"
+    # 读数仍可读（不是 "—"）
+    v, a, _c, ci, _p = p._readout_payload()
+    assert 0.0 <= v <= 1.0 and ci != "—"
+
+
+def test_resume_uses_wall_clock_gap(qapp, tmp_path):
+    """关机 30 分钟后再开：按真实时间外推，而不是从关机那一刻慢慢推。"""
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    clock = FakeClock()
+    db = DatabaseManager(str(tmp_path / "r.db"))
+    p = _presenter(qapp, db=db, clock=clock)
+    p.toggle_recording(True)
+    for _ in range(5):
+        clock.advance(1)
+        p.sample(0.85, 0.75)
+    p.toggle_recording(False)
+    assert p._wave_active is True
+
+    clock.advance(1800)                       # 关机 30 分钟
+    p2 = _presenter(qapp, db=db, clock=clock)
+    p2.resume_active_wave()
+
+    assert p2.last_horizon == pytest.approx(1800.0, abs=2.0)
+    assert p2._wave_active is False            # 波早已自然结束
+    assert p2.latest_state is not None         # 但状态仍在
+    # 事件在"停止记录"时已落库一次；恢复不会重复插入
+    assert len(db.get_recent_events(limit=10)) == 1
+    db.close()
+
+
+def test_resume_short_gap_keeps_wave_without_duplicating(qapp, tmp_path):
+    """关机 60 秒：波还没走完，恢复后应继续推演，且观察不被重复插入。"""
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    clock = FakeClock()
+    db = DatabaseManager(str(tmp_path / "r2.db"))
+    p = _presenter(qapp, db=db, clock=clock)
+    p.toggle_recording(True)
+    for _ in range(5):
+        clock.advance(1)
+        p.sample(0.85, 0.75)
+    p.toggle_recording(False)
+
+    clock.advance(60)
+    p2 = _presenter(qapp, db=db, clock=clock)
+    p2.resume_active_wave()
+
+    assert p2._wave_active is True
+    assert len(p2.observations) == 5           # 恰好重放一次，没有翻倍
+    assert p2.last_horizon == pytest.approx(60.0, abs=2.0)
+    assert len(db.get_recent_events(limit=10)) == 1
+    db.close()

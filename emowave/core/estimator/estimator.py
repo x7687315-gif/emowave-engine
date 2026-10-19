@@ -43,6 +43,10 @@ _IDX_DV = 1
 _IDX_A = 2
 _IDX_DA = 3
 
+#: 单步预测的时间上限（秒）。Δt 过大时 Matérn 转移矩阵的闭式解会失真，
+#: 且外推容易发散；超过就分段推进（见 advance_to）。
+_MAX_PREDICT_DT = 600.0
+
 
 @dataclass
 class EstimatorConfig:
@@ -268,6 +272,18 @@ class StateEstimator:
             dt,
         )
 
+        # ---- 偏离空间传播（part1 §5.1）----
+        # Matérn 状态空间的 F 把状态均值回复到 **0**，但情绪量表的"中性"是基线
+        # （默认 0.5），不是 0。因此预测步在**偏离空间**做：先减去基线，让 F 把
+        # 偏离拉回 0，输出时再加回基线。
+        #
+        # 此前这里没做这个变换，导致"长时间没有新观察"时状态会掉向 0 而不是回到
+        # 用户的基线；而曲线尾巴走的是 `inference.predict_forward`（它做了变换），
+        # 于是两处语义不一致。v4 Phase 1 统一为"回复到基线"。
+        m_v, m_a = self._baseline_mean()
+        self._x[_IDX_V] -= m_v
+        self._x[_IDX_A] -= m_a
+
         # 状态预测：x ← F·x
         self._x = linalg.mul_vec(f, self._x)
 
@@ -280,9 +296,15 @@ class StateEstimator:
         f_p = linalg.mul(f, self._P)
         self._P = linalg.add(linalg.mul(f_p, linalg.transpose(f)), q)
 
-        # 约束位置到 [0, 1]
-        self._x[_IDX_V] = _clip(self._x[_IDX_V])
-        self._x[_IDX_A] = _clip(self._x[_IDX_A])
+        # 加回基线，并把位置约束到 [0, 1]
+        self._x[_IDX_V] = _clip(self._x[_IDX_V] + m_v)
+        self._x[_IDX_A] = _clip(self._x[_IDX_A] + m_a)
+
+    def _baseline_mean(self):
+        """预测步的均值函数（GP 的 m(t)）：有基线用基线，否则用群体先验。"""
+        if self.baseline is not None:
+            return self.baseline.valence, self.baseline.arousal
+        return self.config.initial_valence, self.config.initial_arousal
 
     # ============================================================
     # 更新步骤（观测更新）
@@ -317,7 +339,7 @@ class StateEstimator:
                 f"update: 观察时间戳乱序 obs={obs.timestamp} < last={self._last_timestamp}"
             )
         # Δt 上限防护：长时间无观察后，外推会发散，钳到一个合理上限
-        dt = min(dt, 600.0)
+        dt = min(dt, _MAX_PREDICT_DT)
 
         # 生理控制输入（保留旧版机制）
         control_arousal = self._compute_control_arousal(obs)
@@ -332,6 +354,42 @@ class StateEstimator:
 
         self._update_count += 1
         return self._to_state(obs.timestamp)
+
+    def advance_to(self, timestamp: float) -> Optional[EmotionState]:
+        """把模型时间推进到指定时刻（**不消费观察**）。
+
+        与 `update()` 的分工：
+          - `update(obs)`：有新观察 → 预测步 + 观测更新
+          - `advance_to(ts)`：没有新观察，只是时间过去了 → 只做预测步
+
+        这是"用户没操作，但模型要知道现在是什么状态"的唯一正确入口。
+        以前这种场景只能靠伪造一条 Observation，会把预测值混进真实观察里。
+
+        长间隔按 `_MAX_PREDICT_DT` 分段推进：单步 dt 过大会让 F/Q 的闭式解失真；
+        分段既保留数学正确性，又让不确定性真实累积（而不是被一次钳死）。
+
+        Args:
+            timestamp: 目标时刻（Unix 秒）
+
+        Returns:
+            该时刻的 EmotionState；未初始化时返回 None。
+        """
+        if not self._initialized:
+            return None
+        last = self._last_timestamp if self._last_timestamp is not None else timestamp
+        remaining = timestamp - last
+        if remaining < 0:
+            raise ValueError(
+                f"advance_to: 目标时间早于当前模型时间 ts={timestamp} < last={last}"
+            )
+        cursor = last
+        while remaining > 0:
+            step = min(remaining, _MAX_PREDICT_DT)
+            self._predict(step, 0.0)
+            cursor += step
+            remaining -= step
+        self._last_timestamp = cursor
+        return self._to_state(timestamp)
 
     def _compute_control_arousal(self, obs: Observation) -> float:
         """从生理信号计算唤醒速度的控制输入（保留旧版 update_with_control 机制）。
@@ -480,6 +538,17 @@ class StateEstimator:
     @property
     def is_initialized(self) -> bool:
         return self._initialized
+
+    @property
+    def last_timestamp(self) -> Optional[float]:
+        """模型当前时间（上一次 update/advance_to 的时刻）。未初始化时为 None。"""
+        return self._last_timestamp
+
+    def current_state(self) -> Optional[EmotionState]:
+        """不推进时间，直接返回**当前**内部状态的快照。"""
+        if not self._initialized:
+            return None
+        return self._to_state(self._last_timestamp or 0.0)
 
     @property
     def update_count(self) -> int:

@@ -271,7 +271,8 @@ class MiniWindow(QWidget):
         p = self.presenter
         self._on_mode(p.current_mode())
         self._on_count(p.current_count())
-        if p.states:
+        # v4：状态常驻——波结束后 states 被清空，但 latest_state 仍在
+        if p.latest_state is not None or p.states:
             self._on_readouts(*p._readout_payload())
         payload = p.current_curve_payload()
         if payload:
@@ -317,7 +318,7 @@ class MiniWindow(QWidget):
             self.btn_record.setStyleSheet(self._btn_qss["idle"])
 
     def _on_count(self, n):
-        self.setToolTip(f"{n} 个观察")
+        self.setToolTip(f"{n} 次自评")
 
     # ------------------------------------------------------------
     # 本视图 → presenter
@@ -338,11 +339,11 @@ class MiniWindow(QWidget):
         否则会出现"在挂件上调好唤醒 → 回主窗碰一下效价 → 唤醒被弹回原值"。
         """
         if channel == "v":
-            self.presenter.set_input(valence=self.v_slider['slider'].value() / 100.0,
-                                     source="mini")
+            self.presenter.submit_input(valence=self.v_slider['slider'].value() / 100.0,
+                                        source="mini")
         else:
-            self.presenter.set_input(arousal=self.a_slider['slider'].value() / 100.0,
-                                     source="mini")
+            self.presenter.submit_input(arousal=self.a_slider['slider'].value() / 100.0,
+                                        source="mini")
 
     def _toggle(self):
         self.presenter.toggle_recording()
