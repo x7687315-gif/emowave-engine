@@ -338,14 +338,20 @@ class StateEstimator:
             raise ValueError(
                 f"update: 观察时间戳乱序 obs={obs.timestamp} < last={self._last_timestamp}"
             )
-        # Δt 上限防护：长时间无观察后，外推会发散，钳到一个合理上限
-        dt = min(dt, _MAX_PREDICT_DT)
-
         # 生理控制输入（保留旧版机制）
         control_arousal = self._compute_control_arousal(obs)
 
-        # 预测步
-        self._predict(dt, control_arousal)
+        # 长间隔**分段推进**，而不是一次钳到 600s。
+        # 旧写法 `dt = min(dt, 600)` 会把 1 小时的空档当成 10 分钟——时间被吞掉，
+        # 与"按真实经过时间推演"的目标直接矛盾。分段后总推进量 = 真实间隔，
+        # 只是每一步不超过 _MAX_PREDICT_DT（避免 F/Q 闭式解在大 dt 下失真）。
+        cursor = self._last_timestamp if self._last_timestamp is not None else obs.timestamp
+        remaining = obs.timestamp - cursor
+        while remaining > _MAX_PREDICT_DT:
+            self._predict(_MAX_PREDICT_DT, 0.0)
+            cursor += _MAX_PREDICT_DT
+            remaining -= _MAX_PREDICT_DT
+        self._predict(max(0.0, remaining), control_arousal)
         self._last_timestamp = obs.timestamp
 
         # 观测更新（仅当有情绪通道时）

@@ -541,15 +541,20 @@ def test_out_of_order_observation_raises():
         est.update(Observation(timestamp=1000.0, valence=0.6, arousal=0.4))
 
 
-def test_large_time_gap_is_clamped():
-    """长时间无观察后，Δt 被钳到上限，避免外推发散。"""
-    est = make_estimator()
-    est.initialize(timestamp=1000.0, valence=0.5, arousal=0.5)
-    # 跳跃 1 小时
-    obs = Observation(timestamp=1000.0 + 3600.0, valence=0.6, arousal=0.4)
-    st = est.update(obs)  # 不应崩溃
+def test_large_time_gap_is_chunked():
+    """1 小时空档按 600s 分段推进，而不是被一次性钳到 600s。
+
+    v4 Phase 6 修订：旧实现 `dt = min(dt, 600)` 会把 1 小时当成 10 分钟，
+    等于把时间吞掉。分段后总推进量 = 真实间隔，状态应回到基线附近。
+    这里用"纯生理观察"（无情绪通道）让 update 只做预测步，避免观测更新干扰判据。
+    """
+    baseline = Baseline(valence=0.5, arousal=0.5)
+    est = make_estimator(baseline=baseline)
+    est.initialize(timestamp=1000.0, valence=0.95, arousal=0.9)
+
+    st = est.update(Observation(timestamp=1000.0 + 3600.0))   # 无情绪通道 → 只预测
     assert 0.0 <= st.valence <= 1.0
-    assert 0.0 <= st.arousal <= 1.0
+    assert abs(st.valence - 0.5) < 0.05        # 若仍钳到 600s，这里约是 0.13
 
 
 # ============================================================

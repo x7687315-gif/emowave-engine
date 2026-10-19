@@ -509,6 +509,10 @@ class ConsolePresenter(QObject):
         `horizon = now - last_obs_ts`，把模型一次性推进到现在；
         若这期间早已回归基线，则直接结束动画（状态仍保留）。
         """
+        # 幂等：已经在记录 / 已经恢复过一波，就不要再重放一次
+        # （重复调用会把同一批观察插两遍，模型会把它当成两次独立证据）
+        if self.observations or self._wave_active:
+            return
         loaded = self.store.load_wave()
         if loaded is None:
             return
@@ -545,6 +549,114 @@ class ConsolePresenter(QObject):
         self.recording = False
         self.mode_changed.emit("decaying")
         self.timer.start(1000)                         # 前台心跳推演（无后台进程）
+
+    def restore_recent_context(self, max_age_sec: float = 7 * 86400):
+        """重启后让模型接着上次的估计，而不是从零开始。
+
+        只重建 estimator（回答"现在是什么状态"），**不把历史观察放进
+        `self.observations`**——否则一打开就会看到上次的曲线，用户会误以为是
+        本次记录。曲线仍然只在真正开始记录后出现。
+
+        数据源是最近一条事件的 `raw_data`（停止记录时已落库），所以不需要新表。
+
+        Args:
+            max_age_sec: 超过这个时长的旧事件不再用于恢复（默认 7 天）
+
+        Returns:
+            bool: 是否恢复成功
+        """
+        if self.db is None or self.estimator.is_initialized:
+            return False
+        try:
+            events = self.db.get_recent_events(limit=1)
+        except Exception as exc:
+            logger.debug("读取最近事件失败：%s", exc)
+            return False
+        if not events:
+            return False
+        try:
+            raw = json.loads(events[0].get("raw_data") or "[]")
+        except Exception as exc:
+            logger.warning("最近事件的 raw_data 损坏，跳过上下文恢复：%s", exc)
+            return False
+
+        samples = SnapshotStore._validate_samples(raw)
+        if not samples:
+            return False
+        last_ts = samples[-1][0]
+        if self.scheduler.now() - last_ts > max_age_sec:
+            return False                       # 太久以前的事，不该影响"现在"
+
+        est = StateEstimator(params=self.params,
+                             baseline=self.baseline_ctrl.current)
+        est.initialize(timestamp=samples[0][0], valence=samples[0][1],
+                       arousal=samples[0][2])
+        for ts, v, a in samples[1:]:
+            est.update(Observation(timestamp=ts, valence=v, arousal=a,
+                                   source=ObservationSource.USER))
+        self.estimator = est
+        self._last_obs_ts = last_ts
+
+        state = self.query.query_state()
+        if state is not None:
+            self.latest_state = state
+            self.latest_state_ts = state.timestamp
+            self._emit_readouts()
+        return True
+
+    def restore_recent_context(self, max_age_sec: float = 7 * 86400):
+        """重启后让模型接着上次的估计，而不是从零开始。
+
+        只重建 estimator（回答"现在是什么状态"），**不把历史观察放进
+        `self.observations`**——否则一打开就会看到上次的曲线，用户会误以为是
+        本次记录。曲线仍然只在真正开始记录后出现。
+
+        数据源是最近一条事件的 `raw_data`（停止记录时已落库），所以不需要新表。
+
+        Args:
+            max_age_sec: 超过这个时长的旧事件不再用于恢复（默认 7 天）
+
+        Returns:
+            bool: 是否恢复成功
+        """
+        if self.db is None or self.estimator.is_initialized:
+            return False
+        try:
+            events = self.db.get_recent_events(limit=1)
+        except Exception as exc:
+            logger.debug("读取最近事件失败：%s", exc)
+            return False
+        if not events:
+            return False
+        try:
+            raw = json.loads(events[0].get("raw_data") or "[]")
+        except Exception as exc:
+            logger.warning("最近事件的 raw_data 损坏，跳过上下文恢复：%s", exc)
+            return False
+
+        samples = SnapshotStore._validate_samples(raw)
+        if not samples:
+            return False
+        last_ts = samples[-1][0]
+        if self.scheduler.now() - last_ts > max_age_sec:
+            return False                       # 太久以前的事，不该影响"现在"
+
+        est = StateEstimator(params=self.params,
+                             baseline=self.baseline_ctrl.current)
+        est.initialize(timestamp=samples[0][0], valence=samples[0][1],
+                       arousal=samples[0][2])
+        for ts, v, a in samples[1:]:
+            est.update(Observation(timestamp=ts, valence=v, arousal=a,
+                                   source=ObservationSource.USER))
+        self.estimator = est
+        self._last_obs_ts = last_ts
+
+        state = self.query.query_state()
+        if state is not None:
+            self.latest_state = state
+            self.latest_state_ts = state.timestamp
+            self._emit_readouts()
+        return True
 
     def ingest_corrections(self, applied, source=None):
         """把「时刻 → (v, a)」的纠正列表写进 calibrator 数据集。

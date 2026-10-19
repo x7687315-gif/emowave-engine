@@ -739,3 +739,207 @@ def test_decay_payload_marks_predicted_from(qapp):
 
     assert captured, "衰减应推送曲线"
     assert captured[-1]["predicted_from"] == pytest.approx(p._last_obs_ts)
+
+
+# ================================================================
+# v4 Phase 6：持久化与恢复加固
+# ================================================================
+
+BAD_SNAPSHOTS = [
+    "not-json-at-all",
+    '{"samples": "nope"}',
+    '{"samples": [["x", 0.5, 0.5]]}',
+    '{"samples": [[1000.0, 1.5, 0.5]]}',                 # 越界
+    '{"samples": [[1000.0, 0.5, 0.5], [999.0, 0.5, 0.5]]}',   # 乱序
+    '{"samples": [[1000.0, 0.5]]}',                      # 字段数不对
+    '{"samples": []}',
+    '{"samples": [[-1.0, 0.5, 0.5]]}',                   # 时间戳非法
+]
+
+
+@pytest.mark.parametrize("bad", BAD_SNAPSHOTS)
+def test_corrupt_wave_snapshot_is_discarded(qapp, tmp_path, bad):
+    """坏快照不能让启动崩溃，也不能被当成观察重放。"""
+    from db import DatabaseManager
+
+    db = DatabaseManager(str(tmp_path / "bad.db"))
+    db.set_state("active_wave", bad)
+
+    p = _presenter(qapp, db=db)
+    p.resume_active_wave()               # 不应抛异常
+
+    assert p.observations == []
+    assert db.get_state("active_wave", "") == ""   # 已清除
+    db.close()
+
+
+def test_resume_is_idempotent(qapp, tmp_path):
+    """重复调用 resume 不会把同一批观察插两遍。"""
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    clock = FakeClock()
+    db = DatabaseManager(str(tmp_path / "idem.db"))
+    p = _presenter(qapp, db=db, clock=clock)
+    p.toggle_recording(True)
+    for _ in range(5):
+        clock.advance(1)
+        p.sample(0.8, 0.7)
+    p.toggle_recording(False)
+
+    p2 = _presenter(qapp, db=db, clock=clock)
+    p2.resume_active_wave()
+    n1 = len(p2.observations)
+    p2.resume_active_wave()
+    assert n1 == 5
+    assert len(p2.observations) == 5
+    db.close()
+
+
+def test_restore_recent_context_ages_state(qapp, tmp_path):
+    """重启后没有未走完的波：用最近事件重建模型，把状态推到"现在"。"""
+    import json
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    now = 1_700_000_000.0
+    db = DatabaseManager(str(tmp_path / "ctx.db"))
+    raw = [[now - 60, 0.8, 0.7], [now - 59, 0.8, 0.7], [now - 58, 0.8, 0.7]]
+    db.save_event({
+        "event_id": "evt_ctx", "start_time": now - 60, "end_time": now - 58,
+        "peak_valence": 0.8, "peak_arousal": 0.7, "peak_intensity": 0.4,
+        "sample_count": 3, "raw_data": json.dumps(raw),
+    })
+
+    clock = FakeClock(now)
+    p = _presenter(qapp, db=db, clock=clock)
+    assert p.estimator.is_initialized is False
+
+    assert p.restore_recent_context() is True
+    assert p.observations == []                       # 不把历史塞进曲线
+    assert p.latest_state is not None
+    assert p.latest_state.timestamp == pytest.approx(now, abs=1.0)
+    db.close()
+
+
+def test_restore_recent_context_skips_stale_event(qapp, tmp_path):
+    """太久以前的事件不该影响"现在"。"""
+    import json
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    now = 1_700_000_000.0
+    old = now - 8 * 86400
+    db = DatabaseManager(str(tmp_path / "stale.db"))
+    db.save_event({
+        "event_id": "evt_old", "start_time": old, "end_time": old + 2,
+        "peak_valence": 0.9, "peak_arousal": 0.9, "peak_intensity": 0.6,
+        "sample_count": 3, "raw_data": json.dumps([[old, 0.9, 0.9]]),
+    })
+
+    p = _presenter(qapp, db=db, clock=FakeClock(now))
+    assert p.restore_recent_context() is False
+    assert p.latest_state is None
+    db.close()
+
+
+# ================================================================
+# v4 Phase 6：持久化与恢复加固
+# ================================================================
+
+BAD_SNAPSHOTS = [
+    "not-json-at-all",
+    '{"samples": "nope"}',
+    '{"samples": [["x", 0.5, 0.5]]}',
+    '{"samples": [[1000.0, 1.5, 0.5]]}',                 # 越界
+    '{"samples": [[1000.0, 0.5, 0.5], [999.0, 0.5, 0.5]]}',   # 乱序
+    '{"samples": [[1000.0, 0.5]]}',                      # 字段数不对
+    '{"samples": []}',
+    '{"samples": [[-1.0, 0.5, 0.5]]}',                   # 时间戳非法
+]
+
+
+@pytest.mark.parametrize("bad", BAD_SNAPSHOTS)
+def test_corrupt_wave_snapshot_is_discarded(qapp, tmp_path, bad):
+    """坏快照不能让启动崩溃，也不能被当成观察重放。"""
+    from db import DatabaseManager
+
+    db = DatabaseManager(str(tmp_path / "bad.db"))
+    db.set_state("active_wave", bad)
+
+    p = _presenter(qapp, db=db)
+    p.resume_active_wave()               # 不应抛异常
+
+    assert p.observations == []
+    assert db.get_state("active_wave", "") == ""   # 已清除
+    db.close()
+
+
+def test_resume_is_idempotent(qapp, tmp_path):
+    """重复调用 resume 不会把同一批观察插两遍。"""
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    clock = FakeClock()
+    db = DatabaseManager(str(tmp_path / "idem.db"))
+    p = _presenter(qapp, db=db, clock=clock)
+    p.toggle_recording(True)
+    for _ in range(5):
+        clock.advance(1)
+        p.sample(0.8, 0.7)
+    p.toggle_recording(False)
+
+    p2 = _presenter(qapp, db=db, clock=clock)
+    p2.resume_active_wave()
+    n1 = len(p2.observations)
+    p2.resume_active_wave()
+    assert n1 == 5
+    assert len(p2.observations) == 5
+    db.close()
+
+
+def test_restore_recent_context_ages_state(qapp, tmp_path):
+    """重启后没有未走完的波：用最近事件重建模型，把状态推到"现在"。"""
+    import json
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    now = 1_700_000_000.0
+    db = DatabaseManager(str(tmp_path / "ctx.db"))
+    raw = [[now - 60, 0.8, 0.7], [now - 59, 0.8, 0.7], [now - 58, 0.8, 0.7]]
+    db.save_event({
+        "event_id": "evt_ctx", "start_time": now - 60, "end_time": now - 58,
+        "peak_valence": 0.8, "peak_arousal": 0.7, "peak_intensity": 0.4,
+        "sample_count": 3, "raw_data": json.dumps(raw),
+    })
+
+    clock = FakeClock(now)
+    p = _presenter(qapp, db=db, clock=clock)
+    assert p.estimator.is_initialized is False
+
+    assert p.restore_recent_context() is True
+    assert p.observations == []                       # 不把历史塞进曲线
+    assert p.latest_state is not None
+    assert p.latest_state.timestamp == pytest.approx(now, abs=1.0)
+    db.close()
+
+
+def test_restore_recent_context_skips_stale_event(qapp, tmp_path):
+    """太久以前的事件不该影响"现在"。"""
+    import json
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    now = 1_700_000_000.0
+    old = now - 8 * 86400
+    db = DatabaseManager(str(tmp_path / "stale.db"))
+    db.save_event({
+        "event_id": "evt_old", "start_time": old, "end_time": old + 2,
+        "peak_valence": 0.9, "peak_arousal": 0.9, "peak_intensity": 0.6,
+        "sample_count": 3, "raw_data": json.dumps([[old, 0.9, 0.9]]),
+    })
+
+    p = _presenter(qapp, db=db, clock=FakeClock(now))
+    assert p.restore_recent_context() is False
+    assert p.latest_state is None
+    db.close()

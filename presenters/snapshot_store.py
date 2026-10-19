@@ -70,10 +70,43 @@ class SnapshotStore:
             logger.warning("active_wave 快照损坏，已清除：%s", exc)
             self.clear_wave()
             return None
-        if not samples:
+        clean = self._validate_samples(samples)
+        if clean is None:
+            logger.warning("active_wave 快照内容非法（%d 条），已丢弃", len(samples))
             self.clear_wave()
             return None
-        return samples, last_obs_ts
+        # last_obs_ts 必须可信：缺失/超前于最后一条样本时，以样本为准
+        if not (last_obs_ts > 0) or last_obs_ts < clean[-1][0]:
+            last_obs_ts = clean[-1][0]
+        return clean, last_obs_ts
+
+    @staticmethod
+    def _validate_samples(samples):
+        """校验并规范化样本；任何一条不合法就整体丢弃。
+
+        为什么"整体丢弃"而不是"跳过坏的"：快照是一个连续序列，
+        中间缺一条会让 RTS/滤波把缺口当真实时间间隔，比没有更糟。
+        另外这里必须挡住"能解析成 JSON 但结构不对"的情况——
+        否则 `for ts, v, a in samples` 会在启动时直接抛 ValueError。
+        """
+        if not isinstance(samples, list) or not samples or len(samples) > 10000:
+            return None
+        clean = []
+        prev_ts = None
+        for item in samples:
+            if not isinstance(item, (list, tuple)) or len(item) != 3:
+                return None
+            try:
+                ts, v, a = float(item[0]), float(item[1]), float(item[2])
+            except (TypeError, ValueError):
+                return None
+            if ts <= 0 or not (0.0 <= v <= 1.0) or not (0.0 <= a <= 1.0):
+                return None
+            if prev_ts is not None and ts < prev_ts:
+                return None                      # 乱序
+            prev_ts = ts
+            clean.append((ts, v, a))
+        return clean
 
     def clear_wave(self):
         if self.db is None:

@@ -216,7 +216,11 @@ class MainConsole(QWidget):
         self._wire_presenter()
 
         self._refresh_readouts()
-        self.presenter.resume_active_wave()   # 上次未走完的波：开机后"慢慢推演"
+        self.presenter.resume_active_wave()   # 上次未走完的波：按真实时间续算
+        # 没有未走完的波时，用最近一条事件的观察重建模型
+        # （只影响"现在是什么状态"，不把历史曲线画出来）
+        if not self.presenter.estimator.is_initialized:
+            self.presenter.restore_recent_context()
 
     # ------------------------------------------------------------
     # v3 兼容：把 presenter 的状态以 property 暴露出来
