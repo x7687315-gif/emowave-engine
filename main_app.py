@@ -188,6 +188,10 @@ class MainWindow(QMainWindow):
         # ---- 迷你置顶窗（与主窗共用同一个 presenter；阶段 4）----
         # 必须持有引用，否则无父窗口对象会被 GC 回收，表现为"点开就闪退"
         self.mini = MiniWindow(self.console.presenter)
+        self.mini.show_main_requested.connect(self._show_from_mini)
+        self.mini.quit_requested.connect(self.shutdown)
+        self.mini.closed_by_user.connect(self._on_mini_closed)
+        self._shut_down = False
 
         self.tabs.currentChanged.connect(self.console.show_page)
 
@@ -284,7 +288,7 @@ class MainWindow(QMainWindow):
 
         # 迷你挂件开关（置顶悬浮窗，与主窗共用同一内核状态）
         self.b_mini = IconButton('mini', "迷你挂件（置顶悬浮窗）", size=28)
-        self.b_mini.set_active(True)
+        self.b_mini.set_active(False)      # 挂件默认不显示，图标不能假装已开启
         self.b_mini.clicked.connect(self._toggle_mini)
         lay.addWidget(self.b_mini, 0, Qt.AlignVCenter)
 
@@ -297,13 +301,48 @@ class MainWindow(QMainWindow):
         return head
 
     def _toggle_mini(self):
-        """唤起/收起迷你挂件。挂件与主窗共享 presenter，两边状态实时一致。"""
+        """唤起/收起迷你挂件。挂件与主窗共享 presenter，两边状态实时一致。
+
+        v4：挂件可见 = 进入「持续查看」模式 → 开启低频刷新；
+        挂件收起 = 回到「按需查看」，不维持周期任务。
+        """
         if self.mini.isVisible():
             self.mini.hide()
             self.b_mini.set_active(False)
+            self.console.presenter.set_periodic_refresh(False)
         else:
             self.mini.show()
             self.b_mini.set_active(True)
+            self.console.presenter.set_periodic_refresh(True)
+
+    def showEvent(self, event):
+        """窗口一显示就把状态推到「现在」——关机/隐藏期间的时间差在这里补上。"""
+        super().showEvent(event)
+        try:
+            self.console.presenter.refresh_now()
+        except Exception:
+            pass
+
+    def showEvent(self, event):
+        """窗口一显示就把状态推到「现在」——关机/隐藏期间的时间差在这里补上。"""
+        super().showEvent(event)
+        try:
+            self.console.presenter.refresh_now()
+        except Exception:
+            pass
+
+    def _show_from_mini(self):
+        """挂件右键「显示主窗」。"""
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _on_mini_closed(self):
+        """挂件被 × 掉：主窗也藏着的话，就没有可见窗口了 → 真正退出。"""
+        self.b_mini.set_active(False)
+        self.console.presenter.set_periodic_refresh(False)
+        if not self.isVisible():
+            self.shutdown()
 
     # ------------------------------------------------------------
     # 行为
@@ -331,19 +370,42 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event):
-        # 关库失败不能拦住退出，否则用户点 × 关不掉窗口。
+        """关主窗：挂件还在 → 只隐藏；挂件也藏着 → 真正退出。
+
+        v4 之前关主窗 = 退出，所以「挂件常驻」根本不可能成立。
+        现在用 `setQuitOnLastWindowClosed(False)` + 这里的分支表达两种意图。
+        """
+        if not self._shut_down and self.mini is not None and self.mini.isVisible():
+            event.ignore()
+            self.hide()
+            return
+        self.shutdown()
+        event.accept()
+
+    def shutdown(self):
+        """真正退出：停节律 → 关库 → 收挂件 → 退出事件循环。幂等。"""
+        if self._shut_down:
+            return
+        self._shut_down = True
+        try:
+            self.console.presenter.stop_all_timers()
+        except Exception:
+            pass
+        # 关库失败不能拦住退出，否则用户点 × 关不掉窗口
         if getattr(self, 'db', None):
             try:
                 self.db.close()
             except Exception:
                 pass
-        # 主窗关闭时一起收掉挂件，避免残留一个置顶小窗
         if getattr(self, 'mini', None) is not None:
             try:
-                self.mini.close()
+                self.mini.hide()
             except Exception:
                 pass
-        super().closeEvent(event)
+        from PyQt5.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
 
 
 def main():
@@ -355,6 +417,9 @@ def main():
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
     app = QApplication(sys.argv)
+    # v4：关主窗不再等于退出（挂件可能还要常驻）；
+    # 真正的退出由 MainWindow.shutdown() 显式触发（挂件右键「退出程序」/ 关掉最后一个窗口）。
+    app.setQuitOnLastWindowClosed(False)
     app.setFont(app_font(10))
     app.setStyleSheet(build_app_qss())          # 全局一次注入（QSS 不继承）
     win = MainWindow()

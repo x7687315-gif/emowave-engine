@@ -833,3 +833,219 @@ def test_mini_shows_state_after_wave_ends(qapp, tmp_path):
     assert win.mini.v_cell.value_label.text() not in ("", "—")
     assert win.mini.state_label.text() not in ("", "—")
     db.close()
+
+
+# ================================================================
+# v4 Phase 4：生命周期与低频刷新
+# ================================================================
+
+def test_mini_toggle_controls_periodic_refresh(qapp, tmp_path):
+    """挂件可见 → 开启 5 分钟刷新；收起 → 停止。"""
+    win, db = _make_window(tmp_path)
+    p = win.console.presenter
+    assert p.refresh_timer.isActive() is False
+
+    win._toggle_mini()
+    assert win.mini.isVisible() is True
+    assert p.refresh_timer.isActive() is True
+    assert p.refresh_timer.interval() == 300000
+
+    win._toggle_mini()
+    assert win.mini.isVisible() is False
+    assert p.refresh_timer.isActive() is False
+    db.close()
+
+
+def test_periodic_refresh_advances_state_without_observation(qapp, tmp_path):
+    """低频刷新把状态推到"现在"，但绝不产生新观察。"""
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    win, db = _make_window(tmp_path, clock=clock)
+    c = win.console
+    p = c.presenter
+
+    c._toggle_recording(True)
+    for _ in range(3):
+        clock.advance(1)
+        c._sample()
+    c._toggle_recording(False)
+
+    clock.advance(700)              # 超过 MAX_DECAY_SEC → 波自然结束
+    c._decay_step()
+    assert p._wave_active is False
+    assert len(p.observations) == 0  # 波结束后内存里的波数据清空
+
+    clock.advance(300)
+    p._on_refresh()
+    assert len(p.observations) == 0                    # 仍然没有新观察
+    assert p.latest_state is not None
+    assert p.latest_state.timestamp == pytest.approx(clock(), abs=1.0)
+    db.close()
+
+
+def test_close_main_with_mini_visible_only_hides(qapp, tmp_path):
+    """挂件还在时关主窗 → 只隐藏，进程继续跑，数据库仍可用。"""
+    win, db = _make_window(tmp_path)
+    win.show()
+    win.mini.show()
+
+    win.close()
+
+    assert win._shut_down is False
+    assert win.isVisible() is False
+    assert win.mini.isVisible() is True
+    assert db.get_recent_events(limit=1) == []          # 库没关
+    db.close()
+
+
+def test_close_main_without_mini_shuts_down(qapp, tmp_path):
+    """没有可见挂件时关主窗 → 真正退出（关库 + quit）。"""
+    import sqlite3
+
+    win, db = _make_window(tmp_path)
+    win.show()
+    win.close()
+
+    assert win._shut_down is True
+    with pytest.raises(sqlite3.ProgrammingError):
+        db.get_recent_events(limit=1)
+
+
+def test_mini_close_when_main_hidden_shuts_down(qapp, tmp_path):
+    """主窗藏着、挂件被 × 掉 → 没有可见窗口了 → 退出。"""
+    win, db = _make_window(tmp_path)
+    win.mini.show()
+    win.hide()
+
+    win.mini._on_close_clicked()
+
+    assert win._shut_down is True
+
+
+def test_mini_close_when_main_visible_keeps_running(qapp, tmp_path):
+    """主窗还开着时关挂件 → 只收挂件，不退出。"""
+    win, db = _make_window(tmp_path)
+    win.show()
+    win.mini.show()
+
+    win.mini._on_close_clicked()
+
+    assert win._shut_down is False
+    assert win.mini.isVisible() is False
+    assert db.get_recent_events(limit=1) == []
+    db.close()
+
+
+def test_shutdown_is_idempotent(qapp, tmp_path):
+    win, db = _make_window(tmp_path)
+    win.shutdown()
+    win.shutdown()                   # 第二次不应抛异常
+    assert win._shut_down is True
+
+
+# ================================================================
+# v4 Phase 4：生命周期与低频刷新
+# ================================================================
+
+def test_mini_toggle_controls_periodic_refresh(qapp, tmp_path):
+    """挂件可见 → 开启 5 分钟刷新；收起 → 停止。"""
+    win, db = _make_window(tmp_path)
+    p = win.console.presenter
+    assert p.refresh_timer.isActive() is False
+
+    win._toggle_mini()
+    assert win.mini.isVisible() is True
+    assert p.refresh_timer.isActive() is True
+    assert p.refresh_timer.interval() == 300000
+
+    win._toggle_mini()
+    assert win.mini.isVisible() is False
+    assert p.refresh_timer.isActive() is False
+    db.close()
+
+
+def test_periodic_refresh_advances_state_without_observation(qapp, tmp_path):
+    """低频刷新把状态推到"现在"，但绝不产生新观察。"""
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    win, db = _make_window(tmp_path, clock=clock)
+    c = win.console
+    p = c.presenter
+
+    c._toggle_recording(True)
+    for _ in range(3):
+        clock.advance(1)
+        c._sample()
+    c._toggle_recording(False)
+
+    clock.advance(700)              # 超过 MAX_DECAY_SEC → 波自然结束
+    c._decay_step()
+    assert p._wave_active is False
+    assert len(p.observations) == 0  # 波结束后内存里的波数据清空
+
+    clock.advance(300)
+    p._on_refresh()
+    assert len(p.observations) == 0                    # 仍然没有新观察
+    assert p.latest_state is not None
+    assert p.latest_state.timestamp == pytest.approx(clock(), abs=1.0)
+    db.close()
+
+
+def test_close_main_with_mini_visible_only_hides(qapp, tmp_path):
+    """挂件还在时关主窗 → 只隐藏，进程继续跑，数据库仍可用。"""
+    win, db = _make_window(tmp_path)
+    win.show()
+    win.mini.show()
+
+    win.close()
+
+    assert win._shut_down is False
+    assert win.isVisible() is False
+    assert win.mini.isVisible() is True
+    assert db.get_recent_events(limit=1) == []          # 库没关
+    db.close()
+
+
+def test_close_main_without_mini_shuts_down(qapp, tmp_path):
+    """没有可见挂件时关主窗 → 真正退出（关库 + quit）。"""
+    import sqlite3
+
+    win, db = _make_window(tmp_path)
+    win.show()
+    win.close()
+
+    assert win._shut_down is True
+    with pytest.raises(sqlite3.ProgrammingError):
+        db.get_recent_events(limit=1)
+
+
+def test_mini_close_when_main_hidden_shuts_down(qapp, tmp_path):
+    """主窗藏着、挂件被 × 掉 → 没有可见窗口了 → 退出。"""
+    win, db = _make_window(tmp_path)
+    win.mini.show()
+    win.hide()
+
+    win.mini._on_close_clicked()
+
+    assert win._shut_down is True
+
+
+def test_mini_close_when_main_visible_keeps_running(qapp, tmp_path):
+    """主窗还开着时关挂件 → 只收挂件，不退出。"""
+    win, db = _make_window(tmp_path)
+    win.show()
+    win.mini.show()
+
+    win.mini._on_close_clicked()
+
+    assert win._shut_down is False
+    assert win.mini.isVisible() is False
+    assert db.get_recent_events(limit=1) == []
+    db.close()
+
+
+def test_shutdown_is_idempotent(qapp, tmp_path):
+    win, db = _make_window(tmp_path)
+    win.shutdown()
+    win.shutdown()                   # 第二次不应抛异常
+    assert win._shut_down is True

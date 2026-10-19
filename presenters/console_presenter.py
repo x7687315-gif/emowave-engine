@@ -135,6 +135,13 @@ class ConsolePresenter(QObject):
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self._on_tick)
 
+        # 悬浮窗常驻时的低频刷新（Phase 4）：只推进"现在"，不产生观察。
+        # 与 1Hz 心跳是两条独立的节律：心跳服务"记录/衰减动画"，
+        # 本定时器服务"没在记录时也想知道当前状态"。
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.setInterval(int(WaveScheduler.REFRESH_INTERVAL_SEC * 1000))
+        self.refresh_timer.timeout.connect(self._on_refresh)
+
     def set_input(self, valence=None, arousal=None, source=None):
         """视图滑杆变化时调用。
 
@@ -245,6 +252,42 @@ class ConsolePresenter(QObject):
         self.latest_state = state
         self.latest_state_ts = state.timestamp
         self._emit_readouts()
+
+    def set_periodic_refresh(self, enabled: bool, interval_sec: float = None):
+        """开启/停止低频刷新（悬浮窗可见时开启）。
+
+        Args:
+            enabled: True 开启
+            interval_sec: 刷新间隔（秒），默认 300（5 分钟）
+        """
+        if interval_sec is not None:
+            self.refresh_timer.setInterval(max(1, int(interval_sec * 1000)))
+        if enabled:
+            if not self.refresh_timer.isActive():
+                self.refresh_timer.start()
+        else:
+            self.refresh_timer.stop()
+
+    def _on_refresh(self):
+        """低频刷新：把模型推进到"现在"并更新读数。
+
+        **不产生观察、不重拟合历史曲线**——它回答的是"现在大概是什么状态"，
+        不是"用户刚刚说了什么"。记录/衰减期间 1Hz 心跳已在推进，这里直接跳过。
+        """
+        if self.recording or self._wave_active:
+            return
+        self._refresh_now()
+        self._persist_latest_state()
+
+    def refresh_now(self):
+        """外部请求把状态推到「现在」（窗口显示/挂件唤起时用）。"""
+        self._refresh_now()
+
+    def stop_all_timers(self):
+        """退出前停掉所有节律，避免进程退出后还有回调。"""
+        self.timer.stop()
+        self.refresh_timer.stop()
+        self.recorder.set_enabled(False)
 
     def _on_tick(self):
         """1Hz 心跳：记录中只推进"现在"；衰减中按墙钟外推。
@@ -382,8 +425,11 @@ class ConsolePresenter(QObject):
         self.observations = []
         self._edits = []
         self._segment = []
-        self.estimator = StateEstimator(params=self.params,
-                                        baseline=self.baseline_ctrl.current)
+        # 注意：**不重置 estimator**。
+        # 1) 波结束只是动画结束，模型仍应能回答"现在是什么状态"（D1 状态常驻）；
+        #    低频刷新靠 advance_to(now) 让它继续向基线收敛。
+        # 2) 下一次记录从当前估计继续，而不是每次从零开始——这才是"持续状态模型"。
+        # 真正的重置只发生在换人群（set_archetype）。
         self.mode_changed.emit("idle")
         self.count_changed.emit(0)
         self._clear_active_wave()

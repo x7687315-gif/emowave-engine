@@ -26,10 +26,10 @@
 """
 import logging
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QSlider,
-    QSizePolicy,
+    QSizePolicy, QMenu,
 )
 from PyQt5.QtGui import QPainter, QPen, QColor, QFont
 
@@ -70,6 +70,12 @@ class MiniCloseButton(QPushButton):
 
 class MiniWindow(QWidget):
     """迷你置顶窗。外壳只负责创建与显隐，数据全部由 presenter 驱动。"""
+
+    #: 右键菜单：请求显示主窗 / 退出程序
+    show_main_requested = pyqtSignal()
+    quit_requested = pyqtSignal()
+    #: 用户点了 ×（只是隐藏，不代表退出）
+    closed_by_user = pyqtSignal()
 
     def __init__(self, presenter, parent=None):
         super().__init__(parent)
@@ -137,7 +143,7 @@ class MiniWindow(QWidget):
         self.state_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         self.btn_close = MiniCloseButton()
-        self.btn_close.clicked.connect(self.hide)
+        self.btn_close.clicked.connect(self._on_close_clicked)
         hl.addWidget(self.btn_close)
         outer.addWidget(head)
 
@@ -344,6 +350,27 @@ class MiniWindow(QWidget):
         else:
             self.presenter.submit_input(arousal=self.a_slider['slider'].value() / 100.0,
                                         source="mini")
+
+    def _on_close_clicked(self):
+        """× 只隐藏挂件；是否退出由主窗根据"还有没有可见窗口"决定。"""
+        self.hide()
+        self.closed_by_user.emit()
+
+    def contextMenuEvent(self, event):
+        """右键菜单：显式提供"显示主窗"与"退出程序"。
+
+        v4 起关主窗不等于退出（挂件可能还在跑），所以必须有一个
+        用户能看懂的、真正的退出入口。
+        """
+        menu = QMenu(self)
+        act_show = menu.addAction("显示主窗")
+        menu.addSeparator()
+        act_quit = menu.addAction("退出程序")
+        chosen = menu.exec_(event.globalPos())
+        if chosen is act_show:
+            self.show_main_requested.emit()
+        elif chosen is act_quit:
+            self.quit_requested.emit()
 
     def _toggle(self):
         self.presenter.toggle_recording()

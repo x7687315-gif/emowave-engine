@@ -32,6 +32,7 @@
 | [`refactor-v4/02-阶段1-实施记录.md`](refactor-v4/02-阶段1-实施记录.md) | Phase 1 实施：心跳不再造观察、墙钟推进、状态常驻、预测步回基线修复 |
 | [`refactor-v4/03-阶段2-统一查询.md`](refactor-v4/03-阶段2-统一查询.md) | Phase 2：query_curve（窗口/分辨率/缓存），主窗与挂件共用一份 payload |
 | [`refactor-v4/04-阶段3-增量衰减.md`](refactor-v4/04-阶段3-增量衰减.md) | Phase 3：内核 predict_step 原语 + 衰减尾巴增量推进（15.62ms→0.30ms） |
+| [`refactor-v4/05-阶段4-生命周期与刷新.md`](refactor-v4/05-阶段4-生命周期与刷新.md) | Phase 4：关主窗≠退出、挂件常驻、5 分钟刷新、显式退出入口 |
 
 ## UI 重构（历史）
 
