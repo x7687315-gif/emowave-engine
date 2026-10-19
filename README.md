@@ -302,7 +302,7 @@ EmoWave 作为 Amiya 的**可选外部状态引擎**，不反向依赖 Amiya。A
 - 内核 2.0 重构 Phase 0–9 已完成并并入 `main`；1.x 稳定版锚定 tag **`v1.0-stable`**，随时可回退。
 - 功能分支均已合并回 `main` 并清理。
 
-**MIT** · 架构见 [`docs/architecture/`](docs/architecture/)（情绪模型 / 轻量内核 / 移动端），重构执行日志见 [`docs/history/refactor-progress.md`](docs/history/refactor-progress.md)。
+**MIT** · 接手/维护请先读 [`docs/交接文档.md`](docs/交接文档.md)；架构见 [`docs/architecture/`](docs/architecture/)（情绪模型 / 轻量内核 / 移动端），重构执行日志见 [`docs/history/refactor-progress.md`](docs/history/refactor-progress.md)。
 
 **2026-10 瘦身**：清除 1.x 引擎栈与研究脚手架，代码 41k → 21.9k 行（−47%），仓库 22MB → 7.8MB，依赖仅剩 `PyQt5`（内核仍零依赖）。过程与证据见 [`docs/slim-refactor/`](docs/slim-refactor/)。
 
