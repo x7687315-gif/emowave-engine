@@ -5,9 +5,20 @@
 也就是 MVP 里"可被 mock、可在无 GUI 环境下单测"的那一层。它：
 
   · 持有全部内核对象（estimator / baseline_ctrl / calibrator / observations …）
-  · 持有 1Hz 心跳 QTimer（采样节奏是编排责任，不是内核责任）
+  · 持有 1Hz 心跳 QTimer —— **心跳只回答"现在几点"，不回答"用户说了什么"**
   · 把结果用**信号**推给视图；输入（滑条当前值）由调用方以参数显式传入
     —— 这样第二个视图（迷你置顶窗）可以复用同一个 presenter 而不抢状态
+
+=== v4 Phase 1：时间与观察语义 ===
+1. 观察只由用户动作产生：滑条走 `submit_input()` → `ObservationRecorder`
+   防抖 350ms 后提交一次；心跳不再 `sample()`（此前 10 次心跳 = 10 条同值观察）。
+2. 模型时间跟墙钟：`horizon = scheduler.now() - last_obs_ts`，
+   不再 `_decay_now += DECAY_DT`（此前真实过 1.2s、模型只走 1.0s）。
+3. 状态与动画解耦：`latest_state` 常驻并落盘；`_end_wave()` 只结束动画。
+4. 恢复按真实经过时间外推；超过 `MAX_DECAY_SEC` 直接结束动画（状态保留）。
+
+具体职责分工见同目录的 observation_recorder / state_query / wave_scheduler /
+snapshot_store 四个对象。
 
 === 与 v3 的差异（阶段 3 解耦 + 换内核 API）===
 1. v3 的 `MainConsole._decay_points()` **手写了一份 Matérn 衰减外推**
@@ -33,7 +44,7 @@ from .engine import (
     StateEstimator, RTSSmoother, BaselineController, Calibrator,
     predict_forward,
 )
-from .observation_recorder import ObservationRecorder, DEBOUNCE_MS
+from .observation_recorder import ObservationRecorder
 from .snapshot_store import SnapshotStore
 from .state_query import StateQuery
 from .wave_scheduler import WaveScheduler
