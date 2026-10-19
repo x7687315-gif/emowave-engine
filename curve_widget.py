@@ -68,6 +68,7 @@ class EmotionCurveWidget(QWidget):
         self.var_a = []
         self.baseline_v = 0.5
         self.raw = []                   # [(ts, value)]
+        self.predicted_from = None      # 该时刻之后的点属于「预测段」（虚线）
 
         # 静态层缓存（网格/刻度/标签）—— 尺寸不变就不重画
         self._static_cache = None
@@ -84,7 +85,7 @@ class EmotionCurveWidget(QWidget):
     # 数据
     # ================================================================
     def set_data(self, timestamps, model_v, model_a=None, var_v=None, var_a=None,
-                 baseline_v=0.5, raw=None):
+                 baseline_v=0.5, raw=None, predicted_from=None):
         self.timestamps = list(timestamps)
         self.model_v = list(model_v)
         self.model_a = list(model_a or [])
@@ -92,6 +93,7 @@ class EmotionCurveWidget(QWidget):
         self.var_a = list(var_a or [])
         self.baseline_v = baseline_v
         self.raw = list(raw or [])
+        self.predicted_from = predicted_from
         self.update()
 
     def clear(self):
@@ -101,10 +103,24 @@ class EmotionCurveWidget(QWidget):
         self.var_v = []
         self.var_a = []
         self.raw = []
+        self.predicted_from = None
         self.update()
 
     def has_data(self):
         return len(self.timestamps) >= 2 and len(self.model_v) >= 2
+
+    def prediction_split(self):
+        """返回预测段的起始索引（该索引及之后画虚线）；无预测段返回 None。
+
+        真实观察 + 平滑历史是实线，越过最后一次自评的外推部分是虚线——
+        用户必须能一眼看出"哪些是测出来的、哪些是猜的"。
+        """
+        if self.predicted_from is None or not self.timestamps:
+            return None
+        for i, ts in enumerate(self.timestamps):
+            if ts > self.predicted_from:
+                return max(1, i)
+        return None
 
     # ================================================================
     # 坐标映射
@@ -143,7 +159,6 @@ class EmotionCurveWidget(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
         p.setRenderHint(QPainter.TextAntialiasing, True)
-        w, h = self.width(), self.height()
 
         # 纸面
         p.fillRect(self.rect(), QColor(COLORS['surface']))
@@ -153,23 +168,57 @@ class EmotionCurveWidget(QWidget):
             p.setFont(app_font(11))
             p.drawText(self.rect(), Qt.AlignCenter,
                        "开始记录后，这里会出现你的情绪曲线")
+            self._static_key = None
             self._static_cache = None
             return
 
-        panels = (['valence', 'arousal'] if self.series == 'both'
-                  and len(self.model_a) >= 2 else [self.series])
+        panels = self._panels()
         n = len(panels)
+
+        # 静态层（网格 / 刻度 / 轴标签）走 pixmap 缓存：尺寸、面板、时间范围不变就不重画
+        p.drawPixmap(0, 0, self._ensure_static(panels))
 
         for i, kind in enumerate(panels):
             x0, y0, pw, ph = self._plot_rect(i, n)
-            self._paint_static(p, x0, y0, pw, ph, kind)
             self._paint_series(p, x0, y0, pw, ph, kind)
 
-        # 静态层失效标记（尺寸变化时重画）
-        key = (w, h, self.series, n)
-        if self._static_key != key:
-            self._static_key = key
-            self._static_cache = None
+    # ---------- 静态层缓存 ----------
+    def _panels(self):
+        return (['valence', 'arousal'] if self.series == 'both'
+                and len(self.model_a) >= 2 else [self.series])
+
+    def _static_key_now(self, panels):
+        """静态层只依赖：尺寸、面板、时间范围、是否紧凑。
+
+        注意**不含数据值**——数据变了只需要重画数据层，网格和刻度不用动。
+        """
+        t0 = self.timestamps[0] if self.timestamps else 0.0
+        t1 = self.timestamps[-1] if self.timestamps else 0.0
+        return (self.width(), self.height(), tuple(panels), self.compact,
+                round(t0, 3), round(t1 - t0, 3))
+
+    def _ensure_static(self, panels):
+        key = self._static_key_now(panels)
+        if key == self._static_key and self._static_cache is not None:
+            return self._static_cache
+
+        dpr = self.devicePixelRatioF() if hasattr(self, "devicePixelRatioF") else 1.0
+        pm = QPixmap(max(1, int(self.width() * dpr)), max(1, int(self.height() * dpr)))
+        pm.setDevicePixelRatio(dpr)
+        pm.fill(QColor(COLORS['surface']))
+
+        pp = QPainter(pm)
+        pp.setRenderHint(QPainter.Antialiasing, True)
+        pp.setRenderHint(QPainter.TextAntialiasing, True)
+        n = len(panels)
+        for i, kind in enumerate(panels):
+            x0, y0, pw, ph = self._plot_rect(i, n)
+            self._paint_static(pp, x0, y0, pw, ph, kind)
+        pp.end()
+
+        self._static_key = key
+        self._static_cache = pm
+        return pm
 
     # ---------- 静态层：网格 + 刻度 + 轴标签 ----------
     def _paint_static(self, p, x0, y0, pw, ph, kind):
@@ -268,23 +317,34 @@ class EmotionCurveWidget(QWidget):
                 p.drawEllipse(QPointF(x, y), 2.2, 2.2)
 
         # ④ 模型线 —— 单次 strokePath（修串珠的关键）
+        #    越过最后一次自评的部分是**预测**，用虚线画：用户要能看出哪些是猜的。
         if len(model) >= 2:
-            path = QPainterPath()
-            first = True
-            for i in idx:
-                x = self._x(self.timestamps[i], t0, span, x0, pw)
-                y = self._y(model[i], y0, ph)
-                if first:
-                    path.moveTo(x, y)
-                    first = False
-                else:
-                    path.lineTo(x, y)
-            pen = QPen(QColor(COLORS['accent']), 2.0)
-            pen.setCapStyle(Qt.SquareCap)      # 硬边，不用 RoundCap
-            pen.setJoinStyle(Qt.MiterJoin)     # 硬拐角
-            p.setPen(pen)
-            p.setBrush(Qt.NoBrush)
-            p.drawPath(path)
+            split = self.prediction_split()
+            solid = idx if split is None else [i for i in idx if i < split]
+            dashed = [] if split is None else [i for i in idx if i >= split]
+            if dashed and solid:
+                dashed = [solid[-1]] + dashed      # 预测段与实线接上，避免断口
+
+            def _stroke(indices, style):
+                path = QPainterPath()
+                for n_i, i in enumerate(indices):
+                    x = self._x(self.timestamps[i], t0, span, x0, pw)
+                    y = self._y(model[i], y0, ph)
+                    if n_i == 0:
+                        path.moveTo(x, y)
+                    else:
+                        path.lineTo(x, y)
+                pen = QPen(QColor(COLORS['accent']), 2.0, style)
+                pen.setCapStyle(Qt.SquareCap)      # 硬边，不用 RoundCap
+                pen.setJoinStyle(Qt.MiterJoin)     # 硬拐角
+                p.setPen(pen)
+                p.setBrush(Qt.NoBrush)
+                p.drawPath(path)
+
+            if len(solid) >= 2:
+                _stroke(solid, Qt.SolidLine)
+            if len(dashed) >= 2:
+                _stroke(dashed, Qt.DashLine)
 
             # ⑤ 当前点
             cx = self._x(self.timestamps[idx[-1]], t0, span, x0, pw)

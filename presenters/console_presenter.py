@@ -765,5 +765,7 @@ class ConsolePresenter(QObject):
         self.curve_changed.emit({
             "ts": ts_list, "mv": mv, "ma": ma, "vv": vv, "va": va,
             "baseline_v": baseline_v, "raw": raw,
+            # 最后一次自评之后的点都是外推 → 视图画虚线
+            "predicted_from": self._last_obs_ts,
         })
 

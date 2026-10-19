@@ -33,6 +33,7 @@
 | [`refactor-v4/03-阶段2-统一查询.md`](refactor-v4/03-阶段2-统一查询.md) | Phase 2：query_curve（窗口/分辨率/缓存），主窗与挂件共用一份 payload |
 | [`refactor-v4/04-阶段3-增量衰减.md`](refactor-v4/04-阶段3-增量衰减.md) | Phase 3：内核 predict_step 原语 + 衰减尾巴增量推进（15.62ms→0.30ms） |
 | [`refactor-v4/05-阶段4-生命周期与刷新.md`](refactor-v4/05-阶段4-生命周期与刷新.md) | Phase 4：关主窗≠退出、挂件常驻、5 分钟刷新、显式退出入口 |
+| [`refactor-v4/06-阶段5-曲线显示与性能.md`](refactor-v4/06-阶段5-曲线显示与性能.md) | Phase 5：静态层缓存真正生效、预测段虚线、widgets.py 清死控件 |
 
 ## UI 重构（历史）
 

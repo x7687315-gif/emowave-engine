@@ -308,7 +308,8 @@ class MiniWindow(QWidget):
     def _on_curve(self, payload):
         self.curve.set_data(payload["ts"], payload["mv"], payload["ma"],
                             payload["vv"], payload["va"],
-                            baseline_v=payload["baseline_v"], raw=payload["raw"])
+                            baseline_v=payload["baseline_v"], raw=payload["raw"],
+                            predicted_from=payload.get("predicted_from"))
 
     def _on_mode(self, mode):
         if mode == "recording":

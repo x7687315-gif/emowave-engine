@@ -490,6 +490,7 @@ class MainConsole(QWidget):
             payload["ts"], payload["mv"], payload["ma"],
             payload["vv"], payload["va"],
             baseline_v=payload["baseline_v"], raw=payload["raw"],
+            predicted_from=payload.get("predicted_from"),
         )
 
     def _refresh_history(self):

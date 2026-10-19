@@ -108,6 +108,7 @@ class StateQuery:
             "vv": [traj.var_valence[i] for i in idx],
             "va": [traj.var_arousal[i] for i in idx],
             "baseline_v": baseline.valence if baseline is not None else 0.5,
+            "predicted_from": None,          # 历史曲线不含预测段
             "raw": [(o.timestamp, o.valence) for o in observations
                     if lo <= o.timestamp <= hi],
         }

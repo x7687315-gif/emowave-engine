@@ -693,3 +693,49 @@ def test_baseline_change_invalidates_tail(qapp):
     # 新尾巴的第一个点应比旧基线更靠近新基线
     new_baseline = p.baseline_ctrl.current.valence
     assert abs(p._tail["pts"][-1][1] - new_baseline) < 0.5
+
+
+# ================================================================
+# v4 Phase 5：预测段标记
+# ================================================================
+
+def test_historical_payload_has_no_prediction(qapp):
+    """历史曲线（RTS 平滑）里没有预测段。"""
+    p, _t0 = _seeded_presenter(qapp, n=10)
+    assert p.curve_payload()["predicted_from"] is None
+
+
+def test_decay_payload_marks_predicted_from(qapp):
+    """衰减尾巴要标出"从哪一刻起是外推"，视图据此画虚线。"""
+    p, clock = _decaying_presenter(qapp)
+    captured = []
+    p.curve_changed.connect(lambda d: captured.append(d))
+
+    clock.advance(5)
+    p.decay_step()
+
+    assert captured, "衰减应推送曲线"
+    assert captured[-1]["predicted_from"] == pytest.approx(p._last_obs_ts)
+
+
+# ================================================================
+# v4 Phase 5：预测段标记
+# ================================================================
+
+def test_historical_payload_has_no_prediction(qapp):
+    """历史曲线（RTS 平滑）里没有预测段。"""
+    p, _t0 = _seeded_presenter(qapp, n=10)
+    assert p.curve_payload()["predicted_from"] is None
+
+
+def test_decay_payload_marks_predicted_from(qapp):
+    """衰减尾巴要标出"从哪一刻起是外推"，视图据此画虚线。"""
+    p, clock = _decaying_presenter(qapp)
+    captured = []
+    p.curve_changed.connect(lambda d: captured.append(d))
+
+    clock.advance(5)
+    p.decay_step()
+
+    assert captured, "衰减应推送曲线"
+    assert captured[-1]["predicted_from"] == pytest.approx(p._last_obs_ts)
