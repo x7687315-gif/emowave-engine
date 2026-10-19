@@ -42,7 +42,7 @@ from .engine import (
     get_archetype, DEFAULT_ARCHETYPE_KEY,
     Baseline, BaselineSource,
     StateEstimator, BaselineController, Calibrator,
-    predict_forward,
+    predict_forward, predict_step,
 )
 from .observation_recorder import ObservationRecorder
 from .snapshot_store import SnapshotStore
@@ -117,6 +117,14 @@ class ConsolePresenter(QObject):
         # 曲线缓存：数据/参数/基线/窗口都没变就不重算（Phase 2）
         self._curve_key = None
         self._curve_cache = None
+
+        # 衰减尾巴的增量状态（Phase 3）：{x, P, horizon, pts}
+        # 以前每个 tick 都从 last_obs 重算整条尾巴（O(h) 每 tick → 累计 O(h²)）
+        self._tail = None
+
+        # 衰减尾巴的增量状态（Phase 3）：{x, P, horizon, pts}
+        # 以前每个 tick 都从 last_obs 重算整条尾巴（O(h) 每 tick → 累计 O(h²)）
+        self._tail = None
 
         # 记录中 1Hz 采样用的"当前输入值"（由视图滑杆推动；
         # 默认值与 InputPanel 的滑杆初值一致：效价 50 / 唤醒 40）
@@ -264,7 +272,7 @@ class ConsolePresenter(QObject):
         self.last_horizon = max(0.0, horizon)
         if horizon <= 0:
             return
-        pts = self._decay_points(horizon)          # 向基线衰减 + 方差递增
+        pts = self._tail_points(horizon)           # 增量外推（只推新增的一段）
         self._emit_curve(points=pts)
         last_v, last_a = (pts[-1][1], pts[-1][2]) if pts else (
             self.states[-1][1].valence, self.states[-1][1].arousal)
@@ -296,6 +304,68 @@ class ConsolePresenter(QObject):
         base = self._last_obs_ts
         return [(base + p["timestamp_offset"], p["valence"], p["arousal"],
                  p["var_valence"], p["var_arousal"]) for p in traj]
+
+    def _tail_points(self, horizon: float):
+        """增量外推：只把尾巴从上次位置往前推 (horizon - 已推) 秒。
+
+        与 `_decay_points(horizon)` 的关系：数学完全相同（都走内核 `predict_step`），
+        区别只在起点——本方法从**上次推到的状态**继续，而不是每次都回到 last_obs。
+        因此单 tick 成本是 O(Δt) 而不是 O(horizon)，累计从 O(h²) 降到 O(h)。
+        """
+        if self._tail is None or horizon < self._tail["horizon"]:
+            # 新一波 / 时间回退（例如基线变了要重新起算）→ 从当前估计重建
+            self._tail = {
+                "x": self.estimator.state_vector,
+                "P": self.estimator.covariance,
+                "horizon": 0.0,
+                "pts": [],
+            }
+        mean = (self.baseline_ctrl.current.valence,
+                self.baseline_ctrl.current.arousal)
+        tail = self._tail
+        remaining = horizon - tail["horizon"]
+        while remaining >= DECAY_DT:
+            tail["x"], tail["P"] = predict_step(
+                tail["x"], tail["P"], self.params, DECAY_DT, mean)
+            tail["horizon"] += DECAY_DT
+            tail["pts"].append((
+                self._last_obs_ts + tail["horizon"],
+                tail["x"][0], tail["x"][2],
+                tail["P"][0][0], tail["P"][2][2],
+            ))
+            remaining -= DECAY_DT
+        return tail["pts"]
+
+    def _tail_points(self, horizon: float):
+        """增量外推：只把尾巴从上次位置往前推 (horizon - 已推) 秒。
+
+        与 `_decay_points(horizon)` 的关系：数学完全相同（都走内核 `predict_step`），
+        区别只在起点——本方法从**上次推到的状态**继续，而不是每次都回到 last_obs。
+        因此单 tick 成本是 O(Δt) 而不是 O(horizon)，累计从 O(h²) 降到 O(h)。
+        """
+        if self._tail is None or horizon < self._tail["horizon"]:
+            # 新一波 / 时间回退（例如基线变了要重新起算）→ 从当前估计重建
+            self._tail = {
+                "x": self.estimator.state_vector,
+                "P": self.estimator.covariance,
+                "horizon": 0.0,
+                "pts": [],
+            }
+        mean = (self.baseline_ctrl.current.valence,
+                self.baseline_ctrl.current.arousal)
+        tail = self._tail
+        remaining = horizon - tail["horizon"]
+        while remaining >= DECAY_DT:
+            tail["x"], tail["P"] = predict_step(
+                tail["x"], tail["P"], self.params, DECAY_DT, mean)
+            tail["horizon"] += DECAY_DT
+            tail["pts"].append((
+                self._last_obs_ts + tail["horizon"],
+                tail["x"][0], tail["x"][2],
+                tail["P"][0][0], tail["P"][2][2],
+            ))
+            remaining -= DECAY_DT
+        return tail["pts"]
 
     def _end_wave(self):
         """一波结束：曲线消失、回到待记录(idle)。
@@ -486,6 +556,8 @@ class ConsolePresenter(QObject):
     # 会红。同步责任现在归 presenter（换人群换 estimator 后也不会失效）。
     def _sync_estimator_baseline(self):
         self.estimator.baseline = self.baseline_ctrl.current
+        self._tail = None            # 均值变了，旧尾巴的终点不再适用
+        self._tail = None            # 均值变了，旧尾巴的终点不再适用
         self.baseline_changed.emit(self.baseline_ctrl.current.valence,
                                    self.baseline_ctrl.current.arousal)
 
@@ -548,6 +620,7 @@ class ConsolePresenter(QObject):
         self.last_horizon = 0.0
         self.latest_state = None
         self.latest_state_ts = 0.0
+        self._tail = None
         self.recorder.reset()
         self.recorder.set_enabled(False)
         self.timer.stop()

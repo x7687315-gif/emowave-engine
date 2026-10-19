@@ -621,3 +621,75 @@ def test_curve_payload_none_when_insufficient(qapp):
     p.toggle_recording(True)
     p.sample(0.6, 0.5)
     assert p.curve_payload() is None
+
+
+# ================================================================
+# v4 Phase 3：衰减尾巴增量推进
+# ================================================================
+
+def _decaying_presenter(qapp, n=5, v=0.95, a=0.9):
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    p = _presenter(qapp, clock=clock)
+    p.toggle_recording(True)
+    for _ in range(n):
+        clock.advance(1)
+        p.sample(v, a)
+    p.toggle_recording(False)
+    return p, clock
+
+
+def test_decay_tail_is_incremental(qapp, monkeypatch):
+    """60 次 tick 只应推进约 60 步，而不是 1+2+…+60=1830 步。"""
+    from presenters import console_presenter as cp
+
+    calls = {"n": 0}
+    original = cp.predict_step
+
+    def counting(*args, **kwargs):
+        calls["n"] += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(cp, "predict_step", counting)
+
+    p, clock = _decaying_presenter(qapp)
+    calls["n"] = 0
+    for _ in range(60):
+        clock.advance(1)
+        p.decay_step()
+
+    assert 55 <= calls["n"] <= 70          # 线性，不是二次
+
+
+def test_decay_tail_matches_from_scratch(qapp):
+    """增量推进与一次性重算必须给出同一个终点（数学等价）。"""
+    p, clock = _decaying_presenter(qapp)
+    for _ in range(60):
+        clock.advance(1)
+        p.decay_step()
+
+    incremental = p._tail_points(60.0)[-1]
+    scratch = p._decay_points(60.0)[-1]
+
+    assert incremental[1] == pytest.approx(scratch[1], abs=1e-9)   # valence
+    assert incremental[2] == pytest.approx(scratch[2], abs=1e-9)   # arousal
+    assert incremental[3] == pytest.approx(scratch[3], abs=1e-9)   # var_v
+
+
+def test_baseline_change_invalidates_tail(qapp):
+    """衰减中改基线 → 尾巴必须以新均值为准重建，不能沿用旧终点。"""
+    p, clock = _decaying_presenter(qapp)
+    for _ in range(30):
+        clock.advance(1)
+        p.decay_step()
+    assert p._tail is not None
+
+    p.nudge(+0.1)
+    assert p._tail is None                  # 旧尾巴作废
+
+    clock.advance(1)
+    p.decay_step()
+    assert p._tail is not None
+    # 新尾巴的第一个点应比旧基线更靠近新基线
+    new_baseline = p.baseline_ctrl.current.valence
+    assert abs(p._tail["pts"][-1][1] - new_baseline) < 0.5

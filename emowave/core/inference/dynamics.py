@@ -397,6 +397,70 @@ class DynamicsLearner:
 # ============================================================
 
 
+def predict_step(
+    state_vector: Sequence[float],
+    covariance: Sequence[Sequence[float]],
+    params: ModelParameters,
+    dt: float,
+    mean: Sequence[float] = (0.5, 0.5),
+    transition: Sequence[Sequence[float]] = None,
+    noise: Sequence[Sequence[float]] = None,
+):
+    """**单步**预测（无观测）：x ← F·x，P ← F·P·Fᵀ + Q。
+
+    这是 v4 抽出来的最小原语。存在的理由：
+      · `predict_forward` 需要"一次算很多步"，但它不该是唯一的入口；
+      · 衰减尾巴要**增量**推进（每秒只推一步），而不是每秒从零重算整条尾巴
+        （Phase 0 实测：horizon 600s 时每次 13.56ms，累计 O(h²)）。
+
+    输入输出都用**绝对坐标**（位置 = 偏离 + 基线），偏离空间的变换在本函数内部完成，
+    与 `predict_forward` 保持同一套语义。
+
+    Args:
+        state_vector: 当前状态 [v, v̇, a, ȧ]（绝对坐标）
+        covariance: 4×4 协方差
+        params: 个人参数
+        dt: 步长（秒）
+        mean: 基线 (m_v, m_a)
+        transition: 可选的预计算 F(dt)（批量调用时避免重复构造）
+        noise: 可选的预计算 Q(dt)
+
+    Returns:
+        (state_vector, covariance)：推进一步后的绝对状态与协方差
+    """
+    if dt <= 0:
+        raise ValueError(f"predict_step: dt 必须为正，得到 {dt}")
+    m_v = float(mean[0])
+    m_a = float(mean[1])
+
+    lam_v = params.lambda_valence()
+    lam_a = params.lambda_arousal()
+    f = transition if transition is not None else build_transition(lam_v, lam_a, dt)
+    q = noise if noise is not None else build_process_noise(
+        params.sigma_valence, params.sigma_arousal, lam_v, lam_a, dt
+    )
+
+    # 偏离空间：位置减去均值，速度不变（均值为常数，速度即偏离的速度）
+    x = [
+        float(state_vector[_IDX_V]) - m_v,
+        float(state_vector[_IDX_DV]),
+        float(state_vector[_IDX_A]) - m_a,
+        float(state_vector[_IDX_DA]),
+    ]
+    x = linalg.mul_vec(f, x)
+
+    # 偏离裁剪：位置（偏离+均值）应在 [0,1]
+    v_abs = _clip(x[_IDX_V] + m_v)
+    a_abs = _clip(x[_IDX_A] + m_a)
+    x[_IDX_V] = v_abs - m_v
+    x[_IDX_A] = a_abs - m_a
+
+    p = linalg.add(
+        linalg.mul(linalg.mul(f, covariance), linalg.transpose(f)), q
+    )
+    return [v_abs, x[_IDX_DV], a_abs, x[_IDX_DA]], p
+
+
 def predict_forward(
     state_vector: Sequence[float],
     covariance: Sequence[Sequence[float]],
@@ -434,39 +498,30 @@ def predict_forward(
         return []
     m_v = float(mean[0])
     m_a = float(mean[1])
-    # 偏离空间：位置减去均值，速度不变（均值为常数，速度即偏离的速度）
-    x = [
-        float(state_vector[_IDX_V]) - m_v,
-        float(state_vector[_IDX_DV]),
-        float(state_vector[_IDX_A]) - m_a,
-        float(state_vector[_IDX_DA]),
-    ]
-    p = [list(row) for row in covariance]
     lam_v = params.lambda_valence()
     lam_a = params.lambda_arousal()
 
+    # F / Q 只与 dt 有关，批量推进时构造一次即可（单步原语接收它们以避免重复计算）
     f = build_transition(lam_v, lam_a, dt)
     q = build_process_noise(
         params.sigma_valence, params.sigma_arousal, lam_v, lam_a, dt
     )
 
+    x = [float(state_vector[_IDX_V]), float(state_vector[_IDX_DV]),
+         float(state_vector[_IDX_A]), float(state_vector[_IDX_DA])]
+    p = [list(row) for row in covariance]
+
     steps = int(horizon_sec / dt)
     traj: List[Dict[str, float]] = []
     for i in range(steps):
-        x = linalg.mul_vec(f, x)
-        # 偏离裁剪：位置（偏离+均值）应在 [0,1]，即偏离在 [-m, 1-m]
-        v_abs = _clip(x[_IDX_V] + m_v)
-        a_abs = _clip(x[_IDX_A] + m_a)
-        x[_IDX_V] = v_abs - m_v
-        x[_IDX_A] = a_abs - m_a
-        p = linalg.add(linalg.mul(linalg.mul(f, p), linalg.transpose(f)), q)
+        x, p = predict_step(x, p, params, dt, mean, transition=f, noise=q)
         var_v = max(0.0, p[_IDX_V][_IDX_V])
         var_a = max(0.0, p[_IDX_A][_IDX_A])
         traj.append(
             {
                 "timestamp_offset": (i + 1) * dt,
-                "valence": v_abs,
-                "arousal": a_abs,
+                "valence": x[_IDX_V],
+                "arousal": x[_IDX_A],
                 "var_valence": var_v,
                 "var_arousal": var_a,
                 "std_valence": math.sqrt(var_v),
