@@ -441,3 +441,183 @@ def test_resume_short_gap_keeps_wave_without_duplicating(qapp, tmp_path):
     assert p2.last_horizon == pytest.approx(60.0, abs=2.0)
     assert len(db.get_recent_events(limit=10)) == 1
     db.close()
+
+
+# ================================================================
+# v4 Phase 2：统一曲线查询
+# ================================================================
+
+def _seeded_presenter(qapp, n=60):
+    """造 n 条 1 秒间隔的自评，返回 (presenter, 起始时间戳)。"""
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    p = _presenter(qapp, clock=clock)
+    t0 = clock()
+    p.toggle_recording(True)
+    for i in range(n):
+        clock.advance(1)
+        p.sample(0.5 + 0.3 * ((i % 10) - 5) / 5.0, 0.45)
+    p.toggle_recording(False)
+    return p, t0
+
+
+def test_curve_payload_respects_window_and_resolution(qapp):
+    """给定窗口与显示点数：只返回窗口内的点，且不超过 resolution。"""
+    p, t0 = _seeded_presenter(qapp, n=60)
+    payload = p.curve_payload(start_ts=t0 + 10, end_ts=t0 + 40, resolution=10)
+
+    assert payload is not None
+    assert len(payload["ts"]) <= 10
+    assert min(payload["ts"]) >= t0 + 10 - 1e-6
+    assert max(payload["ts"]) <= t0 + 40 + 1e-6
+    assert all(t0 + 10 - 1e-6 <= ts <= t0 + 40 + 1e-6 for ts, _v in payload["raw"])
+
+
+def test_curve_payload_default_covers_all(qapp):
+    """不传窗口 = 全量（但受默认分辨率上限约束）。"""
+    p, _t0 = _seeded_presenter(qapp, n=60)
+    payload = p.curve_payload()
+    assert len(payload["ts"]) == 60
+    assert len(payload["mv"]) == len(payload["ts"]) == len(payload["vv"])
+
+
+def test_curve_cache_reuses_result_without_changes(qapp, monkeypatch):
+    """数据没变时重复查询不应重算（主窗 + 挂件同时取也只用算一次）。"""
+    from presenters import state_query as sq
+
+    calls = {"n": 0}
+    original = sq.RTSSmoother.smooth
+
+    def counting(self, observations, edits=None):
+        calls["n"] += 1
+        return original(self, observations, edits)
+
+    monkeypatch.setattr(sq.RTSSmoother, "smooth", counting)
+
+    p, _t0 = _seeded_presenter(qapp, n=20)
+    # 记录过程中最后一次 _emit_curve 已经把结果缓存好了
+    calls["n"] = 0
+    first = p.curve_payload()
+    second = p.curve_payload()
+    third = p.current_curve_payload()
+
+    assert calls["n"] == 0          # 三次查询，零次重算
+    assert first is second is third
+
+
+def test_curve_cache_invalidated_by_new_observation(qapp, monkeypatch):
+    from presenters import state_query as sq
+
+    calls = {"n": 0}
+    original = sq.RTSSmoother.smooth
+
+    def counting(self, observations, edits=None):
+        calls["n"] += 1
+        return original(self, observations, edits)
+
+    monkeypatch.setattr(sq.RTSSmoother, "smooth", counting)
+
+    p, _t0 = _seeded_presenter(qapp, n=10)
+    p.curve_payload()
+    calls["n"] = 0
+    p.sample(0.7, 0.6)                 # 新增一条 → 必须重算
+    p.curve_payload()
+    assert calls["n"] == 1
+
+
+def test_curve_payload_none_when_insufficient(qapp):
+    """少于 2 条观察时不画曲线（RTS 需要至少两点）。"""
+    p = _presenter(qapp)
+    p.toggle_recording(True)
+    p.sample(0.6, 0.5)
+    assert p.curve_payload() is None
+
+
+# ================================================================
+# v4 Phase 2：统一曲线查询
+# ================================================================
+
+def _seeded_presenter(qapp, n=60):
+    """造 n 条 1 秒间隔的自评，返回 (presenter, 起始时间戳)。"""
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    p = _presenter(qapp, clock=clock)
+    t0 = clock()
+    p.toggle_recording(True)
+    for i in range(n):
+        clock.advance(1)
+        p.sample(0.5 + 0.3 * ((i % 10) - 5) / 5.0, 0.45)
+    p.toggle_recording(False)
+    return p, t0
+
+
+def test_curve_payload_respects_window_and_resolution(qapp):
+    """给定窗口与显示点数：只返回窗口内的点，且不超过 resolution。"""
+    p, t0 = _seeded_presenter(qapp, n=60)
+    payload = p.curve_payload(start_ts=t0 + 10, end_ts=t0 + 40, resolution=10)
+
+    assert payload is not None
+    assert len(payload["ts"]) <= 10
+    assert min(payload["ts"]) >= t0 + 10 - 1e-6
+    assert max(payload["ts"]) <= t0 + 40 + 1e-6
+    assert all(t0 + 10 - 1e-6 <= ts <= t0 + 40 + 1e-6 for ts, _v in payload["raw"])
+
+
+def test_curve_payload_default_covers_all(qapp):
+    """不传窗口 = 全量（但受默认分辨率上限约束）。"""
+    p, _t0 = _seeded_presenter(qapp, n=60)
+    payload = p.curve_payload()
+    assert len(payload["ts"]) == 60
+    assert len(payload["mv"]) == len(payload["ts"]) == len(payload["vv"])
+
+
+def test_curve_cache_reuses_result_without_changes(qapp, monkeypatch):
+    """数据没变时重复查询不应重算（主窗 + 挂件同时取也只用算一次）。"""
+    from presenters import state_query as sq
+
+    calls = {"n": 0}
+    original = sq.RTSSmoother.smooth
+
+    def counting(self, observations, edits=None):
+        calls["n"] += 1
+        return original(self, observations, edits)
+
+    monkeypatch.setattr(sq.RTSSmoother, "smooth", counting)
+
+    p, _t0 = _seeded_presenter(qapp, n=20)
+    # 记录过程中最后一次 _emit_curve 已经把结果缓存好了
+    calls["n"] = 0
+    first = p.curve_payload()
+    second = p.curve_payload()
+    third = p.current_curve_payload()
+
+    assert calls["n"] == 0          # 三次查询，零次重算
+    assert first is second is third
+
+
+def test_curve_cache_invalidated_by_new_observation(qapp, monkeypatch):
+    from presenters import state_query as sq
+
+    calls = {"n": 0}
+    original = sq.RTSSmoother.smooth
+
+    def counting(self, observations, edits=None):
+        calls["n"] += 1
+        return original(self, observations, edits)
+
+    monkeypatch.setattr(sq.RTSSmoother, "smooth", counting)
+
+    p, _t0 = _seeded_presenter(qapp, n=10)
+    p.curve_payload()
+    calls["n"] = 0
+    p.sample(0.7, 0.6)                 # 新增一条 → 必须重算
+    p.curve_payload()
+    assert calls["n"] == 1
+
+
+def test_curve_payload_none_when_insufficient(qapp):
+    """少于 2 条观察时不画曲线（RTS 需要至少两点）。"""
+    p = _presenter(qapp)
+    p.toggle_recording(True)
+    p.sample(0.6, 0.5)
+    assert p.curve_payload() is None

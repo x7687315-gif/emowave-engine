@@ -30,6 +30,7 @@
 | [`refactor-v4/00-阶段0-审计与基线.md`](refactor-v4/00-阶段0-审计与基线.md) | Phase 0：现状审计、六项实测取证、复用清单、13 个待修问题、4 个待拍板决策 |
 | [`refactor-v4/01-阶段1-修改计划.md`](refactor-v4/01-阶段1-修改计划.md) | Phase 1 计划：观察/时间语义、TDD 顺序、改动清单、验收标准 |
 | [`refactor-v4/02-阶段1-实施记录.md`](refactor-v4/02-阶段1-实施记录.md) | Phase 1 实施：心跳不再造观察、墙钟推进、状态常驻、预测步回基线修复 |
+| [`refactor-v4/03-阶段2-统一查询.md`](refactor-v4/03-阶段2-统一查询.md) | Phase 2：query_curve（窗口/分辨率/缓存），主窗与挂件共用一份 payload |
 
 ## UI 重构（历史）
 

@@ -41,7 +41,7 @@ from .engine import (
     CorrectionDimension, CorrectionSource,
     get_archetype, DEFAULT_ARCHETYPE_KEY,
     Baseline, BaselineSource,
-    StateEstimator, RTSSmoother, BaselineController, Calibrator,
+    StateEstimator, BaselineController, Calibrator,
     predict_forward,
 )
 from .observation_recorder import ObservationRecorder
@@ -80,7 +80,8 @@ class ConsolePresenter(QObject):
 
         # ---- 时间与查询（v4 Phase 1：全应用唯一的时间源）----
         self.scheduler = WaveScheduler(clock=clock)
-        self.query = StateQuery(lambda: self.estimator, self.scheduler.now)
+        self.query = StateQuery(lambda: self.estimator, self.scheduler.now,
+                                lambda: self.baseline_ctrl.current)
         self.recorder = ObservationRecorder(clock=self.scheduler.now)
         self.recorder.committed.connect(self._on_committed)
         self.store = SnapshotStore(db)
@@ -112,6 +113,10 @@ class ConsolePresenter(QObject):
         self.latest_state = None
         self.latest_state_ts = 0.0
         self._load_latest_state()
+
+        # 曲线缓存：数据/参数/基线/窗口都没变就不重算（Phase 2）
+        self._curve_key = None
+        self._curve_cache = None
 
         # 记录中 1Hz 采样用的"当前输入值"（由视图滑杆推动；
         # 默认值与 InputPanel 的滑杆初值一致：效价 50 / 唤醒 40）
@@ -569,21 +574,26 @@ class ConsolePresenter(QObject):
     def current_count(self) -> int:
         return len(self.observations)
 
+    def curve_payload(self, start_ts=None, end_ts=None, resolution=None):
+        """统一曲线查询（带缓存）：主窗、挂件、未来的定时刷新都走这里。
+
+        缓存键覆盖所有会影响结果的输入：观察数、纠正数、参数对象、基线、窗口。
+        任一变化 → 重算；都没变 → 直接返回上次结果。
+        """
+        key = (len(self.observations), len(self._edits), id(self.params),
+               self.baseline_ctrl.current.valence, start_ts, end_ts, resolution)
+        if key == self._curve_key:
+            return self._curve_cache
+        payload = self.query.query_curve(
+            self.observations, self.params, self._edits,
+            start_ts=start_ts, end_ts=end_ts, resolution=resolution,
+        )
+        self._curve_key, self._curve_cache = key, payload
+        return payload
+
     def current_curve_payload(self):
         """当前应显示的曲线数据；无数据返回 None。"""
-        if len(self.states) < 2 or len(self.observations) < 2:
-            return None
-        traj = RTSSmoother(self.params).smooth(self.observations, self._edits)
-        raw = [(o.timestamp, o.valence) for o in self.observations]
-        return {
-            "ts": list(traj.timestamps),
-            "mv": list(traj.mean_valence),
-            "ma": list(traj.mean_arousal),
-            "vv": list(traj.var_valence),
-            "va": list(traj.var_arousal),
-            "baseline_v": self.baseline_ctrl.current.valence,
-            "raw": raw,
-        }
+        return self.curve_payload()
 
     def _readout_payload(self):
         """算出读数 payload（视图主动要一份时用，如启动时的首次刷新）。
@@ -618,22 +628,13 @@ class ConsolePresenter(QObject):
         refit=True  → 用 RTS 平滑重算整条显示曲线（采样/纠正后）
         points=…    → 直接推一段外推尾巴（衰减中）
         """
-        baseline_v = self.baseline_ctrl.current.valence
         if refit:
-            if len(self.observations) < 2:
+            payload = self.curve_payload()
+            if payload is None:
                 return
-            traj = RTSSmoother(self.params).smooth(self.observations, self._edits)
-            raw = [(o.timestamp, o.valence) for o in self.observations]
-            self.curve_changed.emit({
-                "ts": list(traj.timestamps),
-                "mv": list(traj.mean_valence),
-                "ma": list(traj.mean_arousal),
-                "vv": list(traj.var_valence),
-                "va": list(traj.var_arousal),
-                "baseline_v": baseline_v,
-                "raw": raw,
-            })
+            self.curve_changed.emit(payload)
             return
+        baseline_v = self.baseline_ctrl.current.valence
         if points is None:
             return
         ts_list = [t for t, _ in self.states] + [p[0] for p in points]

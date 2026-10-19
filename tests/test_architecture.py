@@ -191,9 +191,14 @@ def test_entrypoints_import_without_display():
     from emowave import __version__                        # noqa: F401
 
 
-# 代码体积预算（棘轮）：21.9k 行是 2026-10 瘦身后的水位，留 ~5% 余量。
+# 代码体积预算（棘轮）：21.9k 行是 2026-10 瘦身后的水位。
 # 要加功能就删等价代码；确实需要上调时，连同本注释一起改，并在 commit 里写清理由。
-LOC_BUDGET = 23000
+#
+# 上调记录：
+#   2026-10-19  23,000 → 24,000  v4 Phase1 时间/观察语义（含 16 条测试）
+#                               + Phase2 统一曲线查询（含 5 条测试）
+#                               当前 22,973，余量约 1,000（≈4%）
+LOC_BUDGET = 24000
 
 
 def test_python_line_budget():
