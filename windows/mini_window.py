@@ -175,6 +175,21 @@ class MiniWindow(QWidget):
             readings.addWidget(c)
         readings.addStretch(1)
 
+        # 记录中才出现的「记一笔」：挂件单独使用时，不拖滑条也能确认一次感受
+        self.btn_note = QPushButton("＋")
+        self.btn_note.setFixedSize(24, 24)
+        self.btn_note.setCursor(Qt.PointingHandCursor)
+        self.btn_note.setToolTip("记一笔（提交当前滑条值）")
+        self.btn_note.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {COLORS['ink_2']};"
+            f" border: 1px solid {COLORS['rule']}; padding: 0; font-size: 13px; }}"
+            f"QPushButton:hover {{ color: {COLORS['accent']};"
+            f" border-color: {COLORS['accent']}; }}"
+        )
+        self.btn_note.clicked.connect(self._commit_note)
+        self.btn_note.setVisible(False)
+        readings.addWidget(self.btn_note, 0, Qt.AlignVCenter)
+
         self.btn_record = QPushButton("●  开始")
         self.btn_record.setCursor(Qt.PointingHandCursor)
         self.btn_record.setProperty("primary", True)
@@ -316,13 +331,16 @@ class MiniWindow(QWidget):
             self.btn_record.setText("■  停止")
             self.btn_record.setEnabled(True)
             self.btn_record.setStyleSheet(self._btn_qss["recording"])
+            self.btn_note.setVisible(True)
         elif mode == "decaying":
             self.btn_record.setText("◌  推演中")
             self.btn_record.setEnabled(False)
+            self.btn_note.setVisible(False)
         else:
             self.btn_record.setText("●  开始")
             self.btn_record.setEnabled(True)
             self.btn_record.setStyleSheet(self._btn_qss["idle"])
+            self.btn_note.setVisible(False)
 
     def _on_count(self, n):
         self.setToolTip(f"{n} 次自评")
@@ -372,6 +390,10 @@ class MiniWindow(QWidget):
             self.show_main_requested.emit()
         elif chosen is act_quit:
             self.quit_requested.emit()
+
+    def _commit_note(self):
+        """「记一笔」：把 presenter 当前的输入值立即结算成一条自评。"""
+        self.presenter.commit_now()
 
     def _toggle(self):
         self.presenter.toggle_recording()

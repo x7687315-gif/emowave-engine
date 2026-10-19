@@ -1049,3 +1049,43 @@ def test_shutdown_is_idempotent(qapp, tmp_path):
     win.shutdown()
     win.shutdown()                   # 第二次不应抛异常
     assert win._shut_down is True
+
+
+def test_mini_note_button_commits_observation(qapp, tmp_path):
+    """挂件单独使用时也能记一笔：按钮只在记录中出现。"""
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    win, db = _make_window(tmp_path, clock=clock)
+    c = win.console
+    mini = win.mini
+
+    assert mini.btn_note.isHidden() is True
+    c._toggle_recording(True)
+    assert mini.btn_note.isHidden() is False
+
+    mini.btn_note.click()
+    assert len(c.observations) == 1
+
+    c._toggle_recording(False)
+    assert mini.btn_note.isHidden() is True
+    db.close()
+
+
+def test_mini_note_button_commits_observation(qapp, tmp_path):
+    """挂件单独使用时也能记一笔：按钮只在记录中出现。"""
+    from tests.helpers import FakeClock
+    clock = FakeClock()
+    win, db = _make_window(tmp_path, clock=clock)
+    c = win.console
+    mini = win.mini
+
+    assert mini.btn_note.isHidden() is True
+    c._toggle_recording(True)
+    assert mini.btn_note.isHidden() is False
+
+    mini.btn_note.click()
+    assert len(c.observations) == 1
+
+    c._toggle_recording(False)
+    assert mini.btn_note.isHidden() is True
+    db.close()
