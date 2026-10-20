@@ -66,3 +66,22 @@ def test_static_layer_cache_reused_until_size_changes(qapp):
     w.resize(420, 340)
     third = w._ensure_static(w._panels())
     assert third is not first
+
+
+def test_curve_renders_correction_marks(qapp):
+    """带修正点的曲线能真正画出来（render 走完整 paintEvent）。"""
+    from PyQt5.QtGui import QPixmap
+
+    w = _curve(qapp, n=10, predicted_from=1005.0)
+    w.set_data(w.timestamps, w.model_v, w.model_v, [0.01] * 10, [0.01] * 10,
+               baseline_v=0.5, raw=[(t, v) for t, v in zip(w.timestamps, w.model_v)],
+               predicted_from=1005.0,
+               corrections=[{"ts": 1003.0, "channel": "valence", "value": 0.9}])
+    assert w.corrections
+
+    pm = QPixmap(w.size())
+    pm.fill()
+    w.render(pm)
+    assert not pm.isNull()
+
+

@@ -967,3 +967,49 @@ def test_mini_note_button_commits_observation(qapp, tmp_path):
     db.close()
 
 
+
+
+# ================================================================
+# v5 Phase 3：首屏说清「这个数是几点的」
+# ================================================================
+
+def test_state_head_meta_reports_age_and_baseline(qapp):
+    """meta 行同时给出：距上次自评多久、模型估计时刻、与基线差。"""
+    from windows.state_head import StateHead
+
+    head = StateHead(on_correction_clicked=lambda: None)
+    now = 1_700_000_000.0
+    head.update_meta(0.62, state_ts=now, last_obs_ts=now - 720, baseline_v=0.50)
+
+    text = head.meta_label.text()
+    assert "距上次自评 12 分钟" in text
+    assert "模型估计" in text
+    assert "比基线 +12" in text
+
+
+def test_state_head_meta_says_just_now(qapp):
+    """刚自评完不显示「距上次 0 分钟」，也不重复报估计时刻。"""
+    from windows.state_head import StateHead
+
+    head = StateHead(on_correction_clicked=lambda: None)
+    now = 1_700_000_000.0
+    head.update_meta(0.48, state_ts=now, last_obs_ts=now - 5, baseline_v=0.50)
+
+    text = head.meta_label.text()
+    assert "刚刚自评" in text
+    assert "模型估计" not in text
+    assert "与基线持平" in text
+
+
+def test_state_head_meta_empty_without_state(qapp):
+    from windows.state_head import StateHead
+
+    head = StateHead(on_correction_clicked=lambda: None)
+    head.update_meta(0.5, state_ts=0.0)
+    assert head.meta_label.text() == ""
+
+
+# ================================================================
+# v5 Phase 3：首屏说清「这个数是几点的」
+# ================================================================
+

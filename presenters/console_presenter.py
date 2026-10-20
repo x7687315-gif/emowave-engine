@@ -819,12 +819,34 @@ class ConsolePresenter(QObject):
             self.observations, self.params, self._edits,
             start_ts=start_ts, end_ts=end_ts, resolution=resolution,
         )
+        if payload is not None:
+            payload["corrections"] = self.correction_marks()
         self._curve_key, self._curve_cache = key, payload
         return payload
 
     def current_curve_payload(self):
         """当前应显示的曲线数据；无数据返回 None。"""
         return self.curve_payload()
+
+    def correction_marks(self):
+        """用户修正点（画在曲线上，与真实观察点区分开）。"""
+        return [{"ts": e["timestamp"], "channel": e["channel"], "value": e["value"]}
+                for e in self._edits]
+
+    def correction_context(self):
+        """纠正框需要的全部数据——视图不再自己从 states/observations 拼。
+
+        Returns:
+            dict；`has_data` 为 False 时调用方应直接返回（少于 2 点无法编辑）
+        """
+        return {
+            "has_data": len(self.states) >= 2,
+            "timestamps": [t for t, _ in self.states],
+            "model_v": [s.valence for _, s in self.states],
+            "model_a": [s.arousal for _, s in self.states],
+            "baseline_v": self.baseline_ctrl.current.valence,
+            "current_state": self.states[-1][1] if self.states else None,
+        }
 
     def _readout_payload(self):
         """算出读数 payload（视图主动要一份时用，如启动时的首次刷新）。
@@ -880,5 +902,6 @@ class ConsolePresenter(QObject):
             "baseline_v": baseline_v, "raw": raw,
             # 最后一次自评之后的点都是外推 → 视图画虚线
             "predicted_from": self._last_obs_ts,
+            "corrections": self.correction_marks(),
         })
 

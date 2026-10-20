@@ -198,7 +198,14 @@ def test_entrypoints_import_without_display():
 #   2026-10-19  23,000 → 24,000  v4 Phase1 时间/观察语义（含 16 条测试）
 #                               + Phase2 统一曲线查询（含 5 条测试）
 #                               当前 22,973，余量约 1,000（≈4%）
-LOC_BUDGET = 24000
+#   2026-10-20  24,000 → 25,000  v5 Phase2 净减 56（23,760）
+#                               + Phase3 首屏 meta 行 / 修正标记 / correction_context
+#                               + 7 条测试，净 +221 → 23,981
+#                               上调理由：这一波是**真实功能增量**（UI 能回答
+#                               "这数是几点的"），不是维护性膨胀。余量留给
+#                               Phase4 悬浮窗与 Phase5 视觉；若 Phase5 还要涨，
+#                               必须回头删等价代码，不许再默默加预算。
+LOC_BUDGET = 25000
 
 
 def test_python_line_budget():

@@ -258,6 +258,11 @@ class MainConsole(QWidget):
     def observations(self):
         return self.presenter.observations
 
+    # ---- 以下转发**只为测试与既有子控件保留**，生产 UI 不应新增依赖 ----
+    # v5 审计结论：14 个转发属性里，生产代码只用到 states / params /
+    # calibrator / baseline_ctrl（都是传给子控件的 provider）；其余是测试缝。
+    # 本轮删掉 3 个确实无人使用的（_segment / _last_obs_ts / _decay_now）。
+    # 新代码请走 presenter 的公共接口（如 correction_context()），别再往下摸。
     @property
     def states(self):
         return self.presenter.states
@@ -271,10 +276,6 @@ class MainConsole(QWidget):
         self.presenter.recording = bool(value)
 
     @property
-    def _segment(self):
-        return self.presenter._segment
-
-    @property
     def _edits(self):
         return self.presenter._edits
 
@@ -285,14 +286,6 @@ class MainConsole(QWidget):
     @_wave_active.setter
     def _wave_active(self, value):
         self.presenter._wave_active = bool(value)
-
-    @property
-    def _last_obs_ts(self):
-        return self.presenter._last_obs_ts
-
-    @property
-    def _decay_now(self):
-        return self.presenter._decay_now
 
     @property
     def timer(self):
@@ -491,6 +484,11 @@ class MainConsole(QWidget):
         self._last_obs_ts_shown = last_obs_ts
         self.readout.update_values(valence, arousal, confidence, ci_text)
         self.status.update_state(valence, arousal, params_text)
+        # 一行说清「这个数是几点的」：距上次自评 / 模型估计时刻 / 与基线差
+        self.status.update_meta(
+            valence, state_ts=state_ts, last_obs_ts=last_obs_ts,
+            baseline_v=self.baseline_ctrl.current.valence,
+        )
         # 参数说明常驻「模型」Tab，同一份数据双处展示
         self.params_card.update_params(valence, arousal, params_text)
 
@@ -500,6 +498,7 @@ class MainConsole(QWidget):
             payload["vv"], payload["va"],
             baseline_v=payload["baseline_v"], raw=payload["raw"],
             predicted_from=payload.get("predicted_from"),
+            corrections=payload.get("corrections"),
         )
 
     def _refresh_history(self):
@@ -512,14 +511,15 @@ class MainConsole(QWidget):
     # 视图 → presenter 的动作转发（方法名与 v3 完全一致）
     # ================================================================
     def _open_correction_sheet(self):
-        if not self.states:
+        ctx = self.presenter.correction_context()
+        if not ctx["has_data"]:
             return
         sheet = CorrectionSheet(
-            timestamps=self.observations_ts_for_curve(),
-            model_v=[s.valence for _, s in self.states],
-            model_a=[s.arousal for _, s in self.states],
-            baseline_v=self.baseline_ctrl.current.valence,
-            current_state=self.states[-1][1],
+            timestamps=ctx["timestamps"],
+            model_v=ctx["model_v"],
+            model_a=ctx["model_a"],
+            baseline_v=ctx["baseline_v"],
+            current_state=ctx["current_state"],
             parent=self,
         )
         sheet.exec_()

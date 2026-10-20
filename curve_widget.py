@@ -68,6 +68,7 @@ class EmotionCurveWidget(QWidget):
         self.var_a = []
         self.baseline_v = 0.5
         self.raw = []                   # [(ts, value)]
+        self.corrections = []           # [{ts, channel, value}] 用户修正点
         self.predicted_from = None      # 该时刻之后的点属于「预测段」（虚线）
 
         # 静态层缓存（网格/刻度/标签）—— 尺寸不变就不重画
@@ -85,7 +86,7 @@ class EmotionCurveWidget(QWidget):
     # 数据
     # ================================================================
     def set_data(self, timestamps, model_v, model_a=None, var_v=None, var_a=None,
-                 baseline_v=0.5, raw=None, predicted_from=None):
+                 baseline_v=0.5, raw=None, predicted_from=None, corrections=None):
         self.timestamps = list(timestamps)
         self.model_v = list(model_v)
         self.model_a = list(model_a or [])
@@ -94,6 +95,8 @@ class EmotionCurveWidget(QWidget):
         self.baseline_v = baseline_v
         self.raw = list(raw or [])
         self.predicted_from = predicted_from
+        # 用户修正点：[{ts, channel, value}]，与真实观察点画法不同
+        self.corrections = list(corrections or [])
         self.update()
 
     def clear(self):
@@ -104,6 +107,7 @@ class EmotionCurveWidget(QWidget):
         self.var_a = []
         self.raw = []
         self.predicted_from = None
+        self.corrections = []
         self.update()
 
     def has_data(self):
@@ -315,6 +319,28 @@ class EmotionCurveWidget(QWidget):
                 x = self._x(ts, t0, span, x0, pw)
                 y = self._y(v, y0, ph)
                 p.drawEllipse(QPointF(x, y), 2.2, 2.2)
+
+        # ③.5 用户修正点（空心方框）—— 与真实观察的实心圆区分开：
+        #     "我改过的" 和 "我说过的" 不是一回事，用户必须一眼能分辨。
+        marks = [c for c in self.corrections if c.get("channel") == kind]
+        if marks:
+            p.setPen(QPen(QColor(COLORS['accent_ink']), 1.2))
+            p.setBrush(Qt.NoBrush)
+            for mark in marks:
+                x = self._x(mark["ts"], t0, span, x0, pw)
+                y = self._y(mark["value"], y0, ph)
+                p.drawRect(QRectF(x - 3.0, y - 3.0, 6.0, 6.0))
+
+        # ③.5 用户修正点（空心方框）—— 与真实观察的实心圆区分开：
+        #     "我改过的" 和 "我说过的" 不是一回事，用户必须一眼能分辨。
+        marks = [c for c in self.corrections if c.get("channel") == kind]
+        if marks:
+            p.setPen(QPen(QColor(COLORS['accent_ink']), 1.2))
+            p.setBrush(Qt.NoBrush)
+            for mark in marks:
+                x = self._x(mark["ts"], t0, span, x0, pw)
+                y = self._y(mark["value"], y0, ph)
+                p.drawRect(QRectF(x - 3.0, y - 3.0, 6.0, 6.0))
 
         # ④ 模型线 —— 单次 strokePath（修串珠的关键）
         #    越过最后一次自评的部分是**预测**，用虚线画：用户要能看出哪些是猜的。

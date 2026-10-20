@@ -77,6 +77,15 @@ class StateHead(QWidget):
         row1.addWidget(self.corr_btn, 0, Qt.AlignRight | Qt.AlignBottom)
         outer.addLayout(row1)
 
+        # ---- row1.5：一行说清「这个数是几点的」----
+        # v5：模型估计与真实自评必须可区分。没有这一行，用户会把
+        # 「两小时前自评、模型推演到现在」的数值当成「我刚说过」。
+        self.meta_label = QLabel("")
+        self.meta_label.setFont(app_font(9))
+        self.meta_label.setStyleSheet(f"color: {COLORS['muted']};")
+        self.meta_label.setMinimumWidth(0)
+        outer.addWidget(self.meta_label)
+
         # ---- row2：四读数（效价/唤醒主，置信/区间次）----
         row2 = QHBoxLayout()
         row2.setContentsMargins(0, 0, 0, 0)
@@ -124,6 +133,32 @@ class StateHead(QWidget):
         self.a_lbl.value_label.setText(f"{int(arousal * 100)}")
         self.c_lbl.value_label.setText(f"{int(confidence * 100)}%")
         self.ci_lbl.value_label.setText(ci_text)
+
+    def update_meta(self, valence, state_ts=0.0, last_obs_ts=0.0, baseline_v=None):
+        """一行说清「这个数是几点的、离上次自评多久、比基线高多少」。
+
+        没有这一行，用户会把「两小时前自评、模型推演到现在」的数值
+        当成「我刚说过」——这是三种数据（真实观察 / 模型估计 / 预测）
+        在界面上唯一的分界线。
+        """
+        if not state_ts:
+            self.meta_label.setText("")
+            return
+
+        parts = []
+        age = max(0.0, float(state_ts) - float(last_obs_ts)) if last_obs_ts else None
+        if age is None:
+            parts.append("还没有自评")
+        elif age < 60:
+            parts.append("刚刚自评")
+        else:
+            parts.append("距上次自评 " + _fmt_age(age))
+            parts.append("模型估计 " + _fmt_clock(state_ts))
+
+        if baseline_v is not None:
+            parts.append(_fmt_delta(valence, baseline_v))
+
+        self.meta_label.setText(" · ".join(parts))
 
     def reset_values(self):
         """全部回到占位符（停止推演 / 切换人群时）。"""
@@ -212,6 +247,36 @@ class ParamsExplainCard(QFrame):
 # ================================================================
 # 状态名派生（按 V×A 象限；不作诊断/评判）
 # ================================================================
+def _fmt_age(seconds: float) -> str:
+    """把秒数说成人话：12 分钟 / 3 小时 / 2 天。"""
+    seconds = max(0.0, float(seconds))
+    if seconds < 3600:
+        return "%d 分钟" % max(1, int(round(seconds / 60.0)))
+    if seconds < 86400:
+        return "%d 小时" % int(round(seconds / 3600.0))
+    return "%d 天" % int(round(seconds / 86400.0))
+
+
+def _fmt_clock(ts: float) -> str:
+    """时间戳 → HH:MM（当天）或 M月D日 HH:MM。"""
+    import datetime as _dt
+    moment = _dt.datetime.fromtimestamp(float(ts))
+    now = _dt.datetime.now()
+    if moment.date() == now.date():
+        return moment.strftime("%H:%M")
+    return moment.strftime("%m-%d %H:%M")
+
+
+def _fmt_delta(valence: float, baseline_v: float) -> str:
+    """与基线的差：比基线 +8 / 低于基线 8 / 与基线持平。"""
+    diff = int(round((float(valence) - float(baseline_v)) * 100))
+    if abs(diff) <= 2:
+        return "与基线持平"
+    if diff > 0:
+        return "比基线 +%d" % diff
+    return "低于基线 %d" % abs(diff)
+
+
 def _derive_state_name(valence: float, arousal: float) -> str:
     """由 0–1 的 V/A 返回中文状态名（不含主观评价）。"""
     v = valence >= 0.5

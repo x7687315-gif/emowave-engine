@@ -900,3 +900,44 @@ def test_corrupt_corrections_are_ignored(qapp, tmp_path):
         p = _presenter(qapp, db=db)
         assert p.corrections == []
     db.close()
+
+
+# ================================================================
+# v5 Phase 3：修正标记与纠正上下文
+# ================================================================
+
+def test_curve_payload_carries_correction_marks(qapp):
+    """修正点进 payload，且按维度分开——视图据此画不同标记。"""
+    p, clock = _decaying_presenter(qapp)
+    ts = p.states[-1][0]
+    p.ingest_corrections([(ts, 0.20, 0.60)])
+
+    payload = p.curve_payload()
+    marks = payload["corrections"]
+    assert len(marks) == 2
+    assert {m["channel"] for m in marks} == {"valence", "arousal"}
+    assert all(m["ts"] == pytest.approx(ts) for m in marks)
+
+
+def test_correction_context_bundles_what_sheet_needs(qapp):
+    """纠正框需要的数据由 presenter 一次给全，视图不再自己拼。"""
+    p, _clock = _decaying_presenter(qapp)
+    ctx = p.correction_context()
+
+    assert ctx["has_data"] is True
+    assert len(ctx["timestamps"]) == len(ctx["model_v"]) == len(ctx["model_a"]) == 5
+    assert ctx["current_state"] is not None
+    assert 0.0 <= ctx["baseline_v"] <= 1.0
+
+
+def test_correction_context_empty_without_data(qapp):
+    p = _presenter(qapp)
+    ctx = p.correction_context()
+    assert ctx["has_data"] is False
+    assert ctx["current_state"] is None
+
+
+# ================================================================
+# v5 Phase 3：修正标记与纠正上下文
+# ================================================================
+
