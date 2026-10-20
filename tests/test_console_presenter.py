@@ -387,7 +387,7 @@ def test_wave_end_keeps_latest_state(qapp):
     assert p.latest_state is not None
     assert p.current_mode() == "idle"
     # 读数仍可读（不是 "—"）
-    v, a, _c, ci, _p = p._readout_payload()
+    v, a, _c, ci, _p, _ts, _last = p._readout_payload()
     assert 0.0 <= v <= 1.0 and ci != "—"
 
 
@@ -537,92 +537,6 @@ def test_curve_payload_none_when_insufficient(qapp):
 # v4 Phase 2：统一曲线查询
 # ================================================================
 
-def _seeded_presenter(qapp, n=60):
-    """造 n 条 1 秒间隔的自评，返回 (presenter, 起始时间戳)。"""
-    from tests.helpers import FakeClock
-    clock = FakeClock()
-    p = _presenter(qapp, clock=clock)
-    t0 = clock()
-    p.toggle_recording(True)
-    for i in range(n):
-        clock.advance(1)
-        p.sample(0.5 + 0.3 * ((i % 10) - 5) / 5.0, 0.45)
-    p.toggle_recording(False)
-    return p, t0
-
-
-def test_curve_payload_respects_window_and_resolution(qapp):
-    """给定窗口与显示点数：只返回窗口内的点，且不超过 resolution。"""
-    p, t0 = _seeded_presenter(qapp, n=60)
-    payload = p.curve_payload(start_ts=t0 + 10, end_ts=t0 + 40, resolution=10)
-
-    assert payload is not None
-    assert len(payload["ts"]) <= 10
-    assert min(payload["ts"]) >= t0 + 10 - 1e-6
-    assert max(payload["ts"]) <= t0 + 40 + 1e-6
-    assert all(t0 + 10 - 1e-6 <= ts <= t0 + 40 + 1e-6 for ts, _v in payload["raw"])
-
-
-def test_curve_payload_default_covers_all(qapp):
-    """不传窗口 = 全量（但受默认分辨率上限约束）。"""
-    p, _t0 = _seeded_presenter(qapp, n=60)
-    payload = p.curve_payload()
-    assert len(payload["ts"]) == 60
-    assert len(payload["mv"]) == len(payload["ts"]) == len(payload["vv"])
-
-
-def test_curve_cache_reuses_result_without_changes(qapp, monkeypatch):
-    """数据没变时重复查询不应重算（主窗 + 挂件同时取也只用算一次）。"""
-    from presenters import state_query as sq
-
-    calls = {"n": 0}
-    original = sq.RTSSmoother.smooth
-
-    def counting(self, observations, edits=None):
-        calls["n"] += 1
-        return original(self, observations, edits)
-
-    monkeypatch.setattr(sq.RTSSmoother, "smooth", counting)
-
-    p, _t0 = _seeded_presenter(qapp, n=20)
-    # 记录过程中最后一次 _emit_curve 已经把结果缓存好了
-    calls["n"] = 0
-    first = p.curve_payload()
-    second = p.curve_payload()
-    third = p.current_curve_payload()
-
-    assert calls["n"] == 0          # 三次查询，零次重算
-    assert first is second is third
-
-
-def test_curve_cache_invalidated_by_new_observation(qapp, monkeypatch):
-    from presenters import state_query as sq
-
-    calls = {"n": 0}
-    original = sq.RTSSmoother.smooth
-
-    def counting(self, observations, edits=None):
-        calls["n"] += 1
-        return original(self, observations, edits)
-
-    monkeypatch.setattr(sq.RTSSmoother, "smooth", counting)
-
-    p, _t0 = _seeded_presenter(qapp, n=10)
-    p.curve_payload()
-    calls["n"] = 0
-    p.sample(0.7, 0.6)                 # 新增一条 → 必须重算
-    p.curve_payload()
-    assert calls["n"] == 1
-
-
-def test_curve_payload_none_when_insufficient(qapp):
-    """少于 2 条观察时不画曲线（RTS 需要至少两点）。"""
-    p = _presenter(qapp)
-    p.toggle_recording(True)
-    p.sample(0.6, 0.5)
-    assert p.curve_payload() is None
-
-
 # ================================================================
 # v4 Phase 3：衰减尾巴增量推进
 # ================================================================
@@ -640,17 +554,22 @@ def _decaying_presenter(qapp, n=5, v=0.95, a=0.9):
 
 
 def test_decay_tail_is_incremental(qapp, monkeypatch):
-    """60 次 tick 只应推进约 60 步，而不是 1+2+…+60=1830 步。"""
-    from presenters import console_presenter as cp
+    """60 次 tick 只应做约 60 步预测，而不是 1+2+…+60=1830 步。
+
+    v5 起推进统一走 `estimator.advance_to()`，所以这里数内核的 `_predict`
+    （真正的数学工作量），而不是 presenter 里的某个函数名——这样测试
+    不会因为实现换了个名字就失效。
+    """
+    from emowave.core.estimator.estimator import StateEstimator
 
     calls = {"n": 0}
-    original = cp.predict_step
+    original = StateEstimator._predict
 
-    def counting(*args, **kwargs):
+    def counting(self, *args, **kwargs):
         calls["n"] += 1
-        return original(*args, **kwargs)
+        return original(self, *args, **kwargs)
 
-    monkeypatch.setattr(cp, "predict_step", counting)
+    monkeypatch.setattr(StateEstimator, "_predict", counting)
 
     p, clock = _decaying_presenter(qapp)
     calls["n"] = 0
@@ -662,7 +581,11 @@ def test_decay_tail_is_incremental(qapp, monkeypatch):
 
 
 def test_decay_tail_matches_from_scratch(qapp):
-    """增量推进与一次性重算必须给出同一个终点（数学等价）。"""
+    """增量推进与一次性重算给出同一个终点（两条路径都从 last_obs 起算）。
+
+    v5：`_decay_points` 改为从重放出的 last_obs 状态起算，`_tail_points`
+    由 estimator 增量推进——两者数学同源，差异只在浮点累积。
+    """
     p, clock = _decaying_presenter(qapp)
     for _ in range(60):
         clock.advance(1)
@@ -671,9 +594,9 @@ def test_decay_tail_matches_from_scratch(qapp):
     incremental = p._tail_points(60.0)[-1]
     scratch = p._decay_points(60.0)[-1]
 
-    assert incremental[1] == pytest.approx(scratch[1], abs=1e-9)   # valence
-    assert incremental[2] == pytest.approx(scratch[2], abs=1e-9)   # arousal
-    assert incremental[3] == pytest.approx(scratch[3], abs=1e-9)   # var_v
+    assert incremental[1] == pytest.approx(scratch[1], abs=1e-6)   # valence
+    assert incremental[2] == pytest.approx(scratch[2], abs=1e-6)   # arousal
+    assert incremental[3] == pytest.approx(scratch[3], abs=1e-6)   # var_v
 
 
 def test_baseline_change_invalidates_tail(qapp):
@@ -722,224 +645,258 @@ def test_decay_payload_marks_predicted_from(qapp):
 # v4 Phase 5：预测段标记
 # ================================================================
 
-def test_historical_payload_has_no_prediction(qapp):
-    """历史曲线（RTS 平滑）里没有预测段。"""
-    p, _t0 = _seeded_presenter(qapp, n=10)
-    assert p.curve_payload()["predicted_from"] is None
+# ================================================================
+# v4 Phase 6：持久化与恢复加固
+# ================================================================
+
+BAD_SNAPSHOTS = [
+    "not-json-at-all",
+    '{"samples": "nope"}',
+    '{"samples": [["x", 0.5, 0.5]]}',
+    '{"samples": [[1000.0, 1.5, 0.5]]}',                 # 越界
+    '{"samples": [[1000.0, 0.5, 0.5], [999.0, 0.5, 0.5]]}',   # 乱序
+    '{"samples": [[1000.0, 0.5]]}',                      # 字段数不对
+    '{"samples": []}',
+    '{"samples": [[-1.0, 0.5, 0.5]]}',                   # 时间戳非法
+]
 
 
-def test_decay_payload_marks_predicted_from(qapp):
-    """衰减尾巴要标出"从哪一刻起是外推"，视图据此画虚线。"""
+@pytest.mark.parametrize("bad", BAD_SNAPSHOTS)
+def test_corrupt_wave_snapshot_is_discarded(qapp, tmp_path, bad):
+    """坏快照不能让启动崩溃，也不能被当成观察重放。"""
+    from db import DatabaseManager
+
+    db = DatabaseManager(str(tmp_path / "bad.db"))
+    db.set_state("active_wave", bad)
+
+    p = _presenter(qapp, db=db)
+    p.resume_active_wave()               # 不应抛异常
+
+    assert p.observations == []
+    assert db.get_state("active_wave", "") == ""   # 已清除
+    db.close()
+
+
+def test_resume_is_idempotent(qapp, tmp_path):
+    """重复调用 resume 不会把同一批观察插两遍。"""
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    clock = FakeClock()
+    db = DatabaseManager(str(tmp_path / "idem.db"))
+    p = _presenter(qapp, db=db, clock=clock)
+    p.toggle_recording(True)
+    for _ in range(5):
+        clock.advance(1)
+        p.sample(0.8, 0.7)
+    p.toggle_recording(False)
+
+    p2 = _presenter(qapp, db=db, clock=clock)
+    p2.resume_active_wave()
+    n1 = len(p2.observations)
+    p2.resume_active_wave()
+    assert n1 == 5
+    assert len(p2.observations) == 5
+    db.close()
+
+
+def test_restore_recent_context_ages_state(qapp, tmp_path):
+    """重启后没有未走完的波：用最近事件重建模型，把状态推到"现在"。"""
+    import json
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    now = 1_700_000_000.0
+    db = DatabaseManager(str(tmp_path / "ctx.db"))
+    raw = [[now - 60, 0.8, 0.7], [now - 59, 0.8, 0.7], [now - 58, 0.8, 0.7]]
+    db.save_event({
+        "event_id": "evt_ctx", "start_time": now - 60, "end_time": now - 58,
+        "peak_valence": 0.8, "peak_arousal": 0.7, "peak_intensity": 0.4,
+        "sample_count": 3, "raw_data": json.dumps(raw),
+    })
+
+    clock = FakeClock(now)
+    p = _presenter(qapp, db=db, clock=clock)
+    assert p.estimator.is_initialized is False
+
+    assert p.restore_recent_context() is True
+    assert p.observations == []                       # 不把历史塞进曲线
+    assert p.latest_state is not None
+    assert p.latest_state.timestamp == pytest.approx(now, abs=1.0)
+    db.close()
+
+
+def test_restore_recent_context_skips_stale_event(qapp, tmp_path):
+    """太久以前的事件不该影响"现在"。"""
+    import json
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    now = 1_700_000_000.0
+    old = now - 8 * 86400
+    db = DatabaseManager(str(tmp_path / "stale.db"))
+    db.save_event({
+        "event_id": "evt_old", "start_time": old, "end_time": old + 2,
+        "peak_valence": 0.9, "peak_arousal": 0.9, "peak_intensity": 0.6,
+        "sample_count": 3, "raw_data": json.dumps([[old, 0.9, 0.9]]),
+    })
+
+    p = _presenter(qapp, db=db, clock=FakeClock(now))
+    assert p.restore_recent_context() is False
+    assert p.latest_state is None
+    db.close()
+
+
+# ================================================================
+# v4 Phase 6：持久化与恢复加固
+# ================================================================
+
+BAD_SNAPSHOTS = [
+    "not-json-at-all",
+    '{"samples": "nope"}',
+    '{"samples": [["x", 0.5, 0.5]]}',
+    '{"samples": [[1000.0, 1.5, 0.5]]}',                 # 越界
+    '{"samples": [[1000.0, 0.5, 0.5], [999.0, 0.5, 0.5]]}',   # 乱序
+    '{"samples": [[1000.0, 0.5]]}',                      # 字段数不对
+    '{"samples": []}',
+    '{"samples": [[-1.0, 0.5, 0.5]]}',                   # 时间戳非法
+]
+
+
+
+
+# ================================================================
+# v5 Phase 2：单轨时间（恢复不重复推进 / 读数跟随曲线 / 纠正持久化）
+# ================================================================
+
+def _record_then_stop(qapp, clock, db=None, n=5, v=0.90, a=0.85):
+    p = _presenter(qapp, db=db, clock=clock)
+    p.toggle_recording(True)
+    for _ in range(n):
+        clock.advance(1)
+        p.sample(v, a)
+    p.toggle_recording(False)
+    return p
+
+
+def test_resume_does_not_double_advance(qapp, tmp_path):
+    """关机 60 秒后恢复：尾巴从 last_obs 起算，不被平移一个 horizon。
+
+    v4 的错法：先用 query_state() 把模型推到 now，尾巴再从 now 起算、
+    却把点标在 last_obs 之后 —— 标称 +1s 的点装的是 +61s 的值。
+    """
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    clock = FakeClock()
+    db = DatabaseManager(str(tmp_path / "dbl.db"))
+    p = _record_then_stop(qapp, clock, db=db)
+    last_obs = p._last_obs_ts
+
+    clock.advance(60)
+    p2 = _presenter(qapp, db=db, clock=clock)
+    p2.resume_active_wave()
+
+    pts = p2._tail["pts"]
+    assert pts[0][0] == pytest.approx(last_obs + 1.0, abs=1e-6)
+
+    # 首点必须是「1 秒后」的值，而不是「61 秒后」
+    expected_1s = p2._decay_points(1.0)[0]
+    assert pts[0][1] == pytest.approx(expected_1s[1], abs=1e-6)
+    assert pts[0][1] > 0.895
+
+    # 末点是「60 秒后」的值
+    expected_60s = p2._decay_points(60.0)[-1]
+    assert pts[-1][1] == pytest.approx(expected_60s[1], abs=1e-4)
+    db.close()
+
+
+def test_resume_curve_is_continuous(qapp, tmp_path):
+    """恢复后曲线不跳变：尾巴首点贴近历史末点。"""
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    clock = FakeClock()
+    db = DatabaseManager(str(tmp_path / "cont.db"))
+    p = _record_then_stop(qapp, clock, db=db)
+    last_value = p.observations[-1].valence
+
+    clock.advance(60)
+    p2 = _presenter(qapp, db=db, clock=clock)
+    p2.resume_active_wave()
+
+    first = p2._tail["pts"][0]
+    assert abs(first[1] - last_value) < 0.01, (
+        "恢复后首点 %.4f 与历史末点 %.4f 差距过大 → 曲线会跳变" % (first[1], last_value)
+    )
+    db.close()
+
+
+def test_latest_state_tracks_tail_during_decay(qapp):
+    """衰减全程：读数 == 曲线尾巴末点（1e-12），不再冻结在最后一次自评。"""
     p, clock = _decaying_presenter(qapp)
-    captured = []
-    p.curve_changed.connect(lambda d: captured.append(d))
+    for _ in range(400):
+        clock.advance(1)
+        p.decay_step()
+        assert p.latest_state.valence == pytest.approx(p._tail["pts"][-1][1], abs=1e-12)
+        assert p.latest_state.arousal == pytest.approx(p._tail["pts"][-1][2], abs=1e-12)
+    # 确实动了（不是一直停在初值）
+    assert p.latest_state.valence < 0.90
 
-    clock.advance(5)
+
+def test_latest_state_timestamp_follows_clock(qapp):
+    """读数的 timestamp 是「现在」，不是「最后一次自评」。"""
+    p, clock = _decaying_presenter(qapp)
+    clock.advance(120)
+    p.decay_step()
+    assert p.latest_state.timestamp == pytest.approx(clock(), abs=1e-6)
+    assert p.latest_state.timestamp > p._last_obs_ts
+
+
+def test_readout_payload_carries_timestamps(qapp):
+    """读数 payload 带上两个时间戳，UI 才能说清「这个数是几点的」。"""
+    p, clock = _decaying_presenter(qapp)
+    clock.advance(90)
     p.decay_step()
 
-    assert captured, "衰减应推送曲线"
-    assert captured[-1]["predicted_from"] == pytest.approx(p._last_obs_ts)
+    v, a, _c, _ci, _params, state_ts, last_obs_ts = p._readout_payload()
+    assert state_ts == pytest.approx(clock(), abs=1e-6)
+    assert last_obs_ts == pytest.approx(p._last_obs_ts, abs=1e-9)
+    assert state_ts > last_obs_ts
 
 
-# ================================================================
-# v4 Phase 6：持久化与恢复加固
-# ================================================================
-
-BAD_SNAPSHOTS = [
-    "not-json-at-all",
-    '{"samples": "nope"}',
-    '{"samples": [["x", 0.5, 0.5]]}',
-    '{"samples": [[1000.0, 1.5, 0.5]]}',                 # 越界
-    '{"samples": [[1000.0, 0.5, 0.5], [999.0, 0.5, 0.5]]}',   # 乱序
-    '{"samples": [[1000.0, 0.5]]}',                      # 字段数不对
-    '{"samples": []}',
-    '{"samples": [[-1.0, 0.5, 0.5]]}',                   # 时间戳非法
-]
-
-
-@pytest.mark.parametrize("bad", BAD_SNAPSHOTS)
-def test_corrupt_wave_snapshot_is_discarded(qapp, tmp_path, bad):
-    """坏快照不能让启动崩溃，也不能被当成观察重放。"""
-    from db import DatabaseManager
-
-    db = DatabaseManager(str(tmp_path / "bad.db"))
-    db.set_state("active_wave", bad)
-
-    p = _presenter(qapp, db=db)
-    p.resume_active_wave()               # 不应抛异常
-
-    assert p.observations == []
-    assert db.get_state("active_wave", "") == ""   # 已清除
-    db.close()
-
-
-def test_resume_is_idempotent(qapp, tmp_path):
-    """重复调用 resume 不会把同一批观察插两遍。"""
+def test_corrections_survive_restart(qapp, tmp_path):
+    """用户纠正跨会话保留，且重启后回灌 calibrator（不污染本波显示修正）。"""
     from db import DatabaseManager
     from tests.helpers import FakeClock
 
     clock = FakeClock()
-    db = DatabaseManager(str(tmp_path / "idem.db"))
+    db = DatabaseManager(str(tmp_path / "cor.db"))
     p = _presenter(qapp, db=db, clock=clock)
     p.toggle_recording(True)
-    for _ in range(5):
+    for _ in range(3):
         clock.advance(1)
-        p.sample(0.8, 0.7)
+        p.sample(0.80, 0.70)
+    ts = p.states[-1][0]
+
+    n = p.ingest_corrections([(ts, 0.30, 0.40)])
+    assert n == 2                        # 效价 + 唤醒各一条
+    assert len(p.corrections) == 2
     p.toggle_recording(False)
 
     p2 = _presenter(qapp, db=db, clock=clock)
-    p2.resume_active_wave()
-    n1 = len(p2.observations)
-    p2.resume_active_wave()
-    assert n1 == 5
-    assert len(p2.observations) == 5
+    assert len(p2.corrections) == 2      # 重启后仍在
+    assert p2._edits == []               # 但不当作本波曲线的显示修正
     db.close()
 
 
-def test_restore_recent_context_ages_state(qapp, tmp_path):
-    """重启后没有未走完的波：用最近事件重建模型，把状态推到"现在"。"""
-    import json
-    from db import DatabaseManager
-    from tests.helpers import FakeClock
-
-    now = 1_700_000_000.0
-    db = DatabaseManager(str(tmp_path / "ctx.db"))
-    raw = [[now - 60, 0.8, 0.7], [now - 59, 0.8, 0.7], [now - 58, 0.8, 0.7]]
-    db.save_event({
-        "event_id": "evt_ctx", "start_time": now - 60, "end_time": now - 58,
-        "peak_valence": 0.8, "peak_arousal": 0.7, "peak_intensity": 0.4,
-        "sample_count": 3, "raw_data": json.dumps(raw),
-    })
-
-    clock = FakeClock(now)
-    p = _presenter(qapp, db=db, clock=clock)
-    assert p.estimator.is_initialized is False
-
-    assert p.restore_recent_context() is True
-    assert p.observations == []                       # 不把历史塞进曲线
-    assert p.latest_state is not None
-    assert p.latest_state.timestamp == pytest.approx(now, abs=1.0)
-    db.close()
-
-
-def test_restore_recent_context_skips_stale_event(qapp, tmp_path):
-    """太久以前的事件不该影响"现在"。"""
-    import json
-    from db import DatabaseManager
-    from tests.helpers import FakeClock
-
-    now = 1_700_000_000.0
-    old = now - 8 * 86400
-    db = DatabaseManager(str(tmp_path / "stale.db"))
-    db.save_event({
-        "event_id": "evt_old", "start_time": old, "end_time": old + 2,
-        "peak_valence": 0.9, "peak_arousal": 0.9, "peak_intensity": 0.6,
-        "sample_count": 3, "raw_data": json.dumps([[old, 0.9, 0.9]]),
-    })
-
-    p = _presenter(qapp, db=db, clock=FakeClock(now))
-    assert p.restore_recent_context() is False
-    assert p.latest_state is None
-    db.close()
-
-
-# ================================================================
-# v4 Phase 6：持久化与恢复加固
-# ================================================================
-
-BAD_SNAPSHOTS = [
-    "not-json-at-all",
-    '{"samples": "nope"}',
-    '{"samples": [["x", 0.5, 0.5]]}',
-    '{"samples": [[1000.0, 1.5, 0.5]]}',                 # 越界
-    '{"samples": [[1000.0, 0.5, 0.5], [999.0, 0.5, 0.5]]}',   # 乱序
-    '{"samples": [[1000.0, 0.5]]}',                      # 字段数不对
-    '{"samples": []}',
-    '{"samples": [[-1.0, 0.5, 0.5]]}',                   # 时间戳非法
-]
-
-
-@pytest.mark.parametrize("bad", BAD_SNAPSHOTS)
-def test_corrupt_wave_snapshot_is_discarded(qapp, tmp_path, bad):
-    """坏快照不能让启动崩溃，也不能被当成观察重放。"""
+def test_corrupt_corrections_are_ignored(qapp, tmp_path):
+    """坏纠正数据按空处理，绝不阻断启动。"""
     from db import DatabaseManager
 
-    db = DatabaseManager(str(tmp_path / "bad.db"))
-    db.set_state("active_wave", bad)
-
-    p = _presenter(qapp, db=db)
-    p.resume_active_wave()               # 不应抛异常
-
-    assert p.observations == []
-    assert db.get_state("active_wave", "") == ""   # 已清除
-    db.close()
-
-
-def test_resume_is_idempotent(qapp, tmp_path):
-    """重复调用 resume 不会把同一批观察插两遍。"""
-    from db import DatabaseManager
-    from tests.helpers import FakeClock
-
-    clock = FakeClock()
-    db = DatabaseManager(str(tmp_path / "idem.db"))
-    p = _presenter(qapp, db=db, clock=clock)
-    p.toggle_recording(True)
-    for _ in range(5):
-        clock.advance(1)
-        p.sample(0.8, 0.7)
-    p.toggle_recording(False)
-
-    p2 = _presenter(qapp, db=db, clock=clock)
-    p2.resume_active_wave()
-    n1 = len(p2.observations)
-    p2.resume_active_wave()
-    assert n1 == 5
-    assert len(p2.observations) == 5
-    db.close()
-
-
-def test_restore_recent_context_ages_state(qapp, tmp_path):
-    """重启后没有未走完的波：用最近事件重建模型，把状态推到"现在"。"""
-    import json
-    from db import DatabaseManager
-    from tests.helpers import FakeClock
-
-    now = 1_700_000_000.0
-    db = DatabaseManager(str(tmp_path / "ctx.db"))
-    raw = [[now - 60, 0.8, 0.7], [now - 59, 0.8, 0.7], [now - 58, 0.8, 0.7]]
-    db.save_event({
-        "event_id": "evt_ctx", "start_time": now - 60, "end_time": now - 58,
-        "peak_valence": 0.8, "peak_arousal": 0.7, "peak_intensity": 0.4,
-        "sample_count": 3, "raw_data": json.dumps(raw),
-    })
-
-    clock = FakeClock(now)
-    p = _presenter(qapp, db=db, clock=clock)
-    assert p.estimator.is_initialized is False
-
-    assert p.restore_recent_context() is True
-    assert p.observations == []                       # 不把历史塞进曲线
-    assert p.latest_state is not None
-    assert p.latest_state.timestamp == pytest.approx(now, abs=1.0)
-    db.close()
-
-
-def test_restore_recent_context_skips_stale_event(qapp, tmp_path):
-    """太久以前的事件不该影响"现在"。"""
-    import json
-    from db import DatabaseManager
-    from tests.helpers import FakeClock
-
-    now = 1_700_000_000.0
-    old = now - 8 * 86400
-    db = DatabaseManager(str(tmp_path / "stale.db"))
-    db.save_event({
-        "event_id": "evt_old", "start_time": old, "end_time": old + 2,
-        "peak_valence": 0.9, "peak_arousal": 0.9, "peak_intensity": 0.6,
-        "sample_count": 3, "raw_data": json.dumps([[old, 0.9, 0.9]]),
-    })
-
-    p = _presenter(qapp, db=db, clock=FakeClock(now))
-    assert p.restore_recent_context() is False
-    assert p.latest_state is None
+    db = DatabaseManager(str(tmp_path / "badcor.db"))
+    for bad in ("{not json", '{"a": 1}', '[{"timestamp": 1.0}]', '[1, 2, 3]'):
+        db.set_state("corrections", bad)
+        p = _presenter(qapp, db=db)
+        assert p.corrections == []
     db.close()

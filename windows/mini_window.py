@@ -308,7 +308,11 @@ class MiniWindow(QWidget):
                 sl.setValue(val)
                 sl.blockSignals(False)
 
-    def _on_readouts(self, valence, arousal, confidence, ci_text, params_text):
+    def _on_readouts(self, valence, arousal, confidence, ci_text, params_text,
+                     state_ts=0.0, last_obs_ts=0.0):
+        # v5：记下"这个数是几点的 / 离上次自评多久"，Phase 4 会显示出来
+        self._state_ts = state_ts
+        self._last_obs_ts = last_obs_ts
         self.v_cell.value_label.setText(f"{int(valence * 100)}")
         self.a_cell.value_label.setText(f"{int(arousal * 100)}")
         self.c_cell.value_label.setText(f"{int(confidence * 100)}%")

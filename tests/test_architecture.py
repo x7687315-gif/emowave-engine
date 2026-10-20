@@ -214,3 +214,71 @@ def test_python_line_budget():
         "要么删掉等价代码，要么在 tests/test_architecture.py 上调 LOC_BUDGET 并说明理由。"
         % (total, LOC_BUDGET, total - LOC_BUDGET)
     )
+
+
+# ================================================================
+# 第 4 条纪律：无重复定义（v5 Phase 2）
+# ================================================================
+
+#: 允许重名的装饰器——`@property` 与 `@x.setter` 共享函数名是 Python 正常写法
+_PROPERTY_DECORATORS = {"property", "setter", "getter", "deleter"}
+
+
+def _decorator_names(fn):
+    names = set()
+    for dec in fn.decorator_list:
+        if isinstance(dec, ast.Name):
+            names.add(dec.id)
+        elif isinstance(dec, ast.Attribute):
+            names.add(dec.attr)
+    return names
+
+
+def test_no_duplicate_definitions():
+    """同一作用域里同名函数只能定义一次。
+
+    为什么值得一道护栏：Python 后者静默覆盖前者，**不报错**。
+    2026-10 的 v4 就因此攒下 `showEvent` / `_tail_points` /
+    `restore_recent_context` 各两份（同体副本，白占 230 行），
+    以及 19 个重复测试函数（前一份永不执行）。这种债肉眼看不出来，
+    只能靠 AST 数。
+
+    property / setter 共享名字是正常写法，跳过。
+    """
+    problems = []
+    for path in ROOT.rglob("*.py"):
+        if any(part in SKIP_DIRS for part in path.relative_to(ROOT).parts):
+            continue
+        src = path.read_text(encoding="utf-8", errors="ignore")
+        try:
+            tree = ast.parse(src)
+        except SyntaxError as exc:                 # 语法错由 compileall 负责
+            problems.append("%s: 无法解析（%s）" % (path.relative_to(ROOT), exc))
+            continue
+
+        scopes = [("<module>", tree.body)]
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                scopes.append((node.name, node.body))
+
+        for scope_name, body in scopes:
+            seen = {}
+            for sub in body:
+                if not isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                seen.setdefault(sub.name, []).append(sub)
+            for name, defs in seen.items():
+                if len(defs) < 2:
+                    continue
+                all_props = all(
+                    _decorator_names(d) & _PROPERTY_DECORATORS for d in defs
+                )
+                if all_props:
+                    continue
+                problems.append(
+                    "%s :: %s.%s 定义了 %d 次（行 %s）"
+                    % (path.relative_to(ROOT), scope_name, name, len(defs),
+                       [d.lineno for d in defs])
+                )
+
+    assert not problems, "存在重复定义（后一份会静默覆盖前一份）：\n  " + "\n  ".join(problems)

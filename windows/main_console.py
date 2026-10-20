@@ -483,7 +483,12 @@ class MainConsole(QWidget):
                 sl.blockSignals(False)
             row['num'].setText(f"{val}/100")
 
-    def _on_readouts(self, valence, arousal, confidence, ci_text, params_text):
+    def _on_readouts(self, valence, arousal, confidence, ci_text, params_text,
+                     state_ts=0.0, last_obs_ts=0.0):
+        # v5：state_ts = 这个数是「几点」的估计；last_obs_ts = 最后一次真实自评。
+        # 两者不同 → 中间是模型推演（Phase 3 会在界面上明说）。
+        self._state_ts = state_ts
+        self._last_obs_ts_shown = last_obs_ts
         self.readout.update_values(valence, arousal, confidence, ci_text)
         self.status.update_state(valence, arousal, params_text)
         # 参数说明常驻「模型」Tab，同一份数据双处展示

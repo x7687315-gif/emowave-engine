@@ -42,7 +42,7 @@ from .engine import (
     get_archetype, DEFAULT_ARCHETYPE_KEY,
     Baseline, BaselineSource,
     StateEstimator, BaselineController, Calibrator,
-    predict_forward, predict_step,
+    predict_forward,
 )
 from .observation_recorder import ObservationRecorder
 from .snapshot_store import SnapshotStore
@@ -64,7 +64,8 @@ class ConsolePresenter(QObject):
     """主控制台的内核编排。视图只接信号、只传参数。"""
 
     # ---- 推给视图的信号 ----
-    readouts_changed = pyqtSignal(float, float, float, str, dict)  # v,a,conf,ci,params_text
+    # v5：尾部两个时间戳让 UI 能回答"这个数是几点的 / 离上次自评多久"
+    readouts_changed = pyqtSignal(float, float, float, str, dict, float, float)
     readouts_reset = pyqtSignal()
     curve_changed = pyqtSignal(dict)      # {ts, mv, ma, vv, va, baseline_v, raw}
     curve_cleared = pyqtSignal()
@@ -85,6 +86,8 @@ class ConsolePresenter(QObject):
         self.recorder = ObservationRecorder(clock=self.scheduler.now)
         self.recorder.committed.connect(self._on_committed)
         self.store = SnapshotStore(db)
+        # 用户纠正**跨会话保留**：v4 只放内存，重启即失（Phase 1 审计 §3）
+        self.corrections = self.store.load_corrections()
 
         # 精力人群先验：开局选一类 → 用它 seed 默认曲线（ModelParameters）+ 中心（Baseline）
         self.archetype_key = archetype_key or DEFAULT_ARCHETYPE_KEY
@@ -95,6 +98,7 @@ class ConsolePresenter(QObject):
         self.estimator = StateEstimator(params=self.params,
                                         baseline=self.baseline_ctrl.current)
         self.calibrator = Calibrator(population=self.archetype.to_params())
+        self._restore_calibrator_corrections()
 
         self.observations = []
         self.states = []
@@ -118,12 +122,7 @@ class ConsolePresenter(QObject):
         self._curve_key = None
         self._curve_cache = None
 
-        # 衰减尾巴的增量状态（Phase 3）：{x, P, horizon, pts}
-        # 以前每个 tick 都从 last_obs 重算整条尾巴（O(h) 每 tick → 累计 O(h²)）
-        self._tail = None
-
-        # 衰减尾巴的增量状态（Phase 3）：{x, P, horizon, pts}
-        # 以前每个 tick 都从 last_obs 重算整条尾巴（O(h) 每 tick → 累计 O(h²)）
+        # 衰减尾巴：{horizon, pts, state}。只记足迹，推进交给 estimator（v5）
         self._tail = None
 
         # 记录中 1Hz 采样用的"当前输入值"（由视图滑杆推动；
@@ -231,6 +230,7 @@ class ConsolePresenter(QObject):
         self.states.append((ts, state))
         self.latest_state = state
         self.latest_state_ts = ts
+        self._tail = None          # 时间基准变了，旧尾巴作废
         self.count_changed.emit(len(self.observations))
         self._emit_readouts()
         self._emit_curve(refit=True)
@@ -316,7 +316,10 @@ class ConsolePresenter(QObject):
         if horizon <= 0:
             return
         pts = self._tail_points(horizon)           # 增量外推（只推新增的一段）
+        # v5：读数必须跟着曲线走，否则数字冻结在最后一次自评（Phase 0 问题 B）
+        self._sync_latest_from_tail()
         self._emit_curve(points=pts)
+        self._emit_readouts()
         last_v, last_a = (pts[-1][1], pts[-1][2]) if pts else (
             self.states[-1][1].valence, self.states[-1][1].arousal)
         bv = self.baseline_ctrl.current.valence
@@ -327,18 +330,25 @@ class ConsolePresenter(QObject):
             self._end_wave()                       # 回归基线 → 曲线消失（状态保留）
 
     def _decay_points(self, horizon: float):
-        """从末态外推回基线。
+        """从「最后一次自评」一次性外推 horizon 秒（非破坏性）。
 
         v3 这里是手写的 Matérn 衰减（`d=e^(-λΔt)(1+λΔt)`），与本内核
         `predict_forward` 是同一套数学；内核版额外做对两件事：
           · 在**偏差空间**传播（相对基线 mean，而非相对 0）
           · 每步叠过程噪声 Q → 外推越远方差越大（"越预测越不确定"）
+
+        v5 修：起点必须是 `last_obs_ts` 时刻的状态。v4 取 `estimator.state_vector`，
+        而那个状态可能已被推进到"现在"——于是"一次性重算"和增量推进给出两个答案，
+        两者互相印证时又都错（Phase 0 §1.5）。
         """
+        est, _ = self._rebuild_estimator()
+        if est is None:
+            return []
         mean = (self.baseline_ctrl.current.valence,
                 self.baseline_ctrl.current.arousal)
         traj = predict_forward(
-            state_vector=self.estimator.state_vector,
-            covariance=self.estimator.covariance,
+            state_vector=est.state_vector,
+            covariance=est.covariance,
             params=self.params,
             horizon_sec=horizon,
             dt=DECAY_DT,
@@ -349,66 +359,75 @@ class ConsolePresenter(QObject):
                  p["var_valence"], p["var_arousal"]) for p in traj]
 
     def _tail_points(self, horizon: float):
-        """增量外推：只把尾巴从上次位置往前推 (horizon - 已推) 秒。
+        """增量外推：由 estimator 自己推进（**唯一时间源**），尾巴只记足迹。
 
-        与 `_decay_points(horizon)` 的关系：数学完全相同（都走内核 `predict_step`），
-        区别只在起点——本方法从**上次推到的状态**继续，而不是每次都回到 last_obs。
-        因此单 tick 成本是 O(Δt) 而不是 O(horizon)，累计从 O(h²) 降到 O(h)。
+        v5 修：v4 的 `_tail` 另存一份 x/P 独立推进，与 estimator 并行且互不校对，
+        于是长出两个 bug——
+          · 恢复时模型被推进两次（`query_state` 一次 + 尾巴一次）；
+          · 读数读 estimator、曲线读 `_tail`，衰减期两者各走各的。
+        现在只剩一条时间线：`estimator.advance_to()` 负责推进，
+        `_tail["pts"]` 是它的足迹，`_tail["state"]` 就是"现在"的状态。
         """
         if self._tail is None or horizon < self._tail["horizon"]:
-            # 新一波 / 时间回退（例如基线变了要重新起算）→ 从当前估计重建
-            self._tail = {
-                "x": self.estimator.state_vector,
-                "P": self.estimator.covariance,
-                "horizon": 0.0,
-                "pts": [],
-            }
-        mean = (self.baseline_ctrl.current.valence,
-                self.baseline_ctrl.current.arousal)
+            # 模型若已被推到 last_obs 之后（恢复、刷新），先退回再重建
+            last = self.estimator.last_timestamp or 0.0
+            if last > self._last_obs_ts + 1e-9:
+                self._replay_from_observations()
+            self._tail = {"horizon": 0.0, "pts": [], "state": None}
+
         tail = self._tail
-        remaining = horizon - tail["horizon"]
-        while remaining >= DECAY_DT:
-            tail["x"], tail["P"] = predict_step(
-                tail["x"], tail["P"], self.params, DECAY_DT, mean)
+        while tail["horizon"] + DECAY_DT <= horizon + 1e-9:
+            target = self._last_obs_ts + tail["horizon"] + DECAY_DT
             tail["horizon"] += DECAY_DT
+            state = self.estimator.advance_to(target)
+            if state is None:
+                break
             tail["pts"].append((
-                self._last_obs_ts + tail["horizon"],
-                tail["x"][0], tail["x"][2],
-                tail["P"][0][0], tail["P"][2][2],
+                state.timestamp, state.valence, state.arousal,
+                state.variance_valence, state.variance_arousal,
             ))
-            remaining -= DECAY_DT
+            tail["state"] = state
         return tail["pts"]
 
-    def _tail_points(self, horizon: float):
-        """增量外推：只把尾巴从上次位置往前推 (horizon - 已推) 秒。
+    def _sync_latest_from_tail(self) -> bool:
+        """读数与曲线共用一个状态：尾巴推到哪，读数就是哪。"""
+        if not self._tail or self._tail.get("state") is None:
+            return False
+        state = self._tail["state"]
+        self.latest_state = state
+        self.latest_state_ts = state.timestamp
+        return True
 
-        与 `_decay_points(horizon)` 的关系：数学完全相同（都走内核 `predict_step`），
-        区别只在起点——本方法从**上次推到的状态**继续，而不是每次都回到 last_obs。
-        因此单 tick 成本是 O(Δt) 而不是 O(horizon)，累计从 O(h²) 降到 O(h)。
+    def _rebuild_estimator(self):
+        """从 observations 重放出一个「停在最后一次自评」的估计器（**不改 self**）。
+
+        与 `sample()` 完全同构：第一条 initialize，其余 update——
+        这样重放出来的状态与在线记录时逐位一致。
+
+        Returns:
+            (estimator, states)；无观察时返回 (None, [])
         """
-        if self._tail is None or horizon < self._tail["horizon"]:
-            # 新一波 / 时间回退（例如基线变了要重新起算）→ 从当前估计重建
-            self._tail = {
-                "x": self.estimator.state_vector,
-                "P": self.estimator.covariance,
-                "horizon": 0.0,
-                "pts": [],
-            }
-        mean = (self.baseline_ctrl.current.valence,
-                self.baseline_ctrl.current.arousal)
-        tail = self._tail
-        remaining = horizon - tail["horizon"]
-        while remaining >= DECAY_DT:
-            tail["x"], tail["P"] = predict_step(
-                tail["x"], tail["P"], self.params, DECAY_DT, mean)
-            tail["horizon"] += DECAY_DT
-            tail["pts"].append((
-                self._last_obs_ts + tail["horizon"],
-                tail["x"][0], tail["x"][2],
-                tail["P"][0][0], tail["P"][2][2],
-            ))
-            remaining -= DECAY_DT
-        return tail["pts"]
+        if not self.observations:
+            return None, []
+        est = StateEstimator(params=self.params,
+                             baseline=self.baseline_ctrl.current)
+        states = []
+        for obs in self.observations:
+            if not est.is_initialized:
+                est.initialize(timestamp=obs.timestamp,
+                               valence=obs.valence, arousal=obs.arousal)
+            states.append((obs.timestamp, est.update(obs)))
+        return est, states
+
+    def _replay_from_observations(self):
+        """把模型退回「最后一次自评」时刻（基线/参数变化后重建）。"""
+        est, states = self._rebuild_estimator()
+        if est is None:
+            return
+        self.estimator = est
+        self.states = states
+        self._last_obs_ts = self.observations[-1].timestamp
+        self._tail = None
 
     def _end_wave(self):
         """一波结束：曲线消失、回到待记录(idle)。
@@ -505,9 +524,9 @@ class ConsolePresenter(QObject):
     def resume_active_wave(self):
         """开机若有未走完的波：重放观察、重建估计器，**按真实经过时间**续算。
 
-        与 v1 的区别：不再从关机那一刻逐秒模拟，而是先算
-        `horizon = now - last_obs_ts`，把模型一次性推进到现在；
-        若这期间早已回归基线，则直接结束动画（状态仍保留）。
+        v5 修：v4 先用 `query_state()` 把模型推到 now，随后尾巴又从 now 起算、
+        却把点标在 last_obs 之后——整条尾巴被平移一个 horizon（关机越久偏得越多）。
+        现在推进只发生一次：`_tail_points()` 从 last_obs 一路走到 now。
         """
         # 幂等：已经在记录 / 已经恢复过一波，就不要再重放一次
         # （重复调用会把同一批观察插两遍，模型会把它当成两次独立证据）
@@ -518,32 +537,33 @@ class ConsolePresenter(QObject):
             return
         samples, last_obs_ts = loaded
 
-        for ts, v, a in samples:
-            obs = Observation(timestamp=ts, valence=v, arousal=a,
-                              source=ObservationSource.USER)
-            self.observations.append(obs)
-            if not self.estimator.is_initialized:
-                self.estimator.initialize(timestamp=ts, valence=v, arousal=a)
-            state = self.estimator.update(obs)
-            self.states.append((ts, state))
-        self._last_obs_ts = last_obs_ts or self.states[-1][0]
+        self.observations = [
+            Observation(timestamp=ts, valence=v, arousal=a,
+                        source=ObservationSource.USER)
+            for ts, v, a in samples
+        ]
+        self._replay_from_observations()
+        if last_obs_ts:
+            self._last_obs_ts = last_obs_ts
         self._decay_now = self.scheduler.now()
         self.count_changed.emit(len(self.observations))
-
-        # 把模型推进到"现在"（真实经过的时间），并更新常驻状态
-        state = self.query.query_state()
-        if state is not None:
-            self.latest_state = state
-            self.latest_state_ts = state.timestamp
-            self._emit_readouts()
 
         horizon = self.scheduler.horizon(self._last_obs_ts)
         self.last_horizon = horizon
         if horizon >= MAX_DECAY_SEC:
             # 关机太久：波已自然结束，不留动画，只留状态
             logger.debug("active_wave 已过期（%.0fs），只保留状态", horizon)
+            state = self.estimator.advance_to(self.scheduler.now())
+            if state is not None:
+                self.latest_state = state
+                self.latest_state_ts = state.timestamp
             self._end_wave()
             return
+
+        self._tail_points(horizon)          # 推进到「现在」，留下足迹
+        self._sync_latest_from_tail()
+        self._emit_readouts()
+        self._persist_latest_state()
 
         self._wave_active = True
         self.recording = False
@@ -604,59 +624,29 @@ class ConsolePresenter(QObject):
             self._emit_readouts()
         return True
 
-    def restore_recent_context(self, max_age_sec: float = 7 * 86400):
-        """重启后让模型接着上次的估计，而不是从零开始。
+    def _restore_calibrator_corrections(self):
+        """重启后把历史纠正喂回 calibrator——学习不因关窗归零。
 
-        只重建 estimator（回答"现在是什么状态"），**不把历史观察放进
-        `self.observations`**——否则一打开就会看到上次的曲线，用户会误以为是
-        本次记录。曲线仍然只在真正开始记录后出现。
-
-        数据源是最近一条事件的 `raw_data`（停止记录时已落库），所以不需要新表。
-
-        Args:
-            max_age_sec: 超过这个时长的旧事件不再用于恢复（默认 7 天）
-
-        Returns:
-            bool: 是否恢复成功
+        只喂 calibrator（学习信号），**不放进 `_edits`**：后者是"本波曲线的
+        显示修正"，跨波复用会把上一波的修正画到这一波上。
         """
-        if self.db is None or self.estimator.is_initialized:
-            return False
-        try:
-            events = self.db.get_recent_events(limit=1)
-        except Exception as exc:
-            logger.debug("读取最近事件失败：%s", exc)
-            return False
-        if not events:
-            return False
-        try:
-            raw = json.loads(events[0].get("raw_data") or "[]")
-        except Exception as exc:
-            logger.warning("最近事件的 raw_data 损坏，跳过上下文恢复：%s", exc)
-            return False
-
-        samples = SnapshotStore._validate_samples(raw)
-        if not samples:
-            return False
-        last_ts = samples[-1][0]
-        if self.scheduler.now() - last_ts > max_age_sec:
-            return False                       # 太久以前的事，不该影响"现在"
-
-        est = StateEstimator(params=self.params,
-                             baseline=self.baseline_ctrl.current)
-        est.initialize(timestamp=samples[0][0], valence=samples[0][1],
-                       arousal=samples[0][2])
-        for ts, v, a in samples[1:]:
-            est.update(Observation(timestamp=ts, valence=v, arousal=a,
-                                   source=ObservationSource.USER))
-        self.estimator = est
-        self._last_obs_ts = last_ts
-
-        state = self.query.query_state()
-        if state is not None:
-            self.latest_state = state
-            self.latest_state_ts = state.timestamp
-            self._emit_readouts()
-        return True
+        for item in self.corrections:
+            try:
+                uc = UserCorrection(
+                    timestamp=float(item["timestamp"]),
+                    dimension=CorrectionDimension(item["dimension"]),
+                    predicted_value=float(item.get("predicted_value", 0.5)),
+                    corrected_value=float(item["corrected_value"]),
+                    source=CorrectionSource(item.get("source", "drag")),
+                    created_at=float(item.get("created_at", item["timestamp"])),
+                )
+            except Exception as exc:
+                logger.debug("跳过一条无法还原的纠正记录：%s", exc)
+                continue
+            try:
+                self.calibrator.ingest_correction(uc)
+            except Exception as exc:
+                logger.debug("回灌纠正失败：%s", exc)
 
     def ingest_corrections(self, applied, source=None):
         """把「时刻 → (v, a)」的纠正列表写进 calibrator 数据集。
@@ -690,6 +680,15 @@ class ConsolePresenter(QObject):
                     created_at=time.time(),
                 )
                 self.calibrator.ingest_correction(uc)
+                self.corrections.append({
+                    "timestamp": uc.timestamp,
+                    "dimension": uc.dimension.value,
+                    "predicted_value": uc.predicted_value,
+                    "corrected_value": uc.corrected_value,
+                    "source": uc.source.value,
+                    "created_at": uc.created_at,
+                    "reliability_weight": uc.reliability_weight,
+                })
                 # 同时作为伪观察喂给显示曲线 → 改点即时重拟合整条曲线
                 self._edits.append({
                     "timestamp": ts,
@@ -699,6 +698,7 @@ class ConsolePresenter(QObject):
                 })
                 n += 1
         if n:
+            self.store.save_corrections(self.corrections)
             self._emit_curve(refit=True)
         return n
 
@@ -714,8 +714,7 @@ class ConsolePresenter(QObject):
     # 会红。同步责任现在归 presenter（换人群换 estimator 后也不会失效）。
     def _sync_estimator_baseline(self):
         self.estimator.baseline = self.baseline_ctrl.current
-        self._tail = None            # 均值变了，旧尾巴的终点不再适用
-        self._tail = None            # 均值变了，旧尾巴的终点不再适用
+        self._tail = None            # 均值变了，旧尾巴要按新基线重建
         self.baseline_changed.emit(self.baseline_ctrl.current.valence,
                                    self.baseline_ctrl.current.arousal)
 
@@ -767,6 +766,7 @@ class ConsolePresenter(QObject):
         self.estimator = StateEstimator(params=self.params,
                                         baseline=self.baseline_ctrl.current)
         self.calibrator = Calibrator(population=self.archetype.to_params())
+        self._restore_calibrator_corrections()
         self.observations = []
         self.states = []
         self._segment = []
@@ -835,7 +835,7 @@ class ConsolePresenter(QObject):
         """
         st = self.latest_state or (self.states[-1][1] if self.states else None)
         if st is None:
-            return (0.0, 0.0, 0.0, "—", {})
+            return (0.0, 0.0, 0.0, "—", {}, 0.0, 0.0)
         lo, hi = st.confidence_interval("valence", z=1.0)
         ci = f"{int(lo*100)} – {int(hi*100)}"
         params_text = {
@@ -844,14 +844,15 @@ class ConsolePresenter(QObject):
             'ci': ci,
             'ci_desc': f"估 {int(st.valence*100)}±{int((hi-lo)*50)}",
         }
-        return (st.valence, st.arousal, st.confidence, ci, params_text)
+        return (st.valence, st.arousal, st.confidence, ci, params_text,
+                float(st.timestamp), float(self._last_obs_ts))
 
     def _emit_readouts(self):
         """把最新状态推给视图：读数 + 参数说明共用一个 payload。"""
         if self.latest_state is None and not self.states:
             return
-        v, a, c, ci, params_text = self._readout_payload()
-        self.readouts_changed.emit(v, a, c, ci, params_text)
+        v, a, c, ci, params_text, state_ts, last_obs_ts = self._readout_payload()
+        self.readouts_changed.emit(v, a, c, ci, params_text, state_ts, last_obs_ts)
 
     def _emit_curve(self, refit=False, points=None):
         """推送曲线数据。

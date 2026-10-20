@@ -25,6 +25,7 @@ WAVE_SNAPSHOT_VERSION = 2
 
 _STATE_KEY = "latest_state"
 _WAVE_KEY = "active_wave"
+_CORRECTIONS_KEY = "corrections"
 
 
 class SnapshotStore:
@@ -129,6 +130,44 @@ class SnapshotStore:
             self.db.set_state(_STATE_KEY, json.dumps(payload))
         except Exception as exc:
             logger.warning("保存当前状态失败：%s", exc)
+
+    # ------------------------------------------------------------
+    # 用户纠正（跨会话保留）
+    # ------------------------------------------------------------
+    def save_corrections(self, items):
+        """把纠正列表写进 app_state（不建新表）。
+
+        为什么放 app_state 而不是 emotion_events：纠正不是"一次情绪波"，
+        它是对某条曲线的**长期修正信号**，生命周期跨事件。
+        """
+        if self.db is None:
+            return
+        try:
+            self.db.set_state(_CORRECTIONS_KEY, json.dumps(list(items or [])))
+        except Exception as exc:
+            logger.warning("保存纠正记录失败：%s", exc)
+
+    def load_corrections(self):
+        """读回纠正列表；损坏/类型不对时返回空表，绝不抛异常。"""
+        if self.db is None:
+            return []
+        try:
+            raw = self.db.get_state(_CORRECTIONS_KEY, "") or ""
+            if not raw:
+                return []
+            data = json.loads(raw)
+        except Exception as exc:
+            logger.warning("读取纠正记录失败（按空处理）：%s", exc)
+            return []
+        if not isinstance(data, list):
+            return []
+        out = []
+        for item in data:
+            if (isinstance(item, dict)
+                    and isinstance(item.get("timestamp"), (int, float))
+                    and isinstance(item.get("corrected_value"), (int, float))):
+                out.append(item)
+        return out
 
     def load_latest(self):
         """返回 EmotionState；无快照或损坏返回 None。"""

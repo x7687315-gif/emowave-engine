@@ -323,14 +323,6 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-    def showEvent(self, event):
-        """窗口一显示就把状态推到「现在」——关机/隐藏期间的时间差在这里补上。"""
-        super().showEvent(event)
-        try:
-            self.console.presenter.refresh_now()
-        except Exception:
-            pass
-
     def _show_from_mini(self):
         """挂件右键「显示主窗」。"""
         self.show()
