@@ -34,6 +34,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QPainter, QPen, QColor, QFont
 
 from theme import COLORS, app_font, app_font_num, METRICS
+from windows.state_head import _fmt_age
 from curve_widget import EmotionCurveWidget
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,8 @@ WIN_W, WIN_H = METRICS['mini_w'], METRICS['mini_h']
 #: 曲线两侧留白 = 布局 10px 边距 ×2；min_width 必须由 WIN_W 派生，
 #: 否则两处数字各自漂移后，超出部分会被 setFixedSize 静默裁掉。
 CURVE_GUTTER = 20
+#: 收起态高度（隐藏滑条那一条）。展开态仍是 WIN_H。
+COLLAPSED_H = WIN_H - 46
 
 
 class MiniCloseButton(QPushButton):
@@ -86,7 +89,11 @@ class MiniWindow(QWidget):
                             | Qt.WindowStaysOnTopHint
                             | Qt.Tool)              # Tool：不进任务栏
         self.setAttribute(Qt.WA_TranslucentBackground, False)
-        self.setFixedSize(WIN_W, WIN_H)
+        self.setFixedWidth(WIN_W)
+        self.setFixedHeight(WIN_H)
+        # 展开/钉住状态（v5 Phase 4）
+        self._expanded = True
+        self.pinned = True              # 默认钉住：常驻桌面，不自动收起
         self.setWindowTitle("心潮 · 挂件")
 
         self._build()
@@ -134,6 +141,12 @@ class MiniWindow(QWidget):
         title.setFont(app_font(9, QFont.DemiBold))
         title.setStyleSheet(f"color: {COLORS['ink_2']}; letter-spacing: 1.6px;")
         hl.addWidget(title)
+
+        # 「距上次自评」——挂件最需要的一条：不然用户会把推演值当成刚说过
+        self.age_label = QLabel("")
+        self.age_label.setFont(app_font(8))
+        self.age_label.setStyleSheet(f"color: {COLORS['muted']};")
+        hl.addWidget(self.age_label)
         hl.addStretch(1)
 
         self.state_label = QLabel("—")
@@ -141,6 +154,18 @@ class MiniWindow(QWidget):
         self.state_label.setStyleSheet(f"color: {COLORS['ink']};")
         hl.addWidget(self.state_label, 1)
         self.state_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+        self.btn_main = self._head_button("↗", "打开主窗")
+        self.btn_main.clicked.connect(self._open_main)
+        hl.addWidget(self.btn_main)
+
+        self.btn_pin = self._head_button("钉", "钉住：不自动收起")
+        self.btn_pin.clicked.connect(self._toggle_pin)
+        hl.addWidget(self.btn_pin)
+
+        self.btn_expand = self._head_button("▾", "收起 / 展开")
+        self.btn_expand.clicked.connect(lambda: self.set_expanded(not self._expanded))
+        hl.addWidget(self.btn_expand)
 
         self.btn_close = MiniCloseButton()
         self.btn_close.clicked.connect(self._on_close_clicked)
@@ -237,6 +262,7 @@ class MiniWindow(QWidget):
         self.a_slider = self._make_slider("唤醒", 40)
         bl.addLayout(self.v_slider['layout'], 1)
         bl.addLayout(self.a_slider['layout'], 1)
+        self.detail = bottom            # 收起时隐藏这一条（滑条）
         outer.addWidget(bottom)
 
         # 记录中/推演中的按钮三态与主窗一致（文案前缀也一致，便于肌肉记忆）
@@ -250,6 +276,62 @@ class MiniWindow(QWidget):
                           f" padding: 5px 10px; font-size: 10px; font-weight: 600;"
                           f" letter-spacing: 1.2px; border-radius: 0; }}"),
         }
+
+    def _head_button(self, glyph, tip):
+        """头部 20×20 小按钮（与 × 同尺寸，视觉成组）。"""
+        b = QPushButton(glyph)
+        b.setFixedSize(20, 20)
+        b.setCursor(Qt.PointingHandCursor)
+        b.setToolTip(tip)
+        b.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none;"
+            f" color: {COLORS['muted']}; font-size: 11px; padding: 0; }}"
+            f"QPushButton:hover {{ color: {COLORS['accent']}; }}"
+        )
+        return b
+
+    # ------------------------------------------------------------
+    # 展开 / 钉住（v5 Phase 4）
+    # ------------------------------------------------------------
+    def set_expanded(self, expanded: bool):
+        """收起 = 只留状态 + 曲线 + 记录按钮；展开 = 多出滑条。
+
+        收起不是「暂停」：presenter 照常推进，定时刷新也不受影响。
+        窗口尺寸变化只是视觉，不影响任何模型状态。
+        """
+        self._expanded = bool(expanded)
+        self.detail.setVisible(self._expanded)
+        self.setFixedHeight(WIN_H if self._expanded else COLLAPSED_H)
+        self.btn_expand.setText("▾" if self._expanded else "▴")
+
+    def _toggle_pin(self):
+        self.pinned = not self.pinned
+        if self.pinned:
+            self.set_expanded(True)
+        self.btn_pin.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none;"
+            f" color: {COLORS['accent'] if self.pinned else COLORS['muted']};"
+            f" font-size: 11px; padding: 0; }}"
+            f"QPushButton:hover {{ color: {COLORS['accent']}; }}"
+        )
+
+    def _open_main(self):
+        self.show_main_requested.emit()
+
+    def enterEvent(self, event):
+        """鼠标移入 → 展开（钉住时本来就是展开的）。"""
+        super().enterEvent(event)
+        if not self._expanded:
+            self.set_expanded(True)
+
+    def leaveEvent(self, event):
+        """鼠标移出 → 收起，除非已钉住。
+
+        收起只影响视觉；presenter 的推进与 5 分钟刷新都不受窗口形态影响。
+        """
+        super().leaveEvent(event)
+        if not self.pinned and self._expanded:
+            self.set_expanded(False)
 
     def _make_slider(self, key, default):
         layout = QHBoxLayout()
@@ -313,11 +395,23 @@ class MiniWindow(QWidget):
         # v5：记下"这个数是几点的 / 离上次自评多久"，Phase 4 会显示出来
         self._state_ts = state_ts
         self._last_obs_ts = last_obs_ts
+        self._update_age()
         self.v_cell.value_label.setText(f"{int(valence * 100)}")
         self.a_cell.value_label.setText(f"{int(arousal * 100)}")
         self.c_cell.value_label.setText(f"{int(confidence * 100)}%")
         from windows.state_head import derive_state_name
         self.state_label.setText(derive_state_name(valence, arousal))
+
+    def _update_age(self):
+        """把「距上次自评多久」说清楚——这是挂件最容易骗人的地方。"""
+        if not self._state_ts or not self._last_obs_ts:
+            self.age_label.setText("")
+            return
+        age = max(0.0, self._state_ts - self._last_obs_ts)
+        if age < 60:
+            self.age_label.setText("刚刚")
+        else:
+            self.age_label.setText(_fmt_age(age) + "前")
 
     def _on_reset(self):
         for c in (self.v_cell, self.a_cell, self.c_cell):
@@ -333,6 +427,7 @@ class MiniWindow(QWidget):
 
     def _on_mode(self, mode):
         if mode == "recording":
+            self.set_expanded(True)         # 开始记录 → 滑条必须可见
             self.btn_record.setText("■  停止")
             self.btn_record.setEnabled(True)
             self.btn_record.setStyleSheet(self._btn_qss["recording"])

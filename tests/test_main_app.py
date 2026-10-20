@@ -1013,3 +1013,120 @@ def test_state_head_meta_empty_without_state(qapp):
 # v5 Phase 3：首屏说清「这个数是几点的」
 # ================================================================
 
+
+
+# ================================================================
+# v5 Phase 4：悬浮窗形态与「距上次自评」
+# ================================================================
+
+def test_mini_collapse_hides_sliders_but_keeps_curve(qapp, tmp_path):
+    """收起只藏滑条：状态、曲线、记录按钮都还在。"""
+    win, db = _make_window(tmp_path)
+    mini = win.mini
+
+    from windows.mini_window import COLLAPSED_H, WIN_H
+
+    mini.set_expanded(False)
+    assert mini.detail.isHidden() is True
+    assert mini.curve.isHidden() is False
+    assert mini.btn_record.isHidden() is False
+    assert mini.height() == COLLAPSED_H < WIN_H
+
+    mini.set_expanded(True)
+    assert mini.detail.isHidden() is False
+    assert mini.height() == WIN_H
+    db.close()
+
+
+def test_mini_hover_expands_and_leave_collapses(qapp, tmp_path):
+    """未钉住时：移入展开、移出收起。"""
+    from PyQt5.QtCore import QEvent
+
+    win, db = _make_window(tmp_path)
+    mini = win.mini
+    mini.pinned = False
+    mini.set_expanded(False)
+
+    mini.enterEvent(QEvent(QEvent.Enter))
+    assert mini._expanded is True
+
+    mini.leaveEvent(QEvent(QEvent.Leave))
+    assert mini._expanded is False
+    db.close()
+
+
+def test_mini_pinned_ignores_mouse_leave(qapp, tmp_path):
+    """钉住后移出也不收起——这就是「常驻桌面」。"""
+    from PyQt5.QtCore import QEvent
+
+    win, db = _make_window(tmp_path)
+    mini = win.mini
+    mini.set_expanded(True)
+    assert mini.pinned is True
+
+    mini.leaveEvent(QEvent(QEvent.Leave))
+    assert mini._expanded is True
+    db.close()
+
+
+def test_mini_recording_auto_expands(qapp, tmp_path):
+    """开始记录 → 滑条必须可见（否则用户不知道能拖）。"""
+    win, db = _make_window(tmp_path)
+    mini = win.mini
+    mini.set_expanded(False)
+
+    win.console._toggle_recording(True)
+    assert mini._expanded is True
+    db.close()
+
+
+def test_mini_shows_age_since_last_self_report(qapp, tmp_path):
+    """挂件把「距上次自评」显示出来，避免把推演值当成刚说过。"""
+    from tests.helpers import FakeClock
+
+    clock = FakeClock()
+    win, db = _make_window(tmp_path, clock=clock)
+    c = win.console
+    c._toggle_recording(True)
+    clock.advance(1)
+    c._sample()
+    c._toggle_recording(False)
+
+    clock.advance(600)
+    c._decay_step()
+    assert "分钟前" in win.mini.age_label.text()
+    db.close()
+
+
+def test_mini_and_main_show_same_numbers(qapp, tmp_path):
+    """两个窗口读同一份 payload，数字必须一致。"""
+    from tests.helpers import FakeClock
+
+    clock = FakeClock()
+    win, db = _make_window(tmp_path, clock=clock)
+    c = win.console
+    c._toggle_recording(True)
+    for _ in range(3):
+        clock.advance(1)
+        c._sample()
+    c._toggle_recording(False)
+    clock.advance(120)
+    c._decay_step()
+
+    assert (win.mini.v_cell.value_label.text()
+            == c.readout.v_lbl.value_label.text())
+    assert (win.mini.a_cell.value_label.text()
+            == c.readout.a_lbl.value_label.text())
+    db.close()
+
+
+def test_mini_collapse_does_not_stop_refresh(qapp, tmp_path):
+    """收起 ≠ 暂停：窗口形态不影响 5 分钟刷新。"""
+    win, db = _make_window(tmp_path)
+    p = win.console.presenter
+    win._toggle_mini()
+    assert p.refresh_timer.isActive() is True
+
+    win.mini.set_expanded(False)
+    assert p.refresh_timer.isActive() is True
+    db.close()
