@@ -9,16 +9,49 @@ import json
 from datetime import datetime
 
 
+class DatabaseOpenError(RuntimeError):
+    """本地数据库无法打开或完整性检查失败（外壳负责降级 + 提示用户）。"""
+
+    def __init__(self, path, reason):
+        self.path = path
+        self.reason = reason
+        super().__init__("无法打开本地数据库：%s（%s）" % (path, reason))
+
+
 class DatabaseManager:
     """管理本地 SQLite 数据库的所有读写操作。"""
 
     def __init__(self, path: str = None):
         if path is None:
             path = os.path.join(os.path.expanduser("~"), ".emowave", "emowave.db")
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        self.conn = sqlite3.connect(path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self._create_tables()
+        self.path = path
+        try:
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            self.conn = sqlite3.connect(path, check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
+            self._check_integrity()
+            self._create_tables()
+        except DatabaseOpenError:
+            raise
+        except Exception as exc:
+            try:
+                if getattr(self, "conn", None) is not None:
+                    self.conn.close()
+            except Exception:
+                pass
+            raise DatabaseOpenError(path, str(exc)) from exc
+
+    def _check_integrity(self):
+        """轻量完整性检查：坏文件在创建表之前就失败，避免后续静默写坏。
+
+        quick_check 比 integrity_check 快，适合每次启动；它仍能发现页损坏、
+        索引不一致等常见问题。发现异常时**不自动删除/修复**用户数据——
+        由外壳提示用户先备份，再决定是否重命名文件。
+        """
+        row = self.conn.execute("PRAGMA quick_check").fetchone()
+        result = (row[0] if row else "") or ""
+        if str(result).lower() != "ok":
+            raise sqlite3.DatabaseError("quick_check: %s" % result)
 
     def _create_tables(self):
         self.conn.executescript("""

@@ -15,23 +15,19 @@
 可在标题区按住拖动（frameless 窗口必须自己实现移动），默认落在主屏右下角
 工作区（避开任务栏）。
 
-=== 为什么阶段 4 才做 ===
-它依赖阶段 3 的解耦：与主窗**共用同一个 `ConsolePresenter`**，
-只多接一份信号、多发一次 `set_input()`。若没有 presenter，
-就得把 estimator/timer/db 整套复制一份——那正是我们花一个阶段要避免的事。
+与主窗共用同一个 `ConsolePresenter`，不复制任何模型状态。
 
-=== 硬边语言 ===
-沿用构成主义：无圆角、左侧 2px accent 条标识"挂件"身份、关闭用 × 图标按钮
-（复用 main_app.IconButton 的描线语言）。
+=== 视觉语言 ===
+暖纸底 + 柔和圆角卡片；左侧 2px accent 条标识"挂件"身份，关闭用 × 描线按钮。
 """
 import logging
 
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QRectF
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QSlider,
     QSizePolicy, QMenu,
 )
-from PyQt5.QtGui import QPainter, QPen, QColor, QFont
+from PyQt5.QtGui import QPainter, QPainterPath, QPen, QColor, QFont
 
 from theme import COLORS, app_font, app_font_num, METRICS
 from windows.state_head import _fmt_age
@@ -88,9 +84,11 @@ class MiniWindow(QWidget):
         self.setWindowFlags(Qt.FramelessWindowHint
                             | Qt.WindowStaysOnTopHint
                             | Qt.Tool)              # Tool：不进任务栏
-        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        # 顶层透明 + 自绘圆角：QSS 的 border-radius 改不了窗口形状
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setFixedWidth(WIN_W)
         self.setFixedHeight(WIN_H)
+        self._corner_radius = METRICS['radius_mini']
         # 展开/钉住状态（v5 Phase 4）
         self._expanded = True
         self.pinned = True              # 默认钉住：常驻桌面，不自动收起
@@ -113,21 +111,25 @@ class MiniWindow(QWidget):
     def _build(self):
         self.setObjectName("MiniWin")
         self.setStyleSheet(
-            f"QWidget#MiniWin {{ background: {COLORS['surface']};"
-            f" border: 1px solid {COLORS['rule']}; }}"
+            "QWidget#MiniWin { background: transparent; border: none; }"
         )
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        # 留 1px 给顶层自绘边框；四个子块各自负责自己那一侧的圆角
+        outer.setContentsMargins(1, 1, 1, 1)
         outer.setSpacing(0)
 
         # ---- 标题行（也是拖动手柄）----
         head = QFrame()
         head.setFixedHeight(28)
+        r_inner = self._corner_radius - 1
         head.setStyleSheet(
             f"QFrame {{ background: {COLORS['paper_2']};"
-            f" border-bottom: 1px solid {COLORS['rule']}; }}"
+            f" border: none; border-bottom: 1px solid {COLORS['rule']};"
+            f" border-top-left-radius: {r_inner}px;"
+            f" border-top-right-radius: {r_inner}px; }}"
         )
+        self._head = head
         hl = QHBoxLayout(head)
         hl.setContentsMargins(10, 0, 6, 0)
         hl.setSpacing(6)
@@ -207,7 +209,8 @@ class MiniWindow(QWidget):
         self.btn_note.setToolTip("记一笔（提交当前滑条值）")
         self.btn_note.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {COLORS['ink_2']};"
-            f" border: 1px solid {COLORS['rule']}; padding: 0; font-size: 13px; }}"
+            f" border: 1px solid {COLORS['rule']}; padding: 0;"
+            f" border-radius: {METRICS['radius_sm']}px; font-size: 13px; }}"
             f"QPushButton:hover {{ color: {COLORS['accent']};"
             f" border-color: {COLORS['accent']}; }}"
         )
@@ -222,7 +225,8 @@ class MiniWindow(QWidget):
             f"QPushButton {{ background: {COLORS['accent']};"
             f" color: {COLORS['surface']}; border: none;"
             f" padding: 5px 10px; font-size: 10px; font-weight: 600;"
-            f" letter-spacing: 1.2px; border-radius: 0; }}"
+            f" letter-spacing: 1.2px;"
+            f" border-radius: {METRICS['radius_sm']}px; }}"
             f"QPushButton:hover {{ background: {COLORS['accent_ink']}; }}"
             f"QPushButton:pressed {{ background: {COLORS['accent_deep']}; }}"
             f"QPushButton:disabled {{ background: {COLORS['rule']};"
@@ -243,6 +247,7 @@ class MiniWindow(QWidget):
             f"QFrame {{ background: {COLORS['surface']};"
             f" border: none; border-top: 1px solid {COLORS['rule']}; }}"
         )
+        self._curve_wrap = wrap
         wl = QVBoxLayout(wrap)
         wl.setContentsMargins(10, 4, 10, 4)
         wl.setSpacing(0)
@@ -253,8 +258,11 @@ class MiniWindow(QWidget):
         bottom = QFrame()
         bottom.setStyleSheet(
             f"QFrame {{ background: {COLORS['paper_2']};"
-            f" border: none; border-top: 1px solid {COLORS['rule']}; }}"
+            f" border: none; border-top: 1px solid {COLORS['rule']};"
+            f" border-bottom-left-radius: {r_inner}px;"
+            f" border-bottom-right-radius: {r_inner}px; }}"
         )
+        self._bottom = bottom
         bl = QHBoxLayout(bottom)
         bl.setContentsMargins(10, 4, 10, 6)
         bl.setSpacing(10)
@@ -264,17 +272,20 @@ class MiniWindow(QWidget):
         bl.addLayout(self.a_slider['layout'], 1)
         self.detail = bottom            # 收起时隐藏这一条（滑条）
         outer.addWidget(bottom)
+        self._apply_corners()
 
         # 记录中/推演中的按钮三态与主窗一致（文案前缀也一致，便于肌肉记忆）
         self._btn_qss = {
             "idle": (f"QPushButton {{ background: {COLORS['accent']};"
                      f" color: {COLORS['surface']}; border: none;"
                      f" padding: 5px 10px; font-size: 10px; font-weight: 600;"
-                     f" letter-spacing: 1.2px; border-radius: 0; }}"),
+                     f" letter-spacing: 1.2px;"
+                     f" border-radius: {METRICS['radius_sm']}px; }}"),
             "recording": (f"QPushButton {{ background: {COLORS['accent_deep']};"
                           f" color: {COLORS['surface']}; border: none;"
                           f" padding: 5px 10px; font-size: 10px; font-weight: 600;"
-                          f" letter-spacing: 1.2px; border-radius: 0; }}"),
+                          f" letter-spacing: 1.2px;"
+                          f" border-radius: {METRICS['radius_sm']}px; }}"),
         }
 
     def _head_button(self, glyph, tip):
@@ -285,10 +296,38 @@ class MiniWindow(QWidget):
         b.setToolTip(tip)
         b.setStyleSheet(
             f"QPushButton {{ background: transparent; border: none;"
-            f" color: {COLORS['muted']}; font-size: 11px; padding: 0; }}"
+            f" color: {COLORS['muted']}; font-size: 11px; padding: 0;"
+            f" border-radius: {METRICS['radius_sm']}px; }}"
             f"QPushButton:hover {{ color: {COLORS['accent']}; }}"
         )
         return b
+
+    # ------------------------------------------------------------
+    # 圆角（顶层透明 + 各块负责自己那一侧）
+    # ------------------------------------------------------------
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        path = QPainterPath()
+        path.addRoundedRect(
+            QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5),
+            self._corner_radius, self._corner_radius)
+        p.fillPath(path, QColor(COLORS['surface']))
+        p.setPen(QPen(QColor(COLORS['rule']), 1))
+        p.setBrush(Qt.NoBrush)
+        p.drawPath(path)
+        p.end()
+
+    def _apply_corners(self):
+        """展开时底部条负责下圆角；收起时曲线区负责下圆角。"""
+        r = self._corner_radius - 1
+        bottom_r = 0 if self._expanded else r
+        self._curve_wrap.setStyleSheet(
+            f"QFrame {{ background: {COLORS['surface']};"
+            f" border: none; border-top: 1px solid {COLORS['rule']};"
+            f" border-bottom-left-radius: {bottom_r}px;"
+            f" border-bottom-right-radius: {bottom_r}px; }}"
+        )
 
     # ------------------------------------------------------------
     # 展开 / 钉住（v5 Phase 4）
@@ -303,6 +342,7 @@ class MiniWindow(QWidget):
         self.detail.setVisible(self._expanded)
         self.setFixedHeight(WIN_H if self._expanded else COLLAPSED_H)
         self.btn_expand.setText("▾" if self._expanded else "▴")
+        self._apply_corners()
 
     def _toggle_pin(self):
         self.pinned = not self.pinned
@@ -372,14 +412,13 @@ class MiniWindow(QWidget):
         用户会在挂件上点"开始"去打断一场正在进行的衰减。
         """
         p = self.presenter
-        self._on_mode(p.current_mode())
-        self._on_count(p.current_count())
-        # v4：状态常驻——波结束后 states 被清空，但 latest_state 仍在
-        if p.latest_state is not None or p.states:
-            self._on_readouts(*p._readout_payload())
-        payload = p.current_curve_payload()
-        if payload:
-            self._on_curve(payload)
+        snap = p.sync_snapshot()
+        self._on_mode(snap["mode"])
+        self._on_count(snap["count"])
+        if snap["readout"]:
+            self._on_readouts(*snap["readout"])
+        if snap["curve"]:
+            self._on_curve(snap["curve"])
 
     def _on_input_changed(self, valence, arousal):
         """另一个视图改了输入 → 本窗滑杆镜像过来（避免显示与内核不一致）。"""

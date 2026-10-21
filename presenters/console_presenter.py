@@ -31,6 +31,7 @@ snapshot_store 四个对象。
 import json
 import logging
 import math
+import os
 import time
 import uuid
 
@@ -51,14 +52,21 @@ from .wave_scheduler import WaveScheduler
 
 logger = logging.getLogger(__name__)
 
+#: 显示修正的权重（RTS 里的观测置信度，上限 1.0）。
+#: **刻意与学习权重分开**：`UserCorrection.reliability_weight` 的 docstring 写明
+#: 它是"学习算法加权梯度贡献"用的，按来源/时近/显著性算出（DRAG 约 0.36）。
+#: 拿它当显示权重会让用户拖完发现"曲线几乎没动"——实测 0.513→0.313 才是
+#: 用户能感知的响应；用 0.36 时只到 0.513，等于没改。
+#: 即时纠正 = 让曲线反映我此刻的意图（本权重）；个性化学习 = 逐步改善预测
+#: （仍用 reliability_weight）。两件事分开，才既跟手又不过拟合。
+DISPLAY_CORRECTION_WEIGHT = 1.0
+
 # ---- 情绪波生命周期常量（记录→衰减回基线→消失→待下次记录）----
 # 从 v3 的 main_console.py 原样搬来，并在那里保留同名 re-export 以兼容旧引用。
 SETTLE_EPS = 0.05        # 距基线小于此值视为"回归基线"
 SETTLE_MIN_SEC = 3.0     # 至少衰减这么久才允许判定结束（避免刚停就消失）
 MAX_DECAY_SEC = 600.0    # 衰减外推的硬上限（防止无限外推）
 DECAY_DT = 1.0           # 外推的采样步长（秒）——只影响绘图点密度，不再是"时间来源"
-
-
 
 class ConsolePresenter(QObject):
     """主控制台的内核编排。视图只接信号、只传参数。"""
@@ -74,10 +82,13 @@ class ConsolePresenter(QObject):
     history_changed = pyqtSignal()        # 有新事件落库 → 历史页该刷新了
     input_changed = pyqtSignal(float, float)   # 输入源变更 → 各视图镜像滑杆
     baseline_changed = pyqtSignal(float, float)   # 基线变了 → 基线卡显示该刷新
+    #: 用户可见的降级/损坏提示：(severity, text)。severity 目前只用 "warn"。
+    notice_changed = pyqtSignal(str, str)
 
     def __init__(self, db=None, archetype_key=None, clock=None, parent=None):
         super().__init__(parent)
         self.db = db
+        self.notices = []          # 构造期发出的提示先攒着，晚挂载的视图也能看到
 
         # ---- 时间与查询（v4 Phase 1：全应用唯一的时间源）----
         self.scheduler = WaveScheduler(clock=clock)
@@ -85,7 +96,9 @@ class ConsolePresenter(QObject):
                                 lambda: self.baseline_ctrl.current)
         self.recorder = ObservationRecorder(clock=self.scheduler.now)
         self.recorder.committed.connect(self._on_committed)
-        self.store = SnapshotStore(db)
+        self.store = SnapshotStore(db, warn=self._notice)
+        #: 数据库写失败时的恢复文件目录（测试可覆盖）
+        self._spill_dir = os.path.join(os.path.expanduser("~"), ".emowave", "pending")
         # 用户纠正**跨会话保留**：v4 只放内存，重启即失（Phase 1 审计 §3）
         self.corrections = self.store.load_corrections()
 
@@ -140,6 +153,12 @@ class ConsolePresenter(QObject):
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(int(WaveScheduler.REFRESH_INTERVAL_SEC * 1000))
         self.refresh_timer.timeout.connect(self._on_refresh)
+
+    def _notice(self, message, severity="warn"):
+        """收集并广播用户可见的提示（构造期先攒在 self.notices）。"""
+        item = (severity, str(message))
+        self.notices.append(item)
+        self.notice_changed.emit(*item)
 
     def set_input(self, valence=None, arousal=None, source=None):
         """视图滑杆变化时调用。
@@ -492,8 +511,15 @@ class ConsolePresenter(QObject):
         try:
             self.db.save_event(event)
             self.history_changed.emit()
-        except Exception as exc:                   # 落库失败不打断 UI，仅记日志
+        except Exception as exc:                   # 落库失败不打断 UI，但必须让用户知道
             logger.warning("情绪事件落库失败（%d 个采样）：%s", len(seg), exc)
+            spill = self._spill_event(event)
+            if spill:
+                self._notice("本次记录未能写入数据库，已保存恢复文件：%s。"
+                             "请检查磁盘空间/权限后再试。" % spill)
+            else:
+                self._notice("本次记录未能写入数据库，也未能保存恢复文件；"
+                             "请先检查磁盘空间/权限。")
         finally:
             self._segment = []                     # 无论成败都消费掉，避免重复落库
         # 停止即自动个性化一步（用本次记录 + 已有纠正）
@@ -502,6 +528,18 @@ class ConsolePresenter(QObject):
         except Exception as exc:
             logger.warning("停止记录后自动学习失败：%s", exc)
         self._persist_latest_state()
+
+    def _spill_event(self, event):
+        """数据库写失败时的最后一道保险：把事件原样写到本地恢复文件。"""
+        try:
+            os.makedirs(self._spill_dir, exist_ok=True)
+            path = os.path.join(self._spill_dir, "%s.json" % event["event_id"])
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(event, f, ensure_ascii=False, indent=2)
+            return path
+        except Exception as exc:
+            logger.warning("保存情绪事件恢复文件失败：%s", exc)
+            return None
 
     def _store_active_wave(self):
         """保存未走完的波（细节见 SnapshotStore）。"""
@@ -591,6 +629,7 @@ class ConsolePresenter(QObject):
             events = self.db.get_recent_events(limit=1)
         except Exception as exc:
             logger.debug("读取最近事件失败：%s", exc)
+            self._notice("读取最近事件失败，本次未能恢复上次状态；历史页仍可打开。")
             return False
         if not events:
             return False
@@ -598,6 +637,7 @@ class ConsolePresenter(QObject):
             raw = json.loads(events[0].get("raw_data") or "[]")
         except Exception as exc:
             logger.warning("最近事件的 raw_data 损坏，跳过上下文恢复：%s", exc)
+            self._notice("最近一次事件的记录损坏，无法恢复上次上下文；历史仍可查看。")
             return False
 
         samples = SnapshotStore._validate_samples(raw)
@@ -694,16 +734,14 @@ class ConsolePresenter(QObject):
                     "timestamp": ts,
                     "channel": dim.value,
                     "value": cv,
-                    "reliability_weight": uc.reliability_weight,
+                    # 显示用固定高权重；学习仍用 uc.reliability_weight（见常量注释）
+                    "reliability_weight": DISPLAY_CORRECTION_WEIGHT,
                 })
                 n += 1
         if n:
             self.store.save_corrections(self.corrections)
             self._emit_curve(refit=True)
         return n
-
-    def observations_ts_for_curve(self):
-        return [t for t, _ in self.states]
 
     # ================================================================
     # 基线主权（三级：nudge / fork / reset）
@@ -802,8 +840,29 @@ class ConsolePresenter(QObject):
             return "decaying"
         return "idle"
 
+    def is_wave_active(self) -> bool:
+        """是否处于「衰减动画未结束」阶段（测试与视图都可用的公共读法）。"""
+        return bool(self._wave_active)
+
     def current_count(self) -> int:
         return len(self.observations)
+
+    def has_estimator_state(self) -> bool:
+        """模型是否已有状态（供视图决定是否尝试恢复上下文）。"""
+        return bool(self.estimator.is_initialized)
+
+    def has_readout(self) -> bool:
+        """是否已有可展示的读数（波结束后 latest_state 仍常驻）。"""
+        return self.latest_state is not None or bool(self.states)
+
+    def sync_snapshot(self) -> dict:
+        """晚挂载视图的初始同步包——避免视图直接摸 presenter 内部。"""
+        return {
+            "mode": self.current_mode(),
+            "count": self.current_count(),
+            "readout": self.readout_payload() if self.has_readout() else None,
+            "curve": self.current_curve_payload(),
+        }
 
     def curve_payload(self, start_ts=None, end_ts=None, resolution=None):
         """统一曲线查询（带缓存）：主窗、挂件、未来的定时刷新都走这里。
@@ -848,7 +907,7 @@ class ConsolePresenter(QObject):
             "current_state": self.states[-1][1] if self.states else None,
         }
 
-    def _readout_payload(self):
+    def readout_payload(self):
         """算出读数 payload（视图主动要一份时用，如启动时的首次刷新）。
 
         v4：优先用 `latest_state`（"现在"的估计），而不是 `states[-1]`
@@ -873,7 +932,7 @@ class ConsolePresenter(QObject):
         """把最新状态推给视图：读数 + 参数说明共用一个 payload。"""
         if self.latest_state is None and not self.states:
             return
-        v, a, c, ci, params_text, state_ts, last_obs_ts = self._readout_payload()
+        v, a, c, ci, params_text, state_ts, last_obs_ts = self.readout_payload()
         self.readouts_changed.emit(v, a, c, ci, params_text, state_ts, last_obs_ts)
 
     def _emit_curve(self, refit=False, points=None):

@@ -28,13 +28,15 @@
    旧实现里 rgba(30,64,175,26)（蓝置信带）、QColor(156,150,138,120)（灰点）
    是写死的裸数值，和色板脱节。→ 全部改引用 theme.COLORS token。
 """
+import bisect
 import math
 
 from PyQt5.QtCore import Qt, QPointF, QRectF
-from PyQt5.QtGui import QPainter, QPen, QColor, QPolygonF, QPainterPath, QPixmap
+from PyQt5.QtGui import (QPainter, QPen, QColor, QPolygonF, QPainterPath,
+                         QPixmap, QFontMetrics)
 from PyQt5.QtWidgets import QWidget, QSizePolicy
 
-from theme import COLORS, app_font
+from theme import COLORS, CURVE_STYLE, METRICS, app_font
 
 # 绘图内边距（留出刻度与轴标签空间）
 _PAD_L, _PAD_R = 46, 16
@@ -53,13 +55,13 @@ class EmotionCurveWidget(QWidget):
         'both' 时上下 small multiples，共用同一时间轴（纠正上滑框用）。
     """
 
-    def __init__(self, parent=None, series="valence", show_legend=True,
-                 show_axis_label=True, compact=False, min_width=None):
+    def __init__(self, parent=None, series="valence",
+                 compact=False, min_width=None, show_hover=True):
         super().__init__(parent)
         self.series = series
-        self.show_legend = show_legend
-        self.show_axis_label = show_axis_label
         self.compact = compact          # 紧凑模式：隐藏图例与轴标签（上滑框小图用）
+        # 悬停读数只在主曲线开启：挂件/纠正画布太小，浮层会盖住曲线本身
+        self.show_hover = bool(show_hover and not compact)
 
         self.timestamps = []
         self.model_v = []
@@ -70,6 +72,8 @@ class EmotionCurveWidget(QWidget):
         self.raw = []                   # [(ts, value)]
         self.corrections = []           # [{ts, channel, value}] 用户修正点
         self.predicted_from = None      # 该时刻之后的点属于「预测段」（虚线）
+        self._hover = None              # 悬停读数（自绘，不用 QToolTip）
+        self._corner_radius = 0 if compact else METRICS['radius']
 
         # 静态层缓存（网格/刻度/标签）—— 尺寸不变就不重画
         self._static_cache = None
@@ -81,6 +85,7 @@ class EmotionCurveWidget(QWidget):
         self._min_w = 320 if min_width is None else min_width
         self.setMinimumSize(self._min_w, 180 if not compact else 96)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMouseTracking(self.show_hover)
 
     # ================================================================
     # 数据
@@ -97,6 +102,7 @@ class EmotionCurveWidget(QWidget):
         self.predicted_from = predicted_from
         # 用户修正点：[{ts, channel, value}]，与真实观察点画法不同
         self.corrections = list(corrections or [])
+        self._hover = None
         self.update()
 
     def clear(self):
@@ -108,6 +114,7 @@ class EmotionCurveWidget(QWidget):
         self.raw = []
         self.predicted_from = None
         self.corrections = []
+        self._hover = None
         self.update()
 
     def has_data(self):
@@ -136,6 +143,10 @@ class EmotionCurveWidget(QWidget):
         上图底部给"效价"标题让出空间，下图顶部给"唤醒"标题让出空间。
         """
         w, h = self.width(), self.height()
+        # 迷你挂件是 sparkline：高度很小时去掉刻度留白，别让 100/50/0 叠在一起
+        if self.compact and h < 100:
+            left, top, right, bottom = 10, 6, w - 8, h - 6
+            return left, top, right - left, bottom - top
         left, top = _PAD_L, _PAD_T
         right, bottom = w - _PAD_R, h - _PAD_B
         if count <= 1:
@@ -164,8 +175,15 @@ class EmotionCurveWidget(QWidget):
         p.setRenderHint(QPainter.Antialiasing, True)
         p.setRenderHint(QPainter.TextAntialiasing, True)
 
-        # 纸面
-        p.fillRect(self.rect(), QColor(COLORS['surface']))
+        # 圆角纸面：QSS 不能裁剪自定义 paintEvent 的内容，这里自己画并裁剪
+        paper = QPainterPath()
+        outer = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        if self._corner_radius:
+            paper.addRoundedRect(outer, self._corner_radius, self._corner_radius)
+        else:
+            paper.addRect(outer)
+        p.setClipPath(paper)
+        p.fillPath(paper, QColor(COLORS['surface']))
 
         if not self.has_data():
             p.setPen(QColor(COLORS['muted']))
@@ -185,6 +203,161 @@ class EmotionCurveWidget(QWidget):
         for i, kind in enumerate(panels):
             x0, y0, pw, ph = self._plot_rect(i, n)
             self._paint_series(p, x0, y0, pw, ph, kind)
+
+        if self._hover is not None:
+            self._paint_hover(p, panels, self._hover)
+
+    # ================================================================
+    # 悬停读数（自绘，不用 QToolTip：避免闪烁与坐标系不同步）
+    # ================================================================
+    def mouseMoveEvent(self, event):
+        if not self.show_hover:
+            return super().mouseMoveEvent(event)
+        info = self.hover_at(event.pos().x(), event.pos().y())
+        if info != self._hover:
+            self._hover = info
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):
+        if self._hover is not None:
+            self._hover = None
+            self.update()
+        super().leaveEvent(event)
+
+    def hover_at(self, x, y=None):
+        """把鼠标坐标映射成一条读数；无数据/在绘图区外返回 None。
+
+        返回 {panel, index, ts, value, kind, raw, correction}
+        kind ∈ 观察 / 修正 / 预测 / 估计 —— 与曲线画法同一套语义。
+        """
+        if not self.has_data():
+            return None
+        panels = self._panels()
+        count = len(panels)
+
+        if count == 1:
+            panel_index = 0
+            panel = panels[0]
+        else:
+            panel_index = None
+            if y is None:
+                panel_index = 0
+            else:
+                for i in range(count):
+                    _, py, _, ph = self._plot_rect(i, count)
+                    if py <= y <= py + ph:
+                        panel_index = i
+                        break
+            if panel_index is None:
+                return None
+            panel = panels[panel_index]
+
+        x0, y0, pw, ph = self._plot_rect(panel_index, count)
+        if pw <= 0 or x < x0 or x > x0 + pw:
+            return None
+
+        t0, t1 = self.timestamps[0], self.timestamps[-1]
+        span = t1 - t0 if t1 > t0 else 1.0
+        target = t0 + (x - x0) / pw * span
+        i = bisect.bisect_left(self.timestamps, target)
+        if i <= 0:
+            i = 0
+        elif i >= len(self.timestamps):
+            i = len(self.timestamps) - 1
+        elif abs(self.timestamps[i] - target) >= abs(self.timestamps[i - 1] - target):
+            i -= 1
+
+        model = self.model_v if panel == 'valence' else self.model_a
+        if i >= len(model):
+            return None
+        ts = self.timestamps[i]
+        value = model[i]
+
+        raw_value = None
+        raw_dist = None
+        if panel == 'valence' and self.raw:
+            nearest = min(self.raw, key=lambda p: abs(p[0] - ts))
+            raw_dist = abs(nearest[0] - ts)
+            if raw_dist <= 2.0:
+                raw_value = nearest[1]
+
+        correction_value = None
+        corr_dist = None
+        marks = [c for c in self.corrections if c.get("channel") == panel]
+        if marks:
+            nearest = min(marks, key=lambda c: abs(c["ts"] - ts))
+            corr_dist = abs(nearest["ts"] - ts)
+            if corr_dist <= 2.0:
+                correction_value = nearest["value"]
+
+        if self.predicted_from is not None and ts > self.predicted_from:
+            kind = "预测"
+        elif correction_value is not None and (
+                raw_value is None or corr_dist <= raw_dist):
+            kind = "修正"
+        elif raw_value is not None:
+            kind = "观察"
+        else:
+            kind = "估计"
+
+        return {
+            "panel": panel, "index": i, "ts": ts, "value": value,
+            "kind": kind, "raw": raw_value, "correction": correction_value,
+        }
+
+    def _paint_hover(self, p, panels, info):
+        panel_index = panels.index(info["panel"]) if info["panel"] in panels else 0
+        count = len(panels)
+        x0, y0, pw, ph = self._plot_rect(panel_index, count)
+        t0, t1 = self.timestamps[0], self.timestamps[-1]
+        span = t1 - t0 if t1 > t0 else 1.0
+        x = self._x(info["ts"], t0, span, x0, pw)
+        y = self._y(info["value"], y0, ph)
+
+        # 竖直参考线贯穿所有子图（双图时用户能同时看到 V/A 的时间位置）
+        p.setPen(QPen(QColor(COLORS['muted']), 1, Qt.DashLine))
+        for i in range(count):
+            _, py, _, ph_i = self._plot_rect(i, count)
+            p.drawLine(QPointF(x, py), QPointF(x, py + ph_i))
+
+        # 当前估计点
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(COLORS['accent']))
+        p.drawEllipse(QPointF(x, y), 4.0, 4.0)
+
+        parts = [_fmt_time(info["ts"], span),
+                 "%s %d" % (info["kind"], int(info["value"] * 100))]
+        if info.get("raw") is not None and abs(info["raw"] - info["value"]) > 0.005:
+            parts.append("观察 %d" % int(info["raw"] * 100))
+        if info.get("correction") is not None:
+            parts.append("修正 %d" % int(info["correction"] * 100))
+        text = " · ".join(parts)
+
+        fm = QFontMetrics(app_font(9))
+        box_w = min(fm.horizontalAdvance(text) + 12, max(80, self.width() - 8))
+        box_h = fm.height() + 6
+        text = fm.elidedText(text, Qt.ElideRight, int(box_w - 12))
+        lx = x + 8
+        if lx + box_w > self.width() - 4:
+            lx = x - box_w - 8
+        lx = max(4, lx)
+        ly = y - box_h - 8
+        if ly < 4:
+            ly = y + 8
+        ly = min(max(4, ly), max(4, self.height() - box_h - 4))
+
+        box = QPainterPath()
+        box.addRoundedRect(QRectF(lx, ly, box_w, box_h), 4, 4)
+        p.setPen(Qt.NoPen)
+        p.fillPath(box, QColor(COLORS['surface']))
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(QColor(COLORS['rule']), 1))
+        p.drawPath(box)
+        p.setPen(QColor(COLORS['ink_2']))
+        p.setFont(app_font(9))
+        p.drawText(QRectF(lx + 6, ly + 3, box_w - 12, box_h - 6),
+                   Qt.AlignLeft | Qt.AlignVCenter, text)
 
     # ---------- 静态层缓存 ----------
     def _panels(self):
@@ -232,11 +405,12 @@ class EmotionCurveWidget(QWidget):
         for tick in _Y_TICKS:
             y = self._y(tick, y0, ph)
             p.drawLine(QPointF(x0, y), QPointF(x0 + pw, y))
-            # 短刻度 + 数值（用户要求"刻度不要太多"）
-            p.setPen(QColor(COLORS['muted']))
-            p.drawText(QRectF(x0 - 38, y - 6, 32, 12),
-                       Qt.AlignRight | Qt.AlignVCenter, str(int(tick * 100)))
-            p.setPen(QPen(QColor(COLORS['grid']), 1))
+            if not (self.compact and self.height() < 100):
+                # 短刻度 + 数值（用户要求"刻度不要太多"）
+                p.setPen(QColor(COLORS['muted']))
+                p.drawText(QRectF(x0 - 38, y - 6, 32, 12),
+                           Qt.AlignRight | Qt.AlignVCenter, str(int(tick * 100)))
+                p.setPen(QPen(QColor(COLORS['grid']), 1))
 
         if self.compact:
             return
@@ -307,7 +481,9 @@ class EmotionCurveWidget(QWidget):
 
         # ② 基线虚线（暖赭黄，仅效价图有意义）
         if kind == 'valence':
-            p.setPen(QPen(QColor(COLORS['cyan']), 1, Qt.DashLine))
+            baseline = CURVE_STYLE['baseline']
+            p.setPen(QPen(QColor(COLORS[baseline['color']]),
+                          baseline['width'], Qt.DashLine))
             yb = self._y(self.baseline_v, y0, ph)
             p.drawLine(QPointF(x0, yb), QPointF(x0 + pw, yb))
 
@@ -324,23 +500,16 @@ class EmotionCurveWidget(QWidget):
         #     "我改过的" 和 "我说过的" 不是一回事，用户必须一眼能分辨。
         marks = [c for c in self.corrections if c.get("channel") == kind]
         if marks:
-            p.setPen(QPen(QColor(COLORS['accent_ink']), 1.2))
+            correction = CURVE_STYLE['correction']
+            p.setPen(QPen(QColor(COLORS[correction['color']]),
+                          correction['width']))
             p.setBrush(Qt.NoBrush)
+            half = correction['size'] / 2.0
             for mark in marks:
                 x = self._x(mark["ts"], t0, span, x0, pw)
                 y = self._y(mark["value"], y0, ph)
-                p.drawRect(QRectF(x - 3.0, y - 3.0, 6.0, 6.0))
-
-        # ③.5 用户修正点（空心方框）—— 与真实观察的实心圆区分开：
-        #     "我改过的" 和 "我说过的" 不是一回事，用户必须一眼能分辨。
-        marks = [c for c in self.corrections if c.get("channel") == kind]
-        if marks:
-            p.setPen(QPen(QColor(COLORS['accent_ink']), 1.2))
-            p.setBrush(Qt.NoBrush)
-            for mark in marks:
-                x = self._x(mark["ts"], t0, span, x0, pw)
-                y = self._y(mark["value"], y0, ph)
-                p.drawRect(QRectF(x - 3.0, y - 3.0, 6.0, 6.0))
+                p.drawRect(QRectF(x - half, y - half,
+                                  correction['size'], correction['size']))
 
         # ④ 模型线 —— 单次 strokePath（修串珠的关键）
         #    越过最后一次自评的部分是**预测**，用虚线画：用户要能看出哪些是猜的。
@@ -351,7 +520,7 @@ class EmotionCurveWidget(QWidget):
             if dashed and solid:
                 dashed = [solid[-1]] + dashed      # 预测段与实线接上，避免断口
 
-            def _stroke(indices, style):
+            def _stroke(indices, line_style, color_token):
                 path = QPainterPath()
                 for n_i, i in enumerate(indices):
                     x = self._x(self.timestamps[i], t0, span, x0, pw)
@@ -360,7 +529,8 @@ class EmotionCurveWidget(QWidget):
                         path.moveTo(x, y)
                     else:
                         path.lineTo(x, y)
-                pen = QPen(QColor(COLORS['accent']), 2.0, style)
+                pen = QPen(QColor(COLORS[color_token]),
+                           CURVE_STYLE['model']['width'], line_style)
                 pen.setCapStyle(Qt.SquareCap)      # 硬边，不用 RoundCap
                 pen.setJoinStyle(Qt.MiterJoin)     # 硬拐角
                 p.setPen(pen)
@@ -368,15 +538,15 @@ class EmotionCurveWidget(QWidget):
                 p.drawPath(path)
 
             if len(solid) >= 2:
-                _stroke(solid, Qt.SolidLine)
+                _stroke(solid, Qt.SolidLine, CURVE_STYLE['model']['color'])
             if len(dashed) >= 2:
-                _stroke(dashed, Qt.DashLine)
+                _stroke(dashed, Qt.DashLine, CURVE_STYLE['forecast']['color'])
 
             # ⑤ 当前点
             cx = self._x(self.timestamps[idx[-1]], t0, span, x0, pw)
             cy = self._y(model[idx[-1]], y0, ph)
             p.setPen(Qt.NoPen)
-            p.setBrush(QColor(COLORS['accent']))
+            p.setBrush(QColor(COLORS[CURVE_STYLE['model']['color']]))
             p.drawEllipse(QPointF(cx, cy), 4.0, 4.0)
 
     def y_to_value(self, y, panel_index=0, count=1):
@@ -395,7 +565,8 @@ def _parse_rgba(s):
 
 
 _WASH_RGBA = _parse_rgba(COLORS['wash'])
-_RAW_RGBA = (156, 150, 138, 120)      # 原始点：暖灰，弱
+#: 四种曲线元素的画法统一来自 theme.CURVE_STYLE（语义不随页面变）
+_RAW_RGBA = CURVE_STYLE['observation']['color']
 
 
 def _decimate(n, cap=_MAX_POINTS):

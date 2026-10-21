@@ -205,7 +205,13 @@ def test_entrypoints_import_without_display():
 #                               "这数是几点的"），不是维护性膨胀。余量留给
 #                               Phase4 悬浮窗与 Phase5 视觉；若 Phase5 还要涨，
 #                               必须回头删等价代码，不许再默默加预算。
-LOC_BUDGET = 25000
+#   2026-10-21  25,000 → 27,000  v5 Phase5 视觉系统：字体层级修复（QSS 曾覆盖
+#                               setFont）、柔和圆角令牌、空态/错误态/悬停、360×600
+#                               适配；Phase6 预测日志与评估底座（forecast_log +
+#                               MAE/RMSE）。同期已删等价代码约 100 行（重复测试
+#                               块、未用色板/尺寸令牌、未用参数与转发属性）。
+#                               属于显式决策：真实功能 + 可访问性，不是维护性膨胀。
+LOC_BUDGET = 27000
 
 
 def test_python_line_budget():

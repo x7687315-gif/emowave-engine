@@ -22,15 +22,18 @@ MainConsole 与既有测试按这些名字访问，一个都不能少：
 参数说明（原来的 220px 折叠面板）**移出小窗**，进「模型」Tab 的 ParamsExplainCard。
 """
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-                             QFrame)
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+                             QLabel, QPushButton, QFrame)
 from PyQt5.QtGui import QFont, QFontMetrics
 
-from theme import COLORS, app_font, app_font_num
+from theme import COLORS, METRICS, app_font, app_font_num
 
 
 class StateHead(QWidget):
     """一条状态头：状态名（含纠正入口）+ 四个读数。"""
+
+    _CORR_FULL = "· 情绪有误，点这里纠正"
+    _CORR_SHORT = "纠正"
 
     def __init__(self, on_correction_clicked, parent=None):
         super().__init__(parent)
@@ -55,32 +58,34 @@ class StateHead(QWidget):
             QFontMetrics(self.state_label.font()).horizontalAdvance(longest) + 4)
         row1.addWidget(self.state_label)
 
-        self.state_hint = QLabel(" · 模型估计")
+        self.state_hint = QLabel("")
         self.state_hint.setFont(app_font(10))
         self.state_hint.setStyleSheet(f"color: {COLORS['muted']};")
         # 让提示语在极端窄/高缩放下先让位（可被压缩）
         self.state_hint.setMinimumWidth(0)
         row1.addWidget(self.state_hint, 1, Qt.AlignBottom | Qt.AlignLeft)
 
-        self.corr_btn = QPushButton("· 情绪有误，点这里纠正")
+        self.corr_btn = QPushButton(self._CORR_FULL)
+        self.corr_btn.setToolTip("情绪有误，点这里纠正")
         self.corr_btn.setCursor(Qt.PointingHandCursor)
         self.corr_btn.setFlat(True)
         self.corr_btn.setStyleSheet(
             f"QPushButton {{ background: transparent;"
             f" border: 1px solid {COLORS['rule']};"
             f" color: {COLORS['ink_2']}; padding: 3px 8px; font-size: 10px;"
-            f" border-radius: 0; }}"
+            f" border-radius: {METRICS['radius_sm']}px; }}"
             f"QPushButton:hover {{ border-color: {COLORS['accent']};"
             f" color: {COLORS['accent']}; background: {COLORS['accent_soft']}; }}"
         )
         self.corr_btn.clicked.connect(self._on_correction_clicked)
+        self.corr_btn.setVisible(False)     # 空态没有可纠正的曲线
         row1.addWidget(self.corr_btn, 0, Qt.AlignRight | Qt.AlignBottom)
         outer.addLayout(row1)
 
         # ---- row1.5：一行说清「这个数是几点的」----
         # v5：模型估计与真实自评必须可区分。没有这一行，用户会把
         # 「两小时前自评、模型推演到现在」的数值当成「我刚说过」。
-        self.meta_label = QLabel("")
+        self.meta_label = QLabel(EMPTY_HINT)
         self.meta_label.setFont(app_font(9))
         self.meta_label.setStyleSheet(f"color: {COLORS['muted']};")
         self.meta_label.setMinimumWidth(0)
@@ -126,6 +131,8 @@ class StateHead(QWidget):
     # ------------------------------------------------------------
     def update_state(self, valence, arousal, params_text=None):
         """更新状态名。params_text 由「模型」Tab 的 ParamsExplainCard 消费。"""
+        self.state_hint.setText(" · 模型估计")
+        self.corr_btn.setVisible(True)
         self.state_label.setText(_derive_state_name(valence, arousal))
 
     def update_values(self, valence, arousal, confidence, ci_text):
@@ -142,7 +149,7 @@ class StateHead(QWidget):
         在界面上唯一的分界线。
         """
         if not state_ts:
-            self.meta_label.setText("")
+            self.meta_label.setText(EMPTY_HINT)
             return
 
         parts = []
@@ -161,10 +168,26 @@ class StateHead(QWidget):
         self.meta_label.setText(" · ".join(parts))
 
     def reset_values(self):
-        """全部回到占位符（停止推演 / 切换人群时）。"""
+        """全部回到占位符，并告诉新用户下一步做什么。
+
+        空态不是"没数据"，是"第一次见面"——只显示四个破折号等于把用户
+        丢在原地。这里给一条可执行的下一步。
+        """
         for lbl in (self.v_lbl, self.a_lbl, self.c_lbl, self.ci_lbl):
             lbl.value_label.setText("—")
         self.state_label.setText("—")
+        self.state_hint.setText("")
+        self.corr_btn.setVisible(False)
+        self.meta_label.setText(EMPTY_HINT)
+
+    def resizeEvent(self, event):
+        """360px 最小窗：先让提示语让位，再把纠正按钮收成「纠正」。"""
+        super().resizeEvent(event)
+        narrow = event.size().width() < 380
+        text = self._CORR_SHORT if narrow else self._CORR_FULL
+        if self.corr_btn.text() != text:
+            self.corr_btn.setText(text)
+        self.state_hint.setVisible(not narrow)
 
 
 class ParamsExplainCard(QFrame):
@@ -192,17 +215,19 @@ class ParamsExplainCard(QFrame):
         hint.setWordWrap(True)
         lay.addWidget(hint)
 
-        self._grid = QHBoxLayout()
-        self._grid.setSpacing(0)
+        self._grid = QGridLayout()
+        self._grid.setHorizontalSpacing(18)
+        self._grid.setVerticalSpacing(10)
+        self._grid.setColumnStretch(0, 1)
+        self._grid.setColumnStretch(1, 1)
         lay.addLayout(self._grid)
         self._cells = []
 
-        for i, key in enumerate(("效价 VALENCE", "唤醒 AROUSAL",
-                                 "置信 CONFIDENCE", "置信区间 ±1σ")):
+        for i, key in enumerate(("效价", "唤醒", "置信", "区间")):
             cell = QFrame()
             cell.setStyleSheet("background: transparent; border: none;")
             cl = QVBoxLayout(cell)
-            cl.setContentsMargins(0 if i == 0 else 18, 0, 0, 0)
+            cl.setContentsMargins(0, 0, 0, 0)
             cl.setSpacing(3)
             k = QLabel(key)
             k.setFont(app_font(8, QFont.DemiBold))
@@ -220,7 +245,7 @@ class ParamsExplainCard(QFrame):
             cl.addWidget(val)
             cl.addWidget(desc)
             cl.addWidget(extra)
-            self._grid.addWidget(cell)
+            self._grid.addWidget(cell, i // 2, i % 2)
             self._cells.append((val, desc, extra))
 
     def update_params(self, valence, arousal, params_text=None):
@@ -247,6 +272,10 @@ class ParamsExplainCard(QFrame):
 # ================================================================
 # 状态名派生（按 V×A 象限；不作诊断/评判）
 # ================================================================
+#: 空态引导（新用户第一眼看到的唯一一句操作提示）
+EMPTY_HINT = "还没有自评 · 拖动下面滑条，或点「开始记录」"
+
+
 def _fmt_age(seconds: float) -> str:
     """把秒数说成人话：12 分钟 / 3 小时 / 2 天。"""
     seconds = max(0.0, float(seconds))

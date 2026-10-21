@@ -90,3 +90,15 @@ def test_daily_summary_and_app_state(tmp_path):
     assert db.get_state('engine_state') == '{"test": true}'
     assert db.get_state('nonexistent', 'default') == 'default'
     db.close()
+
+
+def test_corrupt_database_raises_open_error(tmp_path):
+    """坏库不能静默变成空库：外壳要拿到带路径的错误并提示用户。"""
+    import pytest
+    from db import DatabaseManager, DatabaseOpenError
+
+    path = tmp_path / "bad.db"
+    path.write_bytes(b"not a sqlite database" * 64)
+    with pytest.raises(DatabaseOpenError) as exc:
+        DatabaseManager(str(path))
+    assert str(path) in str(exc.value)

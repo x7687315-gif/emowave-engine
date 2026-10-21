@@ -10,10 +10,10 @@
 
 `选人群 → 观测 → 估计 → 查看 → 修正 → 学习 → 校准 → 循环`
 
-![测试 709 通过](https://img.shields.io/badge/%E6%B5%8B%E8%AF%95-709%20%E9%80%9A%E8%BF%87-64748B)
+![测试 763 通过](https://img.shields.io/badge/%E6%B5%8B%E8%AF%95-763%20%E9%80%9A%E8%BF%87-64748B)
 ![运行时依赖 零](https://img.shields.io/badge/%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96-%E9%9B%B6-2E6BE6)
 ![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-64748B)
-![版本 v3.0.0](https://img.shields.io/badge/version-v3.0.0-2E6BE6)
+![版本 v5.0.0](https://img.shields.io/badge/version-v5.0.0-2E6BE6)
 ![可 pip 安装](https://img.shields.io/badge/pip-emowave-64748B)
 ![License MIT](https://img.shields.io/badge/License-MIT-64748B)
 
@@ -115,6 +115,16 @@ emowave/                          零第三方依赖 · 纯标准库 · pip 可�
 
 > 调研依据：[`docs/UI_PREFLIGHT_视觉传达与UI设计调研.md`](docs/UI_PREFLIGHT_视觉传达与UI设计调研.md) · 设计令牌：[`theme.py`](theme.py)
 > 小窗化重构（阶段 0～5，含读码报告 / 检索台账 / 方案）：[`docs/ui-compact-refactor/`](docs/ui-compact-refactor/)
+
+**v5 视觉验收（2026-10-21 · Windows 实拍）**：
+
+| 主界面 400×680 | 最小窗 360×600 | 悬浮窗（展开） | 空态 |
+|:---:|:---:|:---:|:---:|
+| [`v5-main-400x680.png`](docs/screenshots/v5-main-400x680.png) | [`v5-main-360x600.png`](docs/screenshots/v5-main-360x600.png) | [`v5-mini-expanded.png`](docs/screenshots/v5-mini-expanded.png) | [`v5-empty.png`](docs/screenshots/v5-empty.png) |
+
+| 模型页 | 历史页 | 错误态 | 悬停读数 |
+|:---:|:---:|:---:|:---:|
+| [`v5-model-400x680.png`](docs/screenshots/v5-model-400x680.png) | [`v5-history-400x680.png`](docs/screenshots/v5-history-400x680.png) | [`v5-notice.png`](docs/screenshots/v5-notice.png) | [`v5-hover.png`](docs/screenshots/v5-hover.png) |
 
 **桌面端结构**（PyQt5，与内核解耦，`emowave/` 不反向依赖任何 UI 代码）：
 
@@ -256,11 +266,11 @@ for i in range(60):
 
 ## 10 · 测试与质量
 
-**709 个测试全通过**（内核 `emowave/tests/` 593 + 桌面端 `tests/` 116），TDD 全程：写测试 → 看失败 → 最小实现 → 看通过 → 重构。其中 5 条是**架构护栏**（零依赖内核 / 无孤儿模块 / 入口可 import / 白名单防腐 / 代码体积预算）。
+**763 个测试全通过**（内核 `emowave/tests/` 593 + 桌面端 `tests/` 170），TDD 全程：写测试 → 看失败 → 最小实现 → 看通过 → 重构。其中 6 条是**架构护栏**（零依赖内核 / 无孤儿模块 / 入口可 import / 白名单防腐 / 代码体积预算 / 无重复定义）。
 
 ```bash
 python -m pytest emowave/tests/ -v       # 593 内核测试
-python -m pytest tests/ -v               # 116 桌面端集成 + 架构护栏
+python -m pytest tests/ -v               # 170 桌面端集成 + 架构护栏
 ```
 
 覆盖：领域模型不变式 · Matérn 闭式解数学性质 · RTS 优于滤波 · 可编辑曲线不发散 · 精力人群先验与锚点收缩 · 情绪波衰减回基线 · 事件落库与补全 · 基线主权 · 双向降级 · SQLite 不可变与并发 · CLI。
@@ -282,6 +292,14 @@ python -m pytest tests/ -v               # 116 桌面端集成 + 架构护栏
 `predict_step()`（单步原语，`predict_forward` 改为循环调用它，输出逐位一致）。
 过程与实测数据见 [`docs/refactor-v4/`](docs/refactor-v4/)。
 
+### v5 · 数据契约 + UI（2026-10）
+
+Phase 0–5 完成：单轨时间（读数与曲线同源）、纠正持久化、首屏 meta 行、悬浮窗收起/展开/钉住、四类曲线语义、字体层级修复、柔和圆角、空态/错误态、360×600 适配、曲线悬停、视图不再读 presenter 私有成员。测试 **763 passed**，行数 25,107 / 27,000。
+
+- 路线图与阶段交接：[`docs/refactor-v5/ROADMAP.md`](docs/refactor-v5/ROADMAP.md)
+- 视觉验收（Windows 实拍）：[`v5-main-400x680.png`](docs/screenshots/v5-main-400x680.png) · [`v5-main-360x600.png`](docs/screenshots/v5-main-360x600.png) · [`v5-mini-expanded.png`](docs/screenshots/v5-mini-expanded.png)
+- Phase 6（预测日志 + MAE/RMSE + 7 天真实使用）待开始。
+
 ---
 
 ## 11 · 与 Amiya 的关系
@@ -297,15 +315,16 @@ EmoWave 作为 Amiya 的**可选外部状态引擎**，不反向依赖 Amiya。A
 
 ## 12 · 版本与许可
 
-- **v4.0.0（开发中，未打 tag）**：时间语义重构 —— 观察只由用户动作产生、模型时间跟墙钟、状态常驻与挂件常驻、5 分钟低频刷新、预测段虚线、恢复加固。内核 pip 包版本仍为 **3.0.0**（本轮对其只有增量 API + 一处行为修正，未破坏公开签名）。
+- **v5.0.0（开发中，未打 tag）**：数据契约 + UI 重构 —— Phase 0–5 完成（单轨时间、纠正持久化、首屏 meta、悬浮窗、视觉/错误态/悬停/缩放）；Phase 6 预测日志与评估底座待开始。内核 pip 包版本仍为 **3.0.0**。
+- **v4.0.0（已完成，未打 tag）**：时间语义重构 —— 观察只由用户动作产生、模型时间跟墙钟、状态常驻与挂件常驻、5 分钟低频刷新、预测段虚线、恢复加固。内核 pip 包版本仍为 **3.0.0**（本轮对其只有增量 API + 一处行为修正，未破坏公开签名）。
 - **v3.0.0**：PyQt5 桌面端成型 —— 精力人群先验、情绪波生命周期、事件补全窗口、人群锚定的个性化学习、内核 pip 包 + GitHub Release。下载见 [Releases](https://github.com/x7687315-gif/emowave-engine/releases/tag/v3.0.0)。
 - 内核 2.0 重构 Phase 0–9 已完成并并入 `main`；1.x 稳定版锚定 tag **`v1.0-stable`**，随时可回退。
 - 功能分支均已合并回 `main` 并清理。
 
-**MIT** · 接手/维护请先读 [`docs/交接文档.md`](docs/交接文档.md)；架构见 [`docs/architecture/`](docs/architecture/)（情绪模型 / 轻量内核 / 移动端），重构执行日志见 [`docs/history/refactor-progress.md`](docs/history/refactor-progress.md)。
+**MIT** · 接手/维护请先读 [`docs/交接文档.md`](docs/交接文档.md) 与 [`docs/refactor-v5/ROADMAP.md`](docs/refactor-v5/ROADMAP.md)；架构见 [`docs/architecture/`](docs/architecture/)（情绪模型 / 轻量内核 / 移动端），重构执行日志见 [`docs/history/refactor-progress.md`](docs/history/refactor-progress.md)。
 
 **2026-10 瘦身**：清除 1.x 引擎栈与研究脚手架，代码 41k → 21.9k 行（−47%），仓库 22MB → 7.8MB，依赖仅剩 `PyQt5`（内核仍零依赖）。过程与证据见 [`docs/slim-refactor/`](docs/slim-refactor/)。
 
 ---
 
-■ 心潮 EmoWave · Personal Emotion State Engine · v3.0.0
+■ 心潮 EmoWave · Personal Emotion State Engine · v5.0.0 · Core 3.0.0

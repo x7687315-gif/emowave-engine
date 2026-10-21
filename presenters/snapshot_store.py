@@ -31,8 +31,20 @@ _CORRECTIONS_KEY = "corrections"
 class SnapshotStore:
     """把 db 的 key-value 用法包成语义化接口；db 为 None 时全部降级为 no-op。"""
 
-    def __init__(self, db):
+    def __init__(self, db, warn=None):
         self.db = db
+        self._warn = warn
+        self._warned = set()
+
+    def _notify(self, message, key):
+        """同类问题只提示一次，避免每 tick 刷屏；日志仍逐次记录。"""
+        if self._warn is None or key in self._warned:
+            return
+        self._warned.add(key)
+        try:
+            self._warn(message)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------
     # active_wave
@@ -69,11 +81,15 @@ class SnapshotStore:
             last_obs_ts = float(data.get("last_obs_ts", data.get("end_ts", 0.0)))
         except Exception as exc:
             logger.warning("active_wave 快照损坏，已清除：%s", exc)
+            self._notify("上次未完成的记录快照损坏，已跳过恢复；已落库的历史事件不受影响。",
+                         "wave_corrupt")
             self.clear_wave()
             return None
         clean = self._validate_samples(samples)
         if clean is None:
             logger.warning("active_wave 快照内容非法（%d 条），已丢弃", len(samples))
+            self._notify("上次未完成的记录快照内容非法，已跳过恢复；历史事件不受影响。",
+                         "wave_invalid")
             self.clear_wave()
             return None
         # last_obs_ts 必须可信：缺失/超前于最后一条样本时，以样本为准
@@ -158,8 +174,11 @@ class SnapshotStore:
             data = json.loads(raw)
         except Exception as exc:
             logger.warning("读取纠正记录失败（按空处理）：%s", exc)
+            self._notify("历史纠正记录读取失败，已按空处理；后续学习暂不包含旧纠正。",
+                         "corrections_read")
             return []
         if not isinstance(data, list):
+            self._notify("历史纠正记录格式不正确，已按空处理。", "corrections_invalid")
             return []
         out = []
         for item in data:
@@ -192,4 +211,6 @@ class SnapshotStore:
             return state
         except Exception as exc:
             logger.warning("当前状态快照损坏，已忽略：%s", exc)
+            self._notify("上次的当前状态快照损坏，已忽略；模型会从最近的记录重新开始。",
+                         "latest_corrupt")
             return None

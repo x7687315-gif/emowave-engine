@@ -19,7 +19,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 from PyQt5.QtGui import QFont
 
-from theme import COLORS, app_font, app_font_num
+from theme import COLORS, METRICS, app_font, app_font_num
 from emowave.core.domain.baseline import Baseline
 
 
@@ -69,20 +69,27 @@ class BaselineToolsCard(QFrame):
         delta = QLabel(f"±{_STEP:.2f}")
         delta.setFont(app_font_num(10, QFont.Light))
         delta.setStyleSheet(f"color: {COLORS['accent_ink']};")
-        delta.setFixedWidth(34)
+        delta.setFixedWidth(52)
         step_row.addWidget(delta)
 
         # 步进器本体
         stepper = QFrame()
+        stepper.setObjectName("Stepper")
+        rs = METRICS['radius_sm']
         stepper.setStyleSheet(
-            f"QFrame {{ background: {COLORS['surface']};"
-            f" border: 1px solid {COLORS['rule']}; }}"
-            f"QFrame > QPushButton {{ background: transparent; border: none;"
-            f" color: {COLORS['ink_2']}; }}"
-            f"QFrame > QPushButton:hover {{ background: {COLORS['accent_soft']};"
+            f"QFrame#Stepper {{ background: {COLORS['surface']};"
+            f" border: 1px solid {COLORS['rule']};"
+            f" border-radius: {rs}px; }}"
+            f"QFrame#Stepper > QPushButton {{ background: transparent; border: none;"
+            f" color: {COLORS['ink_2']}; border-radius: 0px; }}"
+            f"QFrame#Stepper > QPushButton:hover {{ background: {COLORS['accent_soft']};"
             f" color: {COLORS['accent']}; }}"
-            f"QFrame > QPushButton:pressed {{ background: {COLORS['accent']};"
+            f"QFrame#Stepper > QPushButton:pressed {{ background: {COLORS['accent']};"
             f" color: {COLORS['paper']}; }}"
+            f"QPushButton#StepLeft {{ border-top-left-radius: {rs}px;"
+            f" border-bottom-left-radius: {rs}px; }}"
+            f"QPushButton#StepRight {{ border-top-right-radius: {rs}px;"
+            f" border-bottom-right-radius: {rs}px; }}"
         )
         stepper_lay = QHBoxLayout(stepper)
         stepper_lay.setContentsMargins(0, 0, 0, 0)
@@ -90,6 +97,7 @@ class BaselineToolsCard(QFrame):
         stepper.setFixedHeight(30)
 
         self.btn_minus = QPushButton("−")
+        self.btn_minus.setObjectName("StepLeft")
         self.btn_minus.setFixedWidth(32)
         self.btn_minus.setCursor(Qt.PointingHandCursor)
         self.btn_minus.setFont(app_font(13, QFont.Medium))
@@ -106,6 +114,7 @@ class BaselineToolsCard(QFrame):
         self.value_lbl.setMinimumWidth(48)
 
         self.btn_plus = QPushButton("+")
+        self.btn_plus.setObjectName("StepRight")
         self.btn_plus.setFixedWidth(32)
         self.btn_plus.setCursor(Qt.PointingHandCursor)
         self.btn_plus.setFont(app_font(13, QFont.Medium))

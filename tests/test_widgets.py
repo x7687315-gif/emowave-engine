@@ -85,3 +85,69 @@ def test_curve_renders_correction_marks(qapp):
     assert not pm.isNull()
 
 
+# ================================================================
+# v5 Phase 5：悬停读数与柔和圆角
+# ================================================================
+
+def test_curve_hover_reports_semantics(qapp):
+    """悬停读数必须和曲线画法同一套语义：观察/估计/预测/修正。"""
+    from curve_widget import EmotionCurveWidget
+
+    w = _curve(qapp, n=10, predicted_from=1005.0)
+    w.set_data(w.timestamps, w.model_v, w.model_v, [0.01] * 10, [0.01] * 10,
+               baseline_v=0.5, raw=[(1000.0, 0.5), (1005.0, 0.5)],
+               predicted_from=1005.0,
+               corrections=[{"ts": 1003.0, "channel": "valence", "value": 0.9}])
+    x0, y0, pw, ph = w._plot_rect(0, 1)
+
+    def at(ts, widget=w):
+        return widget.hover_at(widget._x(ts, 1000.0, 9.0, x0, pw), y0 + ph / 2)
+
+    assert at(1003.0)["kind"] == "修正"
+    assert at(1005.0)["kind"] == "观察"
+    assert at(1007.0)["kind"] == "预测"
+    assert at(999.0) is None                    # 绘图区外
+
+    plain = EmotionCurveWidget(series="valence")
+    plain.resize(400, 340)
+    plain.set_data(list(range(1000, 1010)), [0.5] * 10, [0.5] * 10,
+                   [0.01] * 10, [0.01] * 10, baseline_v=0.5, raw=[])
+    x0, y0, pw, ph = plain._plot_rect(0, 1)
+    assert at(1004.0, plain)["kind"] == "估计"
+
+
+def test_compact_curve_disables_hover(qapp):
+    from curve_widget import EmotionCurveWidget
+    from theme import METRICS
+
+    w = EmotionCurveWidget(compact=True)
+    assert w.show_hover is False
+    assert w._corner_radius == 0
+    full = EmotionCurveWidget()
+    assert full._corner_radius == METRICS['radius']
+
+
+def test_compact_curve_uses_sparkline_padding(qapp):
+    """迷你挂件是 sparkline：高度 <100 时去掉刻度留白，避免 100/50/0 叠在一起。"""
+    from curve_widget import EmotionCurveWidget
+
+    w = EmotionCurveWidget(compact=True)
+    w.setMinimumHeight(58)
+    w.resize(340, 58)
+    x0, y0, pw, ph = w._plot_rect(0, 1)
+    assert x0 == 10 and y0 == 6
+    assert pw == 340 - 18 and ph == w.height() - 12
+
+
+def test_curve_hover_renders(qapp):
+    """带悬停覆盖层的 render 不崩（覆盖层是自绘的，不走 QToolTip）。"""
+    from PyQt5.QtGui import QPixmap
+
+    w = _curve(qapp, n=10, predicted_from=1005.0)
+    x0, y0, pw, ph = w._plot_rect(0, 1)
+    w._hover = w.hover_at(w._x(1007.0, 1000.0, 9.0, x0, pw), y0 + ph / 2)
+    assert w._hover is not None
+    pm = QPixmap(w.size())
+    pm.fill()
+    w.render(pm)
+    assert not pm.isNull()

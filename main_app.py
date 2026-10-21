@@ -1,19 +1,8 @@
 #!/usr/bin/env python3
-"""心潮 EmoWave 桌面应用入口（v3.1 · 小窗化重做界面）
+"""心潮 EmoWave 桌面应用入口（小窗化界面）
 
-=== 与 v3 的差异 ===
-1. 窗口从 1180×780 缩到 **400×680**（约 9:15.5 竖屏，为手机迁移打底）
-2. **删除左侧 56px 图标列**，横向导航换成**顶部 Tab 栏**（40px，见 windows/top_tabs.py）
-3. **删除右侧 380px 抽屉**，其内容拆成两个整页 Tab：模型 / 历史
-   （抽屉比小窗本身还宽，物理上无法并排）
-4. 次要内容页（模型 / 历史）包进可滚动整页，小窗下靠下的区块才够得着
-5. HighDPI 从「给枚举对象赋值的空操作」改成 `QApplication.setAttribute(...)`
-   —— 原写法 `Qt.AA_EnableHighDpiScaling = True` Qt 根本不读，必须在
-   QCoreApplication 构造前调用静态 setAttribute
-
-=== 为什么图标手绘而不用 SVG ===
-QtSvg 不一定随 PyQt5 wheels 装好；构成主义硬边图形用 QPainter 直接描线更稳，
-也更贴合"直角 / 无圆角 / 几何"的语言。
+窗口 400×680（最小 360×600），三页：曲线 / 模型 / 历史。
+HighDPI 必须在 QApplication 构造前 setAttribute；关主窗不等于退出。
 """
 import sys
 import os
@@ -42,6 +31,7 @@ from theme import COLORS, METRICS, app_font, build_app_qss
 from windows.top_tabs import TopTabs
 from windows.mini_window import MiniWindow
 from windows.main_console import MainConsole
+from windows.notice_bar import NoticeBar
 from windows.archetype_dialog import ArchetypeDialog
 from emowave import ARCHETYPES, DEFAULT_ARCHETYPE_KEY, get_archetype
 
@@ -68,8 +58,6 @@ class IconButton(QToolButton):
 
     #: kind -> 折线组（16×16 坐标系）
     _PATHS = {
-        # 情绪曲线：一条折线（构成主义斜线）
-        'curve': [((2, 11), (5, 5), (8, 9), (11, 3), (14, 7))],
         # 导出：下箭头 + 底线
         'export': [((8, 2), (8, 9)), ((5, 6), (8, 9), (11, 6)), ((3, 12), (13, 12))],
         # 设置：两条滑杆（杆 + 游标方块）
@@ -154,13 +142,18 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(WIN_MIN_W, WIN_MIN_H)
         self.resize(WIN_W, WIN_H)
 
+        self._startup_error = ""
         if db is None and DatabaseManager is not None:
             try:
                 db = DatabaseManager()
-            except Exception:
+            except Exception as exc:
                 # L2 优雅降级：本地库打不开不该阻止主界面启动。
-                # 仅影响「导出数据」一个动作，该动作会提示未连接数据库。
+                # 但必须让用户知道“本次记录可能不会保存”，而不是静默吞掉。
+                self._startup_error = (
+                    "本地数据库打不开，本次记录可能无法保存。\n" + str(exc))
                 db = None
+        elif db is None:
+            self._startup_error = "本地数据库模块不可用，本次记录不会保存。"
         self.db = db
 
         # 先解析精力人群先验（页头要显示它，主界面要用它 seed），必须在建 UI 前
@@ -179,6 +172,10 @@ class MainWindow(QMainWindow):
         self.tabs = TopTabs(["曲线", "模型", "历史"])
         root.addWidget(self.tabs)
 
+        # ---- 降级/错误提示条（可关闭；默认隐藏）----
+        self.notice_bar = NoticeBar()
+        root.addWidget(self.notice_bar)
+
         # ---- 主控制台（自带三页；外壳只负责导航）----
         self.console = MainConsole(parent=central, db=self.db,
                                    archetype_key=self._archetype_key,
@@ -194,6 +191,17 @@ class MainWindow(QMainWindow):
         self._shut_down = False
 
         self.tabs.currentChanged.connect(self.console.show_page)
+
+        # 运行期提示（快照损坏 / 保存失败）与启动期提示统一走这里
+        self.console.presenter.notice_changed.connect(self._show_notice)
+        startup = []
+        if self._startup_error:
+            startup.append(self._startup_error)
+        for _severity, text in self.console.presenter.notices:
+            if text not in startup:
+                startup.append(text)
+        if startup:
+            self._show_notice("warn", "\n".join(startup))
 
     # ------------------------------------------------------------
     # 精力人群先验：读取 / 开局选择 / 重选
@@ -271,6 +279,7 @@ class MainWindow(QMainWindow):
             f" 周{weekdays[today.weekday()]}")
         date_label.setFont(app_font(9))
         date_label.setStyleSheet(f"color: {COLORS['muted']}; background: transparent;")
+        self.date_label = date_label
         lay.addWidget(date_label)
 
         self.arch_btn = QToolButton()
@@ -323,11 +332,20 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def resizeEvent(self, event):
+        """360px 最小窗：日期先让位，标题与精力按钮保持可读。"""
+        super().resizeEvent(event)
+        self.date_label.setVisible(event.size().width() >= 380)
+
     def _show_from_mini(self):
         """挂件右键「显示主窗」。"""
         self.show()
         self.raise_()
         self.activateWindow()
+
+    def _show_notice(self, _severity, text):
+        """presenter / 外壳的提示统一显示在页头下方，不弹模态框。"""
+        self.notice_bar.show_message(text, _severity)
 
     def _on_mini_closed(self):
         """挂件被 × 掉：主窗也藏着的话，就没有可见窗口了 → 真正退出。"""

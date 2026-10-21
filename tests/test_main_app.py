@@ -316,7 +316,7 @@ def test_set_archetype_reseeds_and_clears_session(qapp):
     c.set_archetype("low")
     assert c.params.ell_arousal == 320.0
     assert c.baseline_ctrl.current.arousal == 0.25
-    assert c.observations == [] and c.states == [] and c._edits == []
+    assert c.observations == [] and c.states == [] and c.presenter._edits == []
 
 
 def test_personalization_anchor_follows_archetype(qapp):
@@ -440,10 +440,14 @@ def test_params_explain_moved_to_model_page(qapp, tmp_path):
     db.close()
 
 
-def test_curve_min_height_restored(qapp, tmp_path):
-    """阶段 2：状态头合并后曲线下限回到 340px（阶段 1 曾压到 220）。"""
+def test_curve_min_height_allows_small_window(qapp, tmp_path):
+    """曲线下限要兼顾 360×600：最小窗不溢出，默认 400×680 仍保持主角尺寸。"""
     win, db = _make_window(tmp_path)
-    assert win.console.curve.minimumHeight() == 340
+    assert win.console.curve.minimumHeight() == 200
+    win.resize(400, 680)
+    win.show()
+    _settle(qapp)
+    assert win.console.curve.height() >= 330
     db.close()
 
 
@@ -555,7 +559,7 @@ def test_mini_window_syncs_state_on_late_attach(qapp, tmp_path):
     for _ in range(5):
         c._sample()
     c._toggle_recording(False)
-    assert c._wave_active is True
+    assert c.presenter.is_wave_active() is True
 
     import main_app
     win = main_app.MainWindow(db)
@@ -602,7 +606,7 @@ def test_stop_with_data_enters_decay(qapp, tmp_path):
         c._sample()
     c._toggle_recording(False)
     assert c.recording is False
-    assert c._wave_active is True
+    assert c.presenter.is_wave_active() is True
     assert len(c.states) == 5
     assert c.input_panel.btn_record.text().startswith("◌")   # 推演中
     db.close()
@@ -623,10 +627,10 @@ def test_decay_settles_back_to_baseline_and_clears(qapp, tmp_path):
         clock.advance(1)
         c._sample()
     c._toggle_recording(False)
-    assert c._wave_active is True
+    assert c.presenter.is_wave_active() is True
     clock.advance(60)
     c._decay_step()
-    assert c._wave_active is False
+    assert c.presenter.is_wave_active() is False
     assert c.curve.timestamps == []                          # 曲线消失
     assert c.input_panel.btn_record.text().startswith("●")   # 回到开始记录
     db.close()
@@ -642,10 +646,10 @@ def test_active_wave_resumes_on_relaunch(qapp, tmp_path):
     for _ in range(6):
         c._sample()
     c._toggle_recording(False)
-    assert c._wave_active is True
+    assert c.presenter.is_wave_active() is True
 
     c2 = MainConsole(db=db, archetype_key="medium")         # 模拟重启
-    assert c2._wave_active is True
+    assert c2.presenter.is_wave_active() is True
     assert len(c2.observations) == 6
     assert c2.input_panel.btn_record.text().startswith("◌")
     db.close()
@@ -827,7 +831,7 @@ def test_mini_shows_state_after_wave_ends(qapp, tmp_path):
     c._toggle_recording(False)
     clock.advance(60)
     c._decay_step()
-    assert c._wave_active is False
+    assert c.presenter.is_wave_active() is False
 
     win.mini._sync_from_presenter()
     assert win.mini.v_cell.value_label.text() not in ("", "—")
@@ -872,7 +876,7 @@ def test_periodic_refresh_advances_state_without_observation(qapp, tmp_path):
 
     clock.advance(700)              # 超过 MAX_DECAY_SEC → 波自然结束
     c._decay_step()
-    assert p._wave_active is False
+    assert p.is_wave_active() is False
     assert len(p.observations) == 0  # 波结束后内存里的波数据清空
 
     clock.advance(300)
@@ -943,10 +947,6 @@ def test_shutdown_is_idempotent(qapp, tmp_path):
     assert win._shut_down is True
 
 
-# ================================================================
-# v4 Phase 4：生命周期与低频刷新
-# ================================================================
-
 def test_mini_note_button_commits_observation(qapp, tmp_path):
     """挂件单独使用时也能记一笔：按钮只在记录中出现。"""
     from tests.helpers import FakeClock
@@ -1001,18 +1001,17 @@ def test_state_head_meta_says_just_now(qapp):
     assert "与基线持平" in text
 
 
-def test_state_head_meta_empty_without_state(qapp):
-    from windows.state_head import StateHead
+def test_state_head_meta_empty_shows_onboarding_hint(qapp):
+    """空态不是「没数据」，是「第一次见面」——要给一句可执行的下一步。"""
+    from windows.state_head import EMPTY_HINT, StateHead
 
     head = StateHead(on_correction_clicked=lambda: None)
     head.update_meta(0.5, state_ts=0.0)
-    assert head.meta_label.text() == ""
+    assert head.meta_label.text() == EMPTY_HINT
+    assert "开始记录" in EMPTY_HINT
 
-
-# ================================================================
-# v5 Phase 3：首屏说清「这个数是几点的」
-# ================================================================
-
+    head.reset_values()
+    assert head.meta_label.text() == EMPTY_HINT
 
 
 # ================================================================
@@ -1130,3 +1129,143 @@ def test_mini_collapse_does_not_stop_refresh(qapp, tmp_path):
     win.mini.set_expanded(False)
     assert p.refresh_timer.isActive() is True
     db.close()
+
+
+# ================================================================
+# v5 Phase 5：缩放、圆角与错误态
+# ================================================================
+
+def test_main_window_fits_minimum_size(qapp, tmp_path):
+    """360×600 最小窗：状态头/曲线/输入台不重叠、不溢出。"""
+    win, db = _make_window(tmp_path)
+    win.resize(360, 600)
+    win.show()
+    _settle(qapp)
+
+    c = win.console
+    for widget in (c.status, c.curve, c.input_panel):
+        assert widget.isVisible() and widget.height() > 0
+    curve_bottom = c.curve.mapTo(c, c.curve.rect().bottomLeft()).y()
+    assert curve_bottom <= c.input_panel.geometry().top()
+    db.close()
+
+
+def test_notice_bar_shows_and_dismisses(qapp):
+    from windows.notice_bar import NoticeBar
+
+    bar = NoticeBar()
+    bar.show_message("测试提示")
+    assert bar.current_text() == "测试提示"
+    assert bar.isHidden() is False
+    bar.dismiss()
+    assert bar.isHidden() is True
+
+
+def test_main_window_shows_db_open_error(qapp, monkeypatch):
+    """数据库打不开：主窗必须显示提示条，而不是静默按无库启动。"""
+    import main_app
+
+    class Boom:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("permission denied")
+
+    monkeypatch.setattr(main_app, "DatabaseManager", Boom)
+    win = main_app.MainWindow()
+    try:
+        assert win.db is None
+        assert win.notice_bar.isHidden() is False
+        assert "数据库" in win.notice_bar.current_text()
+    finally:
+        win.shutdown()
+
+
+def test_main_window_shows_corrupt_snapshot_notice(qapp, tmp_path):
+    """快照损坏：主窗提示“哪份数据、什么影响”，但不阻断启动。"""
+    import main_app
+    from db import DatabaseManager
+
+    db = DatabaseManager(str(tmp_path / "bad_wave.db"))
+    db.set_state("active_wave", "{not-json")
+    win = main_app.MainWindow(db)
+    try:
+        assert win.notice_bar.isHidden() is False
+        assert "快照" in win.notice_bar.current_text()
+    finally:
+        win.shutdown()
+        db.close()
+
+
+def test_mini_window_uses_translucent_rounded_card(qapp, tmp_path):
+    """挂件是圆角卡片：顶层透明，收起时曲线区负责下圆角。"""
+    from PyQt5.QtCore import Qt
+    from theme import METRICS
+
+    win, db = _make_window(tmp_path)
+    assert win.mini.testAttribute(Qt.WA_TranslucentBackground) is True
+    assert win.mini._corner_radius == METRICS['radius_mini']
+
+    win.mini.set_expanded(False)
+    assert "border-bottom-left-radius" in win.mini._curve_wrap.styleSheet()
+    db.close()
+
+
+def test_main_curve_paper_is_rounded(qapp, tmp_path):
+    from theme import METRICS
+
+    win, db = _make_window(tmp_path)
+    assert win.console.curve._corner_radius == METRICS['radius']
+    db.close()
+
+
+def test_main_header_hides_date_at_narrow_width(qapp, tmp_path):
+    """360px 时页头日期让位，标题与精力按钮不被挤掉。"""
+    win, db = _make_window(tmp_path)
+    win.resize(360, 600)
+    win.show()
+    _settle(qapp)
+    assert win.date_label.isHidden() is True
+
+    win.resize(400, 680)
+    _settle(qapp)
+    assert win.date_label.isHidden() is False
+    db.close()
+
+
+def test_input_number_label_fits_full_text(qapp, tmp_path):
+    """态价/唤醒右侧的 '50/100' 不能被固定宽度裁成 '0/100'。"""
+    from PyQt5.QtGui import QFontMetrics
+
+    win, db = _make_window(tmp_path)
+    num = win.console.input_panel.v_row['num']
+    assert num.text() == "50/100"
+    assert num.width() >= QFontMetrics(num.font()).horizontalAdvance(num.text())
+    db.close()
+
+
+def test_secondary_pages_allow_horizontal_fallback(qapp, tmp_path):
+    """模型/历史页在极端 DPI 下允许横向滚动，绝不静默裁掉右侧内容。"""
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtWidgets import QScrollArea
+
+    win, db = _make_window(tmp_path)
+    for page in (win.console.page_model, win.console.page_history):
+        scroll = page.findChild(QScrollArea)
+        assert scroll.horizontalScrollBarPolicy() == Qt.ScrollBarAsNeeded
+    db.close()
+
+
+def test_state_head_compacts_at_narrow_width(qapp):
+    from windows.state_head import StateHead
+
+    head = StateHead(on_correction_clicked=lambda: None)
+    head.setFixedWidth(360)
+    head.show()
+    qapp.processEvents()
+    assert head.corr_btn.text() == "纠正"
+    assert head.state_hint.isHidden() is True
+
+    head.setFixedWidth(400)
+    qapp.processEvents()
+    assert head.corr_btn.text() == StateHead._CORR_FULL
+    assert head.state_hint.isHidden() is False
+    head.close()

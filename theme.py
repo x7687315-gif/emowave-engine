@@ -15,9 +15,10 @@
    → 所有颜色集中在本文件 COLORS，绘制代码只引用 token。
 
 === 设计方向 ===
-构成主义骨架（大块面 / 不对称 / 硬边直角 / 粗无衬线）+ 暖色板。
-不是纯构成主义的黑白红，而是「硬的骨架 + 软的色板」：
-  - 骨架：全站圆角 0，靠**明度和面积**分层，而非描边和阴影
+构成主义骨架（大块面 / 不对称 / 几何 / 无衬线）+ 暖色板 + **柔和圆角**。
+不是纯构成主义的黑白红，也不是通用商业后台模板：
+  - 骨架：块面靠**明度和面积**分层，而非描边和阴影
+  - 圆角：容器/按钮/输入框/滑块用小幅圆角（4–10px），避免过度切割
   - 色板：全画面**单一色相**（陶土赭红），只靠明度分层级
   - 参考：Claude Code 暖色调（暖黄纸底、低饱和、柔和、色彩统一）
 
@@ -59,12 +60,7 @@ COLORS = {
     # ---- 兼容旧 widgets.py 的键名（渐进迁移用，指向同一暖色板）----
     'bg':          '#F2ECE1',
     'ink_soft':    '#574E40',
-    'track':       '#E6DED0',
-    'accent_hover': '#A95230',
-    'accent_press': '#8C3A1E',
     'cyan':        '#C9A227',   # 基线参考线：改暖赭黄，不引入冷色
-    'warn':        '#8C3A1E',
-    'ok':          '#5A6B3B',
 }
 
 # ================================================================
@@ -100,12 +96,34 @@ def app_font_num(size: int = 18, weight: int = QFont.Light) -> QFont:
 METRICS = {
     'tabbar_h':     40,      # 顶部 Tab 栏高（替代原来的 56px 图标列）
     'topbar_h':     44,      # 极简页头高
-    'statehead_h':  56,      # 状态头高（阶段 2：状态名 + 效价/唤醒读数合并）
-    'readout_h':    72,      # 读数条高（v3 遗留 · 阶段 2 并入状态头）
-    'sheet_h':      356,     # 纠正上滑框高（阶段 2 适配 400 宽）
     'mini_w':       360,     # 迷你置顶窗宽（阶段 4）
     'mini_h':       180,     # 迷你置顶窗高（阶段 4）
-    'radius':       0,       # 构成主义：全站直角
+    # v5 Phase 5：从“全站直角”改为“骨架几何 + 柔和圆角”。
+    # 圆角只走令牌：卡片/面板 r，按钮/输入框/滑块 r_sm，悬浮窗 r_mini。
+    'radius':       8,
+    'radius_sm':    4,
+    'radius_mini': 10,
+}
+
+# ================================================================
+# 曲线语义 —— 四种元素，四种画法，**不随页面变化**
+# ================================================================
+# 为什么单独列出来：曲线是全应用信息密度最高的地方，用户要靠"形状"分辨
+# 什么是自己说的、什么是模型算的、什么是猜的、什么是自己改的。
+# 这四种语义一旦在某个页面被画混（例如预测用实线），整个产品的可信度就塌了。
+#
+# 约定：
+#   observation 实心圆（弱）→ 我说的
+#   model       实线        → 模型算的
+#   forecast    虚线        → 猜的
+#   correction  空心方框    → 我改的
+CURVE_STYLE = {
+    'observation': {'color': (156, 150, 138, 120), 'radius': 2.2},
+    'model':       {'color': 'accent', 'width': 2.0, 'dash': False},
+    'forecast':    {'color': 'accent', 'width': 2.0, 'dash': True},
+    'correction':  {'color': 'accent_ink', 'width': 1.2, 'size': 6.0},
+    'band':        {'color': 'wash'},
+    'baseline':    {'color': 'cyan', 'width': 1.0, 'dash': True},
 }
 
 # 指数缓动（ease-out-quart）—— 绝不回弹
@@ -129,33 +147,36 @@ def build_app_qss(c=None) -> str:
     c = dict(COLORS if c is None else c)
     fam = FONT_FAMILY
     mono = MONO_FAMILY
+    r = METRICS['radius']
+    rs = METRICS['radius_sm']
     return f"""
 /* ---------- 基础：字体与前景（QSS 不继承，故逐类型声明） ---------- */
 QWidget {{
     background-color: {c['paper']};
     color: {c['ink']};
-    font-family: "{fam}", "{FONT_FAMILY_FALLBACK}", sans-serif;
-    font-size: 12px;
+    /* 不在这里声明 font-family/font-size：QSS 类型选择器会覆盖
+       代码里 setFont() 的层级字体（状态名 17、读数 18、等宽数字）。
+       默认字体由 QApplication.setFont(app_font(10)) 提供。 */
 }}
 QLabel {{
     background: transparent;
     color: {c['ink']};
-    font-family: "{fam}", "{FONT_FAMILY_FALLBACK}", sans-serif;
 }}
 QToolTip {{
     background-color: {c['surface']};
     color: {c['ink']};
     border: 1px solid {c['rule']};
+    border-radius: {rs}px;
     padding: 4px 6px;
     font-size: 11px;
 }}
 
-/* ---------- 按钮：构成主义硬边直角，无圆角无渐变 ---------- */
+/* ---------- 按钮：柔和圆角，无渐变 ---------- */
 QPushButton {{
     background-color: transparent;
     color: {c['ink_2']};
     border: 1px solid {c['rule']};
-    border-radius: 0px;
+    border-radius: {rs}px;
     padding: 6px 14px;
     font-size: 11.5px;
     font-family: "{fam}", "{FONT_FAMILY_FALLBACK}", sans-serif;
@@ -187,6 +208,7 @@ QPushButton[primary="true"] {{
     background-color: {c['accent']};
     color: {c['surface']};
     border: none;
+    border-radius: {rs}px;
     padding: 10px 20px;
     font-size: 11.5px;
     font-weight: 600;
@@ -214,6 +236,7 @@ QPushButton[danger="true"]:hover {{
 QPushButton[flat="true"] {{
     background-color: transparent;
     border: none;
+    border-radius: {rs}px;
     padding: 0px;
 }}
 QPushButton[flat="true"]:hover {{
@@ -225,19 +248,21 @@ QPushButton[flat="true"]:checked {{
     background-color: {c['accent']};
 }}
 
-/* ---------- 滑条：细轨 + 方形 thumb（无圆角）---------- */
+/* ---------- 滑条：细轨 + 圆形 thumb ---------- */
 QSlider::groove:horizontal {{
     height: 2px;
     background: {c['rule']};
-    border-radius: 0px;
+    border-radius: 1px;
 }}
 QSlider::sub-page:horizontal {{
     background: {c['accent']};
     height: 2px;
+    border-radius: 1px;
 }}
 QSlider::add-page:horizontal {{
     background: {c['rule']};
     height: 2px;
+    border-radius: 1px;
 }}
 QSlider::handle:horizontal {{
     width: 14px;
@@ -245,28 +270,29 @@ QSlider::handle:horizontal {{
     margin: -6px 0px;
     background: {c['accent']};
     border: none;
-    border-radius: 0px;
+    border-radius: 7px;
 }}
 QSlider::handle:horizontal:hover {{
     background: {c['accent_ink']};
     width: 16px;
     height: 16px;
     margin: -7px 0px;
+    border-radius: 8px;
 }}
 QSlider::handle:horizontal:pressed {{
     background: {c['accent_deep']};
 }}
 
 /* ---------- 输入框 ---------- */
-QLineEdit {{
+QLineEdit, QDoubleSpinBox, QSpinBox, QComboBox {{
     background-color: {c['surface']};
     color: {c['ink']};
     border: 1px solid {c['rule']};
-    border-radius: 0px;
+    border-radius: {rs}px;
     padding: 5px 8px;
     selection-background-color: {c['accent_soft']};
 }}
-QLineEdit:focus {{
+QLineEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus, QComboBox:focus {{
     border-color: {c['accent']};
 }}
 
@@ -275,7 +301,7 @@ QListWidget {{
     background-color: {c['surface']};
     color: {c['ink']};
     border: 1px solid {c['rule']};
-    border-radius: 0px;
+    border-radius: {r}px;
     font-size: 12px;
 }}
 QListWidget::item {{
@@ -302,7 +328,7 @@ QScrollBar:vertical {{
 }}
 QScrollBar::handle:vertical {{
     background: {c['rule']};
-    border-radius: 0px;
+    border-radius: 4px;
     min-height: 30px;
 }}
 QScrollBar::handle:vertical:hover {{
@@ -317,6 +343,7 @@ QScrollBar:horizontal {{
 }}
 QScrollBar::handle:horizontal {{
     background: {c['rule']};
+    border-radius: 4px;
     min-width: 30px;
 }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
@@ -327,7 +354,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
 QGroupBox {{
     background-color: {c['surface']};
     border: 1px solid {c['rule']};
-    border-radius: 0px;
+    border-radius: {r}px;
     margin-top: 12px;
     padding: 12px 14px 10px 14px;
     font-size: 9.5px;
@@ -350,8 +377,9 @@ QFrame#TopTabs {{
 QPushButton#TabBtn {{
     background: transparent;
     border: none;
-    /* 底部指示条占位：未选中时透明，选中时 2px accent（构成主义硬边）*/
+    /* 底部指示条占位：未选中时透明，选中时 2px accent */
     border-bottom: 2px solid transparent;
+    /* Tab 的底部硬边条是导航语义，不跟随容器圆角 */
     border-radius: 0px;
     color: {c['muted']};
     font-family: "{fam}", "{FONT_FAMILY_FALLBACK}", sans-serif;
@@ -381,9 +409,11 @@ QFrame#TopBar {{
 QFrame#CurvePanel {{
     background-color: {c['surface']};
     border: 1px solid {c['rule']};
+    border-radius: {r}px;
 }}
 QFrame#Section {{
     background-color: {c['surface']};
     border: 1px solid {c['rule']};
+    border-radius: {r}px;
 }}
 """

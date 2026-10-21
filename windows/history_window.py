@@ -20,6 +20,7 @@ from PyQt5.QtCore import QDate
 from PyQt5.QtGui import QTextCharFormat, QColor, QFont
 
 from widgets import CardFrame, COLORS
+from theme import METRICS
 
 
 class HistoryWindow(QWidget):
@@ -37,7 +38,8 @@ class HistoryWindow(QWidget):
     # ----------------------------------------------------------------
     def _setup_ui(self):
         self.setObjectName('HistoryPage')
-        self.setStyleSheet("QWidget#HistoryPage { background-color: {COLORS['bg']}; }")
+        self.setStyleSheet(
+            f"QWidget#HistoryPage {{ background-color: {COLORS['bg']}; }}")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 12, 14, 12)
@@ -104,7 +106,7 @@ class HistoryWindow(QWidget):
         self.export_btn.setStyleSheet(
             f"QPushButton {{ background-color: transparent;"
             f" color: {COLORS['ink_soft']}; border: 1px solid {COLORS['rule']};"
-            f" border-radius: 6px; padding: 5px 16px; font-size: 12px; }}"
+            f" border-radius: {METRICS['radius_sm']}px; padding: 5px 16px; font-size: 12px; }}"
             f"QPushButton:hover {{ border-color: {COLORS['accent']};"
             f" color: {COLORS['accent']}; }}"
         )

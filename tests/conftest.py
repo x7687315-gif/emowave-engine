@@ -12,9 +12,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 @pytest.fixture
 def qapp():
-    """提供 QApplication 实例"""
+    """提供 QApplication 实例，并注入与生产一致的字体/主题。"""
     from PyQt5.QtWidgets import QApplication
+    from theme import app_font, build_app_qss
+
     app = QApplication.instance()
     if app is None:
         app = QApplication([])
+    app.setFont(app_font(10))
+    app.setStyleSheet(build_app_qss())
     yield app

@@ -29,10 +29,11 @@ from PyQt5.QtWidgets import (
     QFrame,
     QScrollArea,
     QStackedWidget,
+    QShortcut,
 )
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QKeySequence, QFontMetrics
 
-from theme import COLORS, app_font, app_font_num
+from theme import COLORS, METRICS, app_font, app_font_num
 from curve_widget import EmotionCurveWidget
 
 
@@ -80,13 +81,7 @@ class InputPanel(QWidget):
         self.btn_record = QPushButton("●  开始记录")
         self.btn_record.setCursor(Qt.PointingHandCursor)
         self.btn_record.setProperty("primary", True)
-        self.btn_record.setStyleSheet(
-            f"QPushButton {{ background: {COLORS['accent']}; color: {COLORS['surface']};"
-            f" border: none; padding: 10px 16px; font-size: 11.5px;"
-            f" font-weight: 600; letter-spacing: 1.4px; }}"
-            f"QPushButton:hover {{ background: {COLORS['accent_ink']}; }}"
-            f"QPushButton:pressed {{ background: {COLORS['accent_deep']}; }}"
-        )
+        self.btn_record.setStyleSheet(self._BTN_PRIMARY)
         self.btn_record.clicked.connect(lambda: self._on_toggle())
         ctrl.addWidget(self.btn_record)
 
@@ -98,6 +93,7 @@ class InputPanel(QWidget):
         self.btn_note.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {COLORS['ink_2']};"
             f" border: 1px solid {COLORS['rule']}; padding: 9px 10px;"
+            f" border-radius: {METRICS['radius_sm']}px;"
             f" font-size: 10.5px; letter-spacing: 1px; }}"
             f"QPushButton:hover {{ color: {COLORS['accent']};"
             f" border-color: {COLORS['accent']}; }}"
@@ -137,7 +133,8 @@ class InputPanel(QWidget):
         num.setFont(app_font_num(12, QFont.Light))
         num.setStyleSheet(f"color: {COLORS['muted']};")
         num.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        num.setFixedWidth(46)
+        # 按实际字体测量 "100/100"：不同 DPI/字体回退下宽度不同，固定宽度会裁字
+        num.setFixedWidth(QFontMetrics(num.font()).horizontalAdvance("100/100") + 8)
         layout.addWidget(k)
         layout.addWidget(slider, 1)
         layout.addWidget(num)
@@ -145,19 +142,22 @@ class InputPanel(QWidget):
 
     _BTN_PRIMARY = (
         f"QPushButton {{ background: {COLORS['accent']}; color: {COLORS['surface']};"
-        f" border: none; padding: 11px 22px; font-size: 11.5px;"
+        f" border: none; border-radius: {METRICS['radius_sm']}px;"
+        f" padding: 11px 22px; font-size: 11.5px;"
         f" font-weight: 600; letter-spacing: 1.6px; }}"
         f"QPushButton:hover {{ background: {COLORS['accent_ink']}; }}"
         f"QPushButton:pressed {{ background: {COLORS['accent_deep']}; }}"
     )
     _BTN_STOP = (
         f"QPushButton {{ background: {COLORS['accent_deep']};"
-        f" color: {COLORS['surface']}; border: none; padding: 11px 22px;"
+        f" color: {COLORS['surface']}; border: none;"
+        f" border-radius: {METRICS['radius_sm']}px; padding: 11px 22px;"
         f" font-size: 11.5px; font-weight: 600; letter-spacing: 1.6px; }}"
     )
     _BTN_DECAY = (
         f"QPushButton {{ background: {COLORS['rule']};"
-        f" color: {COLORS['muted']}; border: none; padding: 11px 22px;"
+        f" color: {COLORS['muted']}; border: none;"
+        f" border-radius: {METRICS['radius_sm']}px; padding: 11px 22px;"
         f" font-size: 11.5px; font-weight: 600; letter-spacing: 1.6px; }}"
     )
 
@@ -219,7 +219,7 @@ class MainConsole(QWidget):
         self.presenter.resume_active_wave()   # 上次未走完的波：按真实时间续算
         # 没有未走完的波时，用最近一条事件的观察重建模型
         # （只影响"现在是什么状态"，不把历史曲线画出来）
-        if not self.presenter.estimator.is_initialized:
+        if not self.presenter.has_estimator_state():
             self.presenter.restore_recent_context()
 
     # ------------------------------------------------------------
@@ -261,35 +261,16 @@ class MainConsole(QWidget):
     # ---- 以下转发**只为测试与既有子控件保留**，生产 UI 不应新增依赖 ----
     # v5 审计结论：14 个转发属性里，生产代码只用到 states / params /
     # calibrator / baseline_ctrl（都是传给子控件的 provider）；其余是测试缝。
-    # 本轮删掉 3 个确实无人使用的（_segment / _last_obs_ts / _decay_now）。
-    # 新代码请走 presenter 的公共接口（如 correction_context()），别再往下摸。
-    @property
-    def states(self):
-        return self.presenter.states
-
+    # Phase 3 删掉 3 个无人使用的（_segment / _last_obs_ts / _decay_now）；
+    # Phase 5 再删 _edits / _wave_active / timer，并把生产代码切到
+    # presenter 的公共接口（has_estimator_state / readout_payload / sync_snapshot）。
     @property
     def recording(self):
         return self.presenter.recording
 
-    @recording.setter
-    def recording(self, value):
-        self.presenter.recording = bool(value)
-
     @property
-    def _edits(self):
-        return self.presenter._edits
-
-    @property
-    def _wave_active(self):
-        return self.presenter._wave_active
-
-    @_wave_active.setter
-    def _wave_active(self, value):
-        self.presenter._wave_active = bool(value)
-
-    @property
-    def timer(self):
-        return self.presenter.timer
+    def states(self):
+        return self.presenter.states
 
     # ================================================================
     # 布局（小窗化 · 阶段 1）
@@ -324,26 +305,25 @@ class MainConsole(QWidget):
         # ② 曲线（视觉主角）
         curve_frame = QFrame()
         curve_frame.setObjectName("CurvePanel")
-        curve_frame.setStyleSheet(
-            f"QFrame#CurvePanel {{ background: {COLORS['surface']};"
-            f" border: 1px solid {COLORS['rule']}; }}"
-        )
         cf = QVBoxLayout(curve_frame)
-        cf.setContentsMargins(0, 14, 0, 4)
+        # 左右留 8px：曲线自己的圆角纸面不贴面板边框，避免方块盖住圆角
+        cf.setContentsMargins(8, 14, 8, 8)
         head = QHBoxLayout()
-        head.setContentsMargins(18, 0, 18, 0)
-        hk = QLabel("EMOTION CURVE · 模型估计")
+        head.setContentsMargins(10, 0, 10, 0)
+        hk = QLabel("情绪曲线")
         hk.setFont(app_font(10, QFont.DemiBold))
         hk.setStyleSheet(f"color: {COLORS['ink_2']}; letter-spacing: 1.8px;")
         head.addWidget(hk)
         head.addStretch(1)
-        legend = QLabel("— 模型线    ░ ±1σ    ┄ 基线    · 原始")
+        legend = QLabel("— 估计   ┄ 预测   · 观察   □ 修正")
         legend.setFont(app_font(9))
         legend.setStyleSheet(f"color: {COLORS['muted']};")
         head.addWidget(legend)
         cf.addLayout(head)
         self.curve = EmotionCurveWidget(series='valence')
-        self.curve.setMinimumHeight(340)
+        # 200 是 360×600 最小窗下的下限；状态头恢复字号后会占 ~129px，
+        # 曲线仍需给输入台留出空间。400×680 默认窗会由 stretch 撑到 ~320。
+        self.curve.setMinimumHeight(200)
         cf.addWidget(self.curve)
         ml.addWidget(curve_frame, 1)
 
@@ -376,7 +356,7 @@ class MainConsole(QWidget):
             on_learn=self._learn,
         )
         body = QVBoxLayout()
-        body.setContentsMargins(16, 16, 16, 16)
+        body.setContentsMargins(12, 12, 12, 12)
         body.setSpacing(14)
         body.addWidget(self.baseline_card)
         body.addWidget(self.model_card)
@@ -390,7 +370,7 @@ class MainConsole(QWidget):
         # ---- 页 2：历史（事件回顾 + 历史记录）----
         self.legacy = LegacyEmbed(db=self.db)
         body2 = QVBoxLayout()
-        body2.setContentsMargins(16, 16, 16, 16)
+        body2.setContentsMargins(12, 12, 12, 12)
         body2.setSpacing(14)
         body2.addWidget(self.legacy)
         body2.addStretch(1)
@@ -407,7 +387,8 @@ class MainConsole(QWidget):
         scroll.setObjectName("PageScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # 极端 DPI/字体回退下允许横向滚动兜底，绝不静默裁掉右侧内容
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         content = QWidget()
         content.setObjectName("PageBody")
         content.setLayout(body_layout)
@@ -442,6 +423,13 @@ class MainConsole(QWidget):
             lambda *_: self._on_slider("a"))
         self.presenter.input_changed.connect(self._on_input_changed)
         self._push_input()
+
+        # 键盘：不用鼠标也能完成两个高频动作
+        #   Ctrl+R 开始/停止记录（R = Record）
+        #   Ctrl+N 记一笔（N = Note）——记录中才有效，否则 presenter 会忽略
+        QShortcut(QKeySequence("Ctrl+R"), self,
+                  activated=lambda: self._toggle_recording())
+        QShortcut(QKeySequence("Ctrl+N"), self, activated=self._commit_note)
 
     def _push_input(self, *_):
         """把当前滑条值整体告诉 presenter（初次接线 / 编程式设定用）。
@@ -545,9 +533,6 @@ class MainConsole(QWidget):
     def _decay_step(self):
         self.presenter.decay_step()
 
-    def observations_ts_for_curve(self):
-        return self.presenter.observations_ts_for_curve()
-
     def _nudge(self, delta: float):
         self.presenter.nudge(delta)
 
@@ -577,8 +562,8 @@ class MainConsole(QWidget):
     # 刷新（现在都由 presenter 信号驱动；保留两个入口供外部主动调）
     # ================================================================
     def _refresh_readouts(self):
-        if self.states:
-            self._on_readouts(*self.presenter._readout_payload())
+        if self.presenter.has_readout():
+            self._on_readouts(*self.presenter.readout_payload())
 
     def _reset_readouts(self):
         # 状态头内含四读数，一次复位（v3 是逐个标签 setText）

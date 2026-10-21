@@ -27,7 +27,7 @@ class LegacyEmbed(QFrame):
         self._db = db
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(16, 14, 16, 16)
+        lay.setContentsMargins(12, 12, 12, 12)
         lay.setSpacing(10)
 
         title = QLabel("事件回顾 & 历史")

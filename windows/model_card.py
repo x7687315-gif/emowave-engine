@@ -6,7 +6,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 from PyQt5.QtGui import QFont
 
-from theme import COLORS, app_font, app_font_num
+from theme import COLORS, METRICS, app_font, app_font_num
 
 
 class ModelCard(QFrame):
@@ -49,6 +49,8 @@ class ModelCard(QFrame):
         self._lbl_n = self._cell("已学习")
         self._lbl_ell = self._cell("惯性 ℓ(s)")
         self._lbl_stage = self._cell("阶段")
+        # cold_start 是英文标识，用等宽 14pt 会撑破 400px 的 4 列网格
+        self._lbl_stage.value_label.setFont(app_font(12))
         self._lbl_shrink = self._cell("个人化")
         for w in (self._lbl_n, self._lbl_ell, self._lbl_stage, self._lbl_shrink):
             grid.addWidget(w, 1)
@@ -62,7 +64,8 @@ class ModelCard(QFrame):
         btn.setProperty("primary", True)
         btn.setStyleSheet(
             f"QPushButton {{ background: {COLORS['accent']}; color: {COLORS['surface']};"
-            f" border: none; padding: 8px 16px; font-size: 11.5px;"
+            f" border: none; border-radius: {METRICS['radius_sm']}px;"
+            f" padding: 8px 16px; font-size: 11.5px;"
             f" font-weight: 600; letter-spacing: 1.4px; }}"
             f"QPushButton:hover {{ background: {COLORS['accent_ink']}; }}"
             f"QPushButton:pressed {{ background: {COLORS['accent_deep']}; }}"

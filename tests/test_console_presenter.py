@@ -46,11 +46,11 @@ def test_presenter_runs_full_cycle_without_any_widget(qapp):
 
     assert p.recording is False
     assert len(p.observations) == 4 and len(p.states) == 4
-    assert p._wave_active is True
+    assert p.is_wave_active() is True
 
     clock.advance(60)
     p.decay_step()
-    assert p._wave_active is False
+    assert p.is_wave_active() is False
     assert p.states == []
     # 波消失 ≠ 没有状态：latest_state 仍代表"模型此刻的估计"
     assert p.latest_state is not None
@@ -382,12 +382,12 @@ def test_wave_end_keeps_latest_state(qapp):
     p.toggle_recording(False)
 
     p._end_wave()
-    assert p._wave_active is False
+    assert p.is_wave_active() is False
     assert p.states == []
     assert p.latest_state is not None
     assert p.current_mode() == "idle"
     # 读数仍可读（不是 "—"）
-    v, a, _c, ci, _p, _ts, _last = p._readout_payload()
+    v, a, _c, ci, _p, _ts, _last = p.readout_payload()
     assert 0.0 <= v <= 1.0 and ci != "—"
 
 
@@ -404,14 +404,14 @@ def test_resume_uses_wall_clock_gap(qapp, tmp_path):
         clock.advance(1)
         p.sample(0.85, 0.75)
     p.toggle_recording(False)
-    assert p._wave_active is True
+    assert p.is_wave_active() is True
 
     clock.advance(1800)                       # 关机 30 分钟
     p2 = _presenter(qapp, db=db, clock=clock)
     p2.resume_active_wave()
 
     assert p2.last_horizon == pytest.approx(1800.0, abs=2.0)
-    assert p2._wave_active is False            # 波早已自然结束
+    assert p2.is_wave_active() is False            # 波早已自然结束
     assert p2.latest_state is not None         # 但状态仍在
     # 事件在"停止记录"时已落库一次；恢复不会重复插入
     assert len(db.get_recent_events(limit=10)) == 1
@@ -436,7 +436,7 @@ def test_resume_short_gap_keeps_wave_without_duplicating(qapp, tmp_path):
     p2 = _presenter(qapp, db=db, clock=clock)
     p2.resume_active_wave()
 
-    assert p2._wave_active is True
+    assert p2.is_wave_active() is True
     assert len(p2.observations) == 5           # 恰好重放一次，没有翻倍
     assert p2.last_horizon == pytest.approx(60.0, abs=2.0)
     assert len(db.get_recent_events(limit=10)) == 1
@@ -532,10 +532,6 @@ def test_curve_payload_none_when_insufficient(qapp):
     p.sample(0.6, 0.5)
     assert p.curve_payload() is None
 
-
-# ================================================================
-# v4 Phase 2：统一曲线查询
-# ================================================================
 
 # ================================================================
 # v4 Phase 3：衰减尾巴增量推进
@@ -642,10 +638,6 @@ def test_decay_payload_marks_predicted_from(qapp):
 
 
 # ================================================================
-# v4 Phase 5：预测段标记
-# ================================================================
-
-# ================================================================
 # v4 Phase 6：持久化与恢复加固
 # ================================================================
 
@@ -717,7 +709,7 @@ def test_restore_recent_context_ages_state(qapp, tmp_path):
 
     clock = FakeClock(now)
     p = _presenter(qapp, db=db, clock=clock)
-    assert p.estimator.is_initialized is False
+    assert p.has_estimator_state() is False
 
     assert p.restore_recent_context() is True
     assert p.observations == []                       # 不把历史塞进曲线
@@ -745,24 +737,6 @@ def test_restore_recent_context_skips_stale_event(qapp, tmp_path):
     assert p.restore_recent_context() is False
     assert p.latest_state is None
     db.close()
-
-
-# ================================================================
-# v4 Phase 6：持久化与恢复加固
-# ================================================================
-
-BAD_SNAPSHOTS = [
-    "not-json-at-all",
-    '{"samples": "nope"}',
-    '{"samples": [["x", 0.5, 0.5]]}',
-    '{"samples": [[1000.0, 1.5, 0.5]]}',                 # 越界
-    '{"samples": [[1000.0, 0.5, 0.5], [999.0, 0.5, 0.5]]}',   # 乱序
-    '{"samples": [[1000.0, 0.5]]}',                      # 字段数不对
-    '{"samples": []}',
-    '{"samples": [[-1.0, 0.5, 0.5]]}',                   # 时间戳非法
-]
-
-
 
 
 # ================================================================
@@ -859,7 +833,7 @@ def test_readout_payload_carries_timestamps(qapp):
     clock.advance(90)
     p.decay_step()
 
-    v, a, _c, _ci, _params, state_ts, last_obs_ts = p._readout_payload()
+    v, a, _c, _ci, _params, state_ts, last_obs_ts = p.readout_payload()
     assert state_ts == pytest.approx(clock(), abs=1e-6)
     assert last_obs_ts == pytest.approx(p._last_obs_ts, abs=1e-9)
     assert state_ts > last_obs_ts
@@ -937,7 +911,106 @@ def test_correction_context_empty_without_data(qapp):
     assert ctx["current_state"] is None
 
 
+def _curve_value_at(p, ts, tol=1.0):
+    """取平滑曲线上最接近 ts 的点的效价。"""
+    payload = p.curve_payload()
+    best = min(range(len(payload["ts"])), key=lambda i: abs(payload["ts"][i] - ts))
+    assert abs(payload["ts"][best] - ts) <= tol
+    return payload["mv"][best]
+
+
+def test_correction_moves_curve_toward_user_intent(qapp):
+    """用户明确改一个点，曲线必须**看得出来**跟着走。
+
+    v5 发现：显示层此前用的是学习的 reliability_weight（DRAG≈0.36），
+    拖完只从 0.95 走到 0.90 附近，用户会认为"改了没用"。
+    现在显示权重与学习权重分开（DISPLAY_CORRECTION_WEIGHT=1.0）。
+    """
+    from presenters.console_presenter import DISPLAY_CORRECTION_WEIGHT
+
+    assert DISPLAY_CORRECTION_WEIGHT == 1.0
+
+    p, _clock = _decaying_presenter(qapp, n=30, v=0.95, a=0.45)
+    ts = p.states[8][0]
+    before = _curve_value_at(p, ts)
+    p.ingest_corrections([(ts, 0.20, 0.45)])
+    after = _curve_value_at(p, ts)
+
+    assert abs(after - 0.20) < abs(before - 0.20) - 0.15, (
+        "纠正后曲线只从 %.3f 走到 %.3f（目标 0.20），用户会觉得没生效"
+        % (before, after)
+    )
+
+
+def test_correction_learning_weight_stays_conservative(qapp):
+    """显示跟手，但**学习**仍用保守权重——不因一次拖动就大幅改参数。"""
+    p, _clock = _decaying_presenter(qapp, n=10, v=0.95, a=0.45)
+    ts = p.states[4][0]
+    p.ingest_corrections([(ts, 0.20, 0.45)])
+
+    display_weights = {e["reliability_weight"] for e in p._edits}
+    assert display_weights == {1.0}
+
+    stored = [c for c in p.corrections if c["dimension"] == "valence"]
+    assert stored, "纠正应已持久化"
+    assert stored[-1]["reliability_weight"] < 1.0, (
+        "学习权重应保持保守，实际 %.3f" % stored[-1]["reliability_weight"]
+    )
+
+
 # ================================================================
-# v5 Phase 3：修正标记与纠正上下文
+# v5 Phase 5：同步契约、错误提示与恢复文件
 # ================================================================
 
+def test_sync_snapshot_bundles_initial_state(qapp):
+    """晚挂载视图只拿一个包：mode / count / readout / curve。"""
+    p, _clock = _decaying_presenter(qapp)
+    snap = p.sync_snapshot()
+
+    assert set(snap) == {"mode", "count", "readout", "curve"}
+    assert snap["mode"] == "decaying"
+    assert snap["count"] == 5
+    assert snap["readout"][5] > 0                 # state_ts
+    assert snap["curve"] is not None
+    assert p.has_estimator_state() is True
+    assert p.has_readout() is True
+
+
+def test_corrupt_snapshot_emits_user_notice(qapp, tmp_path):
+    """快照损坏不只写日志，还要通过 notice_changed 让 UI 说一句。"""
+    from db import DatabaseManager
+
+    db = DatabaseManager(str(tmp_path / "notice.db"))
+    db.set_state("active_wave", "{not-json")
+    p = _presenter(qapp, db=db)
+    seen = []
+    p.notice_changed.connect(lambda _severity, text: seen.append(text))
+    p.resume_active_wave()
+
+    assert seen and "快照" in seen[0]
+    assert any("快照" in text for _severity, text in p.notices)
+    db.close()
+
+
+def test_event_save_failure_spills_recovery_file(qapp, tmp_path, monkeypatch):
+    """数据库写失败时，事件必须落到本地恢复文件，而不是静默消失。"""
+    from db import DatabaseManager
+    from tests.helpers import FakeClock
+
+    db = DatabaseManager(str(tmp_path / "spill.db"))
+    monkeypatch.setattr(
+        db, "save_event",
+        lambda _event: (_ for _ in ()).throw(RuntimeError("disk full")))
+    clock = FakeClock()
+    p = _presenter(qapp, db=db, clock=clock)
+    p._spill_dir = str(tmp_path / "spill")
+
+    p.toggle_recording(True)
+    clock.advance(1)
+    p.sample(0.70, 0.50)
+    p.toggle_recording(False)
+
+    files = list((tmp_path / "spill").glob("*.json"))
+    assert len(files) == 1
+    assert any("恢复文件" in text for _severity, text in p.notices)
+    db.close()
