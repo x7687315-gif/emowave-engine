@@ -26,7 +26,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QFont
 
-from theme import COLORS, app_font, app_font_num, DUR_MID
+from theme import COLORS, METRICS, app_font, app_font_num, DUR_MID
 
 
 class CorrectionSheet(QDialog):
@@ -108,8 +108,8 @@ class CorrectionSheet(QDialog):
             f" border-top: 1px solid {COLORS['rule']}; }}"
         )
         rl = QHBoxLayout(right)
-        rl.setContentsMargins(14, 10, 14, 10)
-        rl.setSpacing(10)
+        rl.setContentsMargins(10, 8, 10, 8)
+        rl.setSpacing(8)
 
         def _field(key, widget, extra=None):
             """一格：极小标签在上，控件在下。"""
@@ -133,6 +133,7 @@ class CorrectionSheet(QDialog):
         self.tm_lbl = QLabel("—")
         self.tm_lbl.setFont(app_font_num(13, QFont.Light))
         self.tm_lbl.setStyleSheet(f"color: {COLORS['ink']};")
+        self.tm_lbl.setFixedWidth(78)
         rl.addWidget(_field("时刻", self.tm_lbl), 1)
 
         # 效价
@@ -154,6 +155,18 @@ class CorrectionSheet(QDialog):
         self.a_sb.setFont(app_font(11))
         self.a_sb.valueChanged.connect(lambda v: self._on_manual_edit(1, v))
         rl.addWidget(_field("唤醒", self.a_sb, self._a_orig_lbl), 2)
+
+        # 400px 宽下三个字段必须收窄，否则 spinbox 会被右侧/左侧裁掉
+        rs = METRICS['radius_sm']
+        spin_qss = (
+            f"QDoubleSpinBox {{ background: {COLORS['surface']};"
+            f" color: {COLORS['ink']}; border: 1px solid {COLORS['rule']};"
+            f" border-radius: {rs}px; padding: 2px 4px; }}"
+            f"QDoubleSpinBox:focus {{ border-color: {COLORS['accent']}; }}"
+        )
+        for sb in (self.v_sb, self.a_sb):
+            sb.setFixedWidth(96)
+            sb.setStyleSheet(spin_qss)
 
         bl.addWidget(right)
 
