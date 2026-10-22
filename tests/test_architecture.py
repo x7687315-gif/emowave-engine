@@ -20,7 +20,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 # 出货入口：桌面应用 + pip 包 CLI（`python -m emowave.cli`）
-ENTRYPOINTS = ("main_app", "emowave.cli", "emowave.cli.__main__")
+# tools.forecast_eval 是 Phase 6 的评估入口（开发/使用期工具，仍算可达入口）
+ENTRYPOINTS = ("main_app", "emowave.cli", "emowave.cli.__main__",
+               "tools", "tools.forecast_eval")
 
 # 只有测试可达、但属于对外发布 API 的模块（pip 包消费者会用）
 PUBLIC_API_ONLY = {

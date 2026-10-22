@@ -10,7 +10,7 @@
 
 `选人群 → 观测 → 估计 → 查看 → 修正 → 学习 → 校准 → 循环`
 
-![测试 763 通过](https://img.shields.io/badge/%E6%B5%8B%E8%AF%95-763%20%E9%80%9A%E8%BF%87-64748B)
+![测试 769 通过](https://img.shields.io/badge/%E6%B5%8B%E8%AF%95-769%20%E9%80%9A%E8%BF%87-64748B)
 ![运行时依赖 零](https://img.shields.io/badge/%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96-%E9%9B%B6-2E6BE6)
 ![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-64748B)
 ![版本 v5.0.0](https://img.shields.io/badge/version-v5.0.0-2E6BE6)
@@ -266,11 +266,11 @@ for i in range(60):
 
 ## 10 · 测试与质量
 
-**763 个测试全通过**（内核 `emowave/tests/` 593 + 桌面端 `tests/` 170），TDD 全程：写测试 → 看失败 → 最小实现 → 看通过 → 重构。其中 6 条是**架构护栏**（零依赖内核 / 无孤儿模块 / 入口可 import / 白名单防腐 / 代码体积预算 / 无重复定义）。
+**769 个测试全通过**（内核 `emowave/tests/` 593 + 桌面端 `tests/` 176），TDD 全程：写测试 → 看失败 → 最小实现 → 看通过 → 重构。其中 6 条是**架构护栏**（零依赖内核 / 无孤儿模块 / 入口可 import / 白名单防腐 / 代码体积预算 / 无重复定义）。
 
 ```bash
 python -m pytest emowave/tests/ -v       # 593 内核测试
-python -m pytest tests/ -v               # 170 桌面端集成 + 架构护栏
+python -m pytest tests/ -v               # 176 桌面端集成 + 架构护栏
 ```
 
 覆盖：领域模型不变式 · Matérn 闭式解数学性质 · RTS 优于滤波 · 可编辑曲线不发散 · 精力人群先验与锚点收缩 · 情绪波衰减回基线 · 事件落库与补全 · 基线主权 · 双向降级 · SQLite 不可变与并发 · CLI。
@@ -294,11 +294,12 @@ python -m pytest tests/ -v               # 170 桌面端集成 + 架构护栏
 
 ### v5 · 数据契约 + UI（2026-10）
 
-Phase 0–5 完成：单轨时间（读数与曲线同源）、纠正持久化、首屏 meta 行、悬浮窗收起/展开/钉住、四类曲线语义、字体层级修复、柔和圆角、空态/错误态、360×600 适配、曲线悬停、视图不再读 presenter 私有成员。测试 **763 passed**，行数 25,107 / 27,000。
+Phase 0–6 完成：单轨时间（读数与曲线同源）、纠正持久化、首屏 meta 行、悬浮窗收起/展开/钉住、四类曲线语义、字体层级修复、柔和圆角、空态/错误态、360×600 适配、曲线悬停、视图不再读 presenter 私有成员。Phase 6 评估底座：`forecast_log` 因果预测日志 + `tools/forecast_eval` 的 MAE/RMSE。测试 **769 passed**，行数 25,608 / 27,000。
 
 - 路线图与阶段交接：[`docs/refactor-v5/ROADMAP.md`](docs/refactor-v5/ROADMAP.md)
 - 视觉验收（Windows 实拍）：[`v5-main-400x680.png`](docs/screenshots/v5-main-400x680.png) · [`v5-main-360x600.png`](docs/screenshots/v5-main-360x600.png) · [`v5-mini-expanded.png`](docs/screenshots/v5-mini-expanded.png)
-- Phase 6（预测日志 + MAE/RMSE + 7 天真实使用）待开始。
+- 评估：`python -m tools.forecast_eval --db %USERPROFILE%\.emowave\emowave.db`
+- 7 天真实使用清单：[`docs/refactor-v5/06-阶段6-预测日志与评估底座.md`](docs/refactor-v5/06-阶段6-预测日志与评估底座.md) §5
 
 ---
 
@@ -315,7 +316,7 @@ EmoWave 作为 Amiya 的**可选外部状态引擎**，不反向依赖 Amiya。A
 
 ## 12 · 版本与许可
 
-- **v5.0.0（开发中，未打 tag）**：数据契约 + UI 重构 —— Phase 0–5 完成（单轨时间、纠正持久化、首屏 meta、悬浮窗、视觉/错误态/悬停/缩放）；Phase 6 预测日志与评估底座待开始。内核 pip 包版本仍为 **3.0.0**。
+- **v5.0.0（开发中，未打 tag）**：数据契约 + UI 重构 —— Phase 0–6 完成（单轨时间、纠正持久化、首屏 meta、悬浮窗、视觉/错误态/悬停/缩放、预测日志与评估底座）；7 天真实使用与精度结论待开始。内核 pip 包版本仍为 **3.0.0**。
 - **v4.0.0（已完成，未打 tag）**：时间语义重构 —— 观察只由用户动作产生、模型时间跟墙钟、状态常驻与挂件常驻、5 分钟低频刷新、预测段虚线、恢复加固。内核 pip 包版本仍为 **3.0.0**（本轮对其只有增量 API + 一处行为修正，未破坏公开签名）。
 - **v3.0.0**：PyQt5 桌面端成型 —— 精力人群先验、情绪波生命周期、事件补全窗口、人群锚定的个性化学习、内核 pip 包 + GitHub Release。下载见 [Releases](https://github.com/x7687315-gif/emowave-engine/releases/tag/v3.0.0)。
 - 内核 2.0 重构 Phase 0–9 已完成并并入 `main`；1.x 稳定版锚定 tag **`v1.0-stable`**，随时可回退。

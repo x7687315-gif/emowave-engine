@@ -29,7 +29,7 @@
 | [`slim-refactor/14-阶段4-文档收敛与多轮验证.md`](slim-refactor/14-阶段4-文档收敛与多轮验证.md) | 文档收敛 + 多轮验证报告 |
 | [`slim-refactor/15-阶段5-符号清理与磁盘收尾.md`](slim-refactor/15-阶段5-符号清理与磁盘收尾.md) | 未使用 import / 死方法 / 磁盘 22MB→7.9MB / 体积预算护栏 |
 
-## v5 数据契约 + UI 重构（Phase 0–5 完成）
+## v5 数据契约 + UI 重构（Phase 0–6）
 
 | 文档 | 内容 |
 |---|---|
@@ -40,6 +40,7 @@
 | [`refactor-v5/03-阶段3-主窗口重构.md`](refactor-v5/03-阶段3-主窗口重构.md) | Phase 3：首屏 meta 行（距上次自评/估计时刻/基线差）、修正标记、correction_context、时间范围为何不做 |
 | [`refactor-v5/04-阶段4-悬浮窗重构.md`](refactor-v5/04-阶段4-悬浮窗重构.md) | Phase 4：收起/展开/钉住、距上次自评、打开主窗、双窗一致性测试 |
 | [`refactor-v5/05-阶段5-视觉系统与交互验收.md`](refactor-v5/05-阶段5-视觉系统与交互验收.md) | Phase 5：字体层级修复、柔和圆角、空态/错误态、360×600、悬停、接口收口、15 轮验证 |
+| [`refactor-v5/06-阶段6-预测日志与评估底座.md`](refactor-v5/06-阶段6-预测日志与评估底座.md) | Phase 6：forecast_log 因果预测、MAE/RMSE 评估工具、7 天使用清单 |
 
 ## v4 时间语义重构（已完成）
 

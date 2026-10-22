@@ -72,6 +72,23 @@ class DatabaseManager:
             CREATE TABLE IF NOT EXISTS app_state (
                 key TEXT PRIMARY KEY, value TEXT
             );
+            /* v5 Phase 6：因果预测快照（评估用，不当作观察） */
+            CREATE TABLE IF NOT EXISTS forecast_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                base_ts REAL NOT NULL,
+                target_ts REAL NOT NULL,
+                horizon_sec REAL NOT NULL,
+                valence REAL NOT NULL,
+                arousal REAL NOT NULL,
+                var_valence REAL,
+                var_arousal REAL,
+                source TEXT,
+                created_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_forecast_log_base
+                ON forecast_log(base_ts);
+            CREATE INDEX IF NOT EXISTS idx_forecast_log_target
+                ON forecast_log(target_ts);
         """)
         self.conn.commit()
 
@@ -168,6 +185,34 @@ class DatabaseManager:
         row = self.conn.execute(
             "SELECT value FROM app_state WHERE key=?", (key,)).fetchone()
         return row['value'] if row else default
+
+    def save_forecasts(self, rows):
+        """批量写入预测快照；rows 为 8 元组（不含 created_at）。
+
+        预测只用于 Phase 6 评估：它们**不是观察**，不会被喂回模型。
+        """
+        if not rows:
+            return 0
+        created = datetime.now().isoformat()
+        self.conn.executemany(
+            "INSERT INTO forecast_log "
+            "(base_ts,target_ts,horizon_sec,valence,arousal,"
+            "var_valence,var_arousal,source,created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            [tuple(row) + (created,) for row in rows])
+        self.conn.commit()
+        return len(rows)
+
+    def get_forecast_rows(self, limit=None):
+        sql = ("SELECT base_ts,target_ts,horizon_sec,valence,arousal,"
+               "var_valence,var_arousal,source,created_at "
+               "FROM forecast_log ORDER BY base_ts, horizon_sec")
+        if limit is not None:
+            sql += " LIMIT ?"
+            rows = self.conn.execute(sql, (int(limit),)).fetchall()
+        else:
+            rows = self.conn.execute(sql).fetchall()
+        return [dict(r) for r in rows]
 
     def close(self):
         self.conn.close()

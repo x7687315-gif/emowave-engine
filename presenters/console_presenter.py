@@ -46,6 +46,7 @@ from .engine import (
     predict_forward,
 )
 from .observation_recorder import ObservationRecorder
+from .forecast_logger import ForecastLogger
 from .snapshot_store import SnapshotStore
 from .state_query import StateQuery
 from .wave_scheduler import WaveScheduler
@@ -97,6 +98,8 @@ class ConsolePresenter(QObject):
         self.recorder = ObservationRecorder(clock=self.scheduler.now)
         self.recorder.committed.connect(self._on_committed)
         self.store = SnapshotStore(db, warn=self._notice)
+        # Phase 6：因果预测快照（评估用，不是观察）
+        self.forecast_logger = ForecastLogger(db)
         #: 数据库写失败时的恢复文件目录（测试可覆盖）
         self._spill_dir = os.path.join(os.path.expanduser("~"), ".emowave", "pending")
         # 用户纠正**跨会话保留**：v4 只放内存，重启即失（Phase 1 审计 §3）
@@ -159,6 +162,15 @@ class ConsolePresenter(QObject):
         item = (severity, str(message))
         self.notices.append(item)
         self.notice_changed.emit(*item)
+
+    def _log_forecast(self, source, force=False):
+        """预测日志失败只记 debug，不影响记录/衰减主流程。"""
+        try:
+            self.forecast_logger.log(
+                self.estimator, self.params, self.baseline_ctrl.current,
+                source=source, force=force)
+        except Exception as exc:
+            logger.debug("预测日志跳过：%s", exc)
 
     def set_input(self, valence=None, arousal=None, source=None):
         """视图滑杆变化时调用。
@@ -253,6 +265,7 @@ class ConsolePresenter(QObject):
         self.count_changed.emit(len(self.observations))
         self._emit_readouts()
         self._emit_curve(refit=True)
+        self._log_forecast("sample", force=True)
 
     def _on_committed(self, valence: float, arousal: float):
         """recorder 结算了一次自评 → 记为观察。"""
@@ -271,6 +284,7 @@ class ConsolePresenter(QObject):
         self.latest_state = state
         self.latest_state_ts = state.timestamp
         self._emit_readouts()
+        self._log_forecast("refresh")
 
     def set_periodic_refresh(self, enabled: bool, interval_sec: float = None):
         """开启/停止低频刷新（悬浮窗可见时开启）。
@@ -339,6 +353,7 @@ class ConsolePresenter(QObject):
         self._sync_latest_from_tail()
         self._emit_curve(points=pts)
         self._emit_readouts()
+        self._log_forecast("decay")
         last_v, last_a = (pts[-1][1], pts[-1][2]) if pts else (
             self.states[-1][1].valence, self.states[-1][1].arousal)
         bv = self.baseline_ctrl.current.valence
@@ -602,6 +617,7 @@ class ConsolePresenter(QObject):
         self._sync_latest_from_tail()
         self._emit_readouts()
         self._persist_latest_state()
+        self._log_forecast("resume", force=True)
 
         self._wave_active = True
         self.recording = False
@@ -662,6 +678,7 @@ class ConsolePresenter(QObject):
             self.latest_state = state
             self.latest_state_ts = state.timestamp
             self._emit_readouts()
+            self._log_forecast("restore", force=True)
         return True
 
     def _restore_calibrator_corrections(self):

@@ -16,6 +16,7 @@ def test_create_tables_no_error(tmp_path):
     assert 'emotion_events' in table_names
     assert 'daily_summaries' in table_names
     assert 'app_state' in table_names
+    assert 'forecast_log' in table_names
     db.close()
 
 
@@ -102,3 +103,20 @@ def test_corrupt_database_raises_open_error(tmp_path):
     with pytest.raises(DatabaseOpenError) as exc:
         DatabaseManager(str(path))
     assert str(path) in str(exc.value)
+
+
+def test_save_and_get_forecasts(tmp_path):
+    from db import DatabaseManager
+
+    db = DatabaseManager(str(tmp_path / "forecast.db"))
+    n = db.save_forecasts([
+        (1000.0, 1300.0, 300.0, 0.60, 0.40, 0.010, 0.020, "sample"),
+        (1000.0, 1900.0, 900.0, 0.58, 0.42, 0.020, 0.030, "sample"),
+    ])
+    assert n == 2
+    rows = db.get_forecast_rows()
+    assert len(rows) == 2
+    assert rows[0]["horizon_sec"] == 300.0
+    assert rows[-1]["target_ts"] == 1900.0
+    assert rows[0]["source"] == "sample"
+    db.close()
