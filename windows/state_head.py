@@ -130,13 +130,16 @@ class StateHead(QWidget):
 
         self.reset_values()
 
+    def _sync_cap(self):
+        self.cap.setVisible(self.width() >= 380 and bool(self._has_value))
+
     def resizeEvent(self, event):
         """360px：状态句降一档、去掉"效价"小标题，绝不裁字或藏功能。"""
         narrow = event.size().width() < 380
         self.state_label.setFont(app_font(21 if narrow else 26, QFont.Medium))
         self.v_lbl.value_label.setFont(
             app_font_num(22 if narrow else 26, QFont.Light))
-        self.cap.setVisible(not narrow)
+        self._sync_cap()
         pad = 18 if narrow else 24
         self.layout().setContentsMargins(pad, 22, pad, 10)
         super().resizeEvent(event)
@@ -155,6 +158,8 @@ class StateHead(QWidget):
         self.state_label.setText(derive_state_name(valence, arousal))
 
     def update_values(self, valence, arousal, confidence, ci_text):
+        self._has_value = True
+        self._sync_cap()
         self.v_lbl.value_label.setText("%d" % round(float(valence) * 100))
         self.a_lbl.value_label.setText("%d" % round(float(arousal) * 100))
         self.c_lbl.value_label.setText("%d%%" % round(float(confidence) * 100))
@@ -189,8 +194,11 @@ class StateHead(QWidget):
         self.corr_btn.setVisible(True)
 
     def reset_values(self):
-        self.state_label.setText("—")
-        self.v_lbl.value_label.setText("—")
+        # 空态用一句话，而不是一个 26px 的破折号（看起来像两根横条）
+        self._has_value = False
+        self.state_label.setText("还没有记录")
+        self.v_lbl.value_label.setText("")
+        self._sync_cap()
         self.a_lbl.value_label.setText("—")
         self.c_lbl.value_label.setText("—")
         self.ci_lbl.value_label.setText("—")
