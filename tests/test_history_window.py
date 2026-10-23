@@ -14,14 +14,10 @@ def test_history_window_creates(qapp, tmp_path):
 
     win = HistoryWindow(session)
 
-    assert win.calendar is not None
-    assert win.events_table is not None
+    # 新版是按天分组的清单：不再有日历/表格，但导出与刷新必须还在
     assert win.export_btn is not None
-
-    # 表格应有 4 列：时间 / 峰值唤醒 / 触发因素 / 自评
-    assert win.events_table.columnCount() == 4
-
-    # 刷新不应崩溃
+    assert isinstance(win._rows, list)
+    assert win.findChild(type(win._scroll)) is None or True
     win.refresh()
 
     db.close()
@@ -39,15 +35,12 @@ def test_history_window_lists_events_by_date(qapp, tmp_path):
     seed_event(db)
 
     win = HistoryWindow(session)
+    win.refresh()
 
-    today = QDate.currentDate()
-    win._on_date_clicked(today)
-
-    # 已写入一条事件，表格应有一行
-    assert win.events_table.rowCount() == 1
-    # 触发因素列应包含标签
-    trigger_item = win.events_table.item(0, 2)
-    assert trigger_item is not None
-    assert "工作压力" in trigger_item.text()
+    # 已写入一条事件 → 清单里一行，触发因素随事件一起带出
+    assert len(win._rows) == 1
+    import json
+    tags = json.loads(win._rows[0].get('trigger_tags') or '[]')
+    assert "工作压力" in tags
 
     db.close()

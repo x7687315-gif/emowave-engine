@@ -361,8 +361,9 @@ class MainConsole(QWidget):
         body2 = QVBoxLayout()
         body2.setContentsMargins(12, 12, 12, 12)
         body2.setSpacing(14)
-        body2.addWidget(self.legacy)
-        body2.addStretch(1)
+        # 历史清单要吃掉整页高度；否则 LegacyEmbed 只拿到 sizeHint，
+        # 下面的 stretch 会把页面撑成一大片空白
+        body2.addWidget(self.legacy, 1)
         self.page_history = self._make_scroll_page(body2)
         self.stack.addWidget(self.page_history)
 

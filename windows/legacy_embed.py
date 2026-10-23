@@ -1,17 +1,17 @@
-"""windows/legacy_embed.py — 抽屉：事件回顾 + 历史记录（旧窗口嵌入）
+"""windows/legacy_embed.py — 历史页外壳：事件清单 + 按需展开的事件回顾
 
-保留所有旧 EventSummaryWindow / HistoryWindow 的功能；
-只换主题色（暖色板），不复用旧 COLORS 的冷色蓝。
+新版不再把「事件回顾」常驻在页面顶部（它是一张旧卡片，且大多数时候是空的）。
+改为：清单优先；点某一行，才在顶部展开该事件的回顾，下方仍可继续浏览。
+
+两个旧窗口都保留：
+  · HistoryWindow 已按新语言重写（按天分组）
+  · EventSummaryWindow 原样复用（它自带图表与补全入口）
 """
 import logging
 
-from PyQt5.QtWidgets import QVBoxLayout, QFrame, QLabel
-from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import QFrame, QVBoxLayout
 
-from theme import COLORS, app_font
 from session import SessionController
-
-# 直接复用旧窗口 —— 它们自带数据驱动，无须改业务
 from .event_summary_window import EventSummaryWindow
 from .history_window import HistoryWindow
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class LegacyEmbed(QFrame):
-    """把事件回顾 + 历史记录两层叠在抽屉里。"""
+    """历史页容器（名字沿用旧调用点，内容已重排）。"""
 
     def __init__(self, db=None, parent=None):
         super().__init__(parent)
@@ -27,44 +27,32 @@ class LegacyEmbed(QFrame):
         self._db = db
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(12, 12, 12, 12)
+        lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
 
-        title = QLabel("事件回顾 & 历史")
-        title.setFont(app_font(9, QFont.DemiBold))
-        title.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 1.8px;")
-        lay.addWidget(title)
+        session = SessionController(db) if db is not None else None
+        self._session = session
 
-        # 旧窗口按 session.db 读事件表；这里注入真实 db（此前写死 session=None，
-        # 是 v3 重写遗留的 TODO，导致两个面板永远是空壳）。
-        session = SessionController(db)
         self.summary = EventSummaryWindow(session=session, parent=self)
-        self.history = HistoryWindow(session=session, parent=self)
-
-        # 标题小卡
-        sub1 = QLabel("事件回顾")
-        sub1.setFont(app_font(10, QFont.DemiBold))
-        sub1.setStyleSheet(f"color: {COLORS['ink_2']}; letter-spacing: 1.4px;")
-        lay.addWidget(sub1)
+        self.summary.setVisible(False)      # 选中事件后才出现
         lay.addWidget(self.summary)
 
-        sub2 = QLabel("历史记录")
-        sub2.setFont(app_font(10, QFont.DemiBold))
-        sub2.setStyleSheet(f"color: {COLORS['ink_2']}; letter-spacing: 1.4px;")
-        lay.addWidget(sub2)
-        lay.addWidget(self.history)
+        self.history = HistoryWindow(session=session, parent=self)
+        self.history.event_activated.connect(self._on_event)
+        lay.addWidget(self.history, 1)
 
+    # ------------------------------------------------------------
     def refresh(self):
-        """刷新两个面板：日历/事件表按日期重载，事件回顾显示最近一条。
-
-        无 db 时安全跳过（主界面仍可启动）；异常只记日志，不打断 UI。
-        """
-        if self._db is None:
-            return
         try:
             self.history.refresh()
-            recent = self._db.get_recent_events(limit=1)
-            if recent:
-                self.summary.show_event(recent[0].get("event_id"))
-        except Exception as exc:                       # 刷新失败不应冒泡打断抽屉
-            logger.warning("抽屉「事件回顾/历史记录」刷新失败：%s", exc)
+        except Exception as exc:            # 刷新失败不该打断记录流程
+            logger.warning("历史清单刷新失败：%s", exc)
+
+    def _on_event(self, event_id):
+        if not event_id or self._session is None:
+            return
+        try:
+            self.summary.show_event(event_id)
+            self.summary.setVisible(True)
+        except Exception as exc:
+            logger.warning("事件回顾打开失败：%s", exc)

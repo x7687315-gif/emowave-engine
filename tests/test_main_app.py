@@ -265,7 +265,7 @@ def test_legacy_panels_populate_after_recording(qapp, tmp_path):
     console._toggle_recording(False)
 
     console.legacy.refresh()                          # 打开抽屉/落库后都会调
-    assert console.legacy.history.events_table.rowCount() >= 1
+    assert len(console.legacy.history._rows) >= 1
     db.close()
 
 
