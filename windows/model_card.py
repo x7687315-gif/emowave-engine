@@ -1,118 +1,120 @@
-"""windows/model_card.py — 抽屉：个人模型
+"""windows/model_card.py — 模型页第二段：个人模型
 
-学习事件数 / 惯性 ℓ / 阶段 / 收缩度 + 「学习一步」按钮。
+新版把四列等宽读数改成**逐行记录**：标签在左、数值在右、行间一条细线。
+四列并排在 400px 下会挤成"仪表盘"，逐行才能读清"模型学到了什么"。
+
+参数仍是 provider（callable）：`learn()` 会 replace 新 params，卡片每次
+refresh 都从源头拉，否则"学习一步"点下去数字不动（v3 的 bug）。
 """
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
-from theme import COLORS, METRICS, app_font, app_font_num
+from theme import COLORS, app_font, app_font_num
+
+
+class _Value:
+    """只暴露 `.value_label` 的小容器（沿用旧卡片的访问方式）。"""
+
+    def __init__(self, label):
+        self.value_label = label
 
 
 class ModelCard(QFrame):
-    """个人模型卡：已学习 / 惯性 ℓ / 阶段 / 个人化 + 「学习一步」。
-
-    === 为什么不直接持有 params/calibrator ===
-    v3 在构造时抓住 `params` 对象，但 presenter 有两处会 replace 它：
-      · `set_archetype()` 换人群 → 新 params
-      · `Calibrator.learn()` 学习一步 → 返回新 params（version+1）
-    两者都会让卡片显示**上一次的旧值**（"学习一步"点下去数字不动）。
-    因此改为持有 **provider（可调用）**，每次 refresh 都从源头拉；
-    传入普通对象也支持（`_get()` 兜底），不破坏既有调用方式。
-    """
-
     def __init__(self, params, calibrator, on_learn, parent=None):
         super().__init__(parent)
         self.setObjectName("Section")
-        self._params_ref = params          # 对象或 callable
-        self._calibrator_ref = calibrator  # 同上（当前仅作状态来源预留）
+        self._params_ref = params
+        self._calibrator_ref = calibrator
         self._on_learn = on_learn
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(16, 14, 16, 16)
-        lay.setSpacing(10)
+        lay.setContentsMargins(0, 14, 0, 6)
+        lay.setSpacing(0)
 
         title = QLabel("个人模型")
         title.setFont(app_font(9, QFont.DemiBold))
         title.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 1.8px;")
         lay.addWidget(title)
+        lay.addSpacing(2)
 
-        desc = QLabel("模型已学习你的纠正，逐步贴近你的真实状态。")
-        desc.setFont(app_font(11))
-        desc.setStyleSheet(f"color: {COLORS['ink_2']};")
-        desc.setWordWrap(True)
-        lay.addWidget(desc)
+        self._cells = {}
+        for key, name in (("n", "已学习"), ("ell", "惯性 ℓ (s)"),
+                          ("stage", "阶段"), ("shrink", "个人化")):
+            lay.addWidget(self._row(key, name))
 
-        # 4 个数值
-        grid = QHBoxLayout()
-        grid.setSpacing(0)
-        self._lbl_n = self._cell("已学习")
-        self._lbl_ell = self._cell("惯性 ℓ(s)")
-        self._lbl_stage = self._cell("阶段")
-        # cold_start 是英文标识，用等宽 14pt 会撑破 400px 的 4 列网格
-        self._lbl_stage.value_label.setFont(app_font(12))
-        self._lbl_shrink = self._cell("个人化")
-        for w in (self._lbl_n, self._lbl_ell, self._lbl_stage, self._lbl_shrink):
-            grid.addWidget(w, 1)
-        lay.addLayout(grid)
-
-        # 学习按钮
+        lay.addSpacing(10)
+        learn = QPushButton("学习一步")
+        learn.setCursor(Qt.PointingHandCursor)
+        learn.setFlat(True)
+        learn.setFocusPolicy(Qt.NoFocus)
+        learn.setFont(app_font(11, QFont.DemiBold))
+        learn.setStyleSheet(
+            f"QPushButton {{ border: none; background: transparent;"
+            f" color: {COLORS['accent_ink']}; padding: 0; }}"
+            f"QPushButton:hover {{ color: {COLORS['accent']}; }}")
+        learn.clicked.connect(self._learn)
         row = QHBoxLayout()
-        row.setSpacing(10)
-        btn = QPushButton("学习一步")
-        btn.setCursor(Qt.PointingHandCursor)
-        btn.setProperty("primary", True)
-        btn.setStyleSheet(
-            f"QPushButton {{ background: {COLORS['accent']}; color: {COLORS['surface']};"
-            f" border: none; border-radius: {METRICS['radius_sm']}px;"
-            f" padding: 8px 16px; font-size: 11.5px;"
-            f" font-weight: 600; letter-spacing: 1.4px; }}"
-            f"QPushButton:hover {{ background: {COLORS['accent_ink']}; }}"
-            f"QPushButton:pressed {{ background: {COLORS['accent_deep']}; }}"
-        )
-        btn.clicked.connect(self._learn)
-        row.addWidget(btn)
-        hint = QLabel("积累纠正后点击学习")
-        hint.setFont(app_font(10))
-        hint.setStyleSheet(f"color: {COLORS['muted']};")
-        row.addWidget(hint, 1, Qt.AlignVCenter)
+        row.setSpacing(14)
+        row.addWidget(learn)
+        self._hint = QLabel("积累纠正后点击学习")
+        self._hint.setFont(app_font(9.5))
+        self._hint.setStyleSheet(f"color: {COLORS['muted']};")
+        row.addWidget(self._hint, 1)
         lay.addLayout(row)
+        lay.addSpacing(10)
 
         self.refresh()
 
-    def _cell(self, key):
-        w = QWidget()
-        v = QVBoxLayout(w)
-        v.setContentsMargins(0, 4, 12, 4)
-        v.setSpacing(2)
-        k = QLabel(key)
-        k.setFont(app_font(9, QFont.DemiBold))
-        k.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 1.4px;")
-        big = QLabel("—")
-        big.setFont(app_font_num(14, QFont.Light))
-        big.setStyleSheet(f"color: {COLORS['ink']};")
-        v.addWidget(k)
-        v.addWidget(big)
-        w.value_label = big
-        return w
+    # ------------------------------------------------------------
+    def _row(self, key, name):
+        box = QFrame()
+        bl = QVBoxLayout(box)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(0)
+
+        line = QHBoxLayout()
+        line.setSpacing(10)
+        k = QLabel(name)
+        k.setFont(app_font(11))
+        k.setStyleSheet(f"color: {COLORS['ink_2']};")
+        line.addWidget(k)
+        line.addStretch(1)
+        v = QLabel("—")
+        v.setFont(app_font(13) if key == "stage" else app_font_num(14, QFont.Light))
+        v.setStyleSheet(f"color: {COLORS['ink']};")
+        line.addWidget(v, 0, Qt.AlignVCenter)
+        holder = _Value(v)
+        self._cells[key] = holder
+        # 沿用阶段 5 的属性名：测试与外部按 _lbl_ell.value_label 读值
+        setattr(self, "_lbl_" + key, holder)
+
+        bl.addSpacing(9)
+        bl.addLayout(line)
+        bl.addSpacing(9)
+        rule = QFrame()
+        rule.setFixedHeight(1)
+        rule.setStyleSheet(f"background: {COLORS['rule']}; border: none;")
+        bl.addWidget(rule)
+        return box
 
     @staticmethod
     def _get(ref):
-        """支持传对象或传 callable（callable 用于永远从源头拉最新值）。"""
         return ref() if callable(ref) else ref
 
     def refresh(self):
         p = self._get(self._params_ref)
-        self._lbl_n.value_label.setText(str(getattr(p, 'n_events_fitted', 0)))
-        self._lbl_ell.value_label.setText(f"{getattr(p, 'ell_valence', 0):.0f}")
-        # 注意不能写 getattr(p.stage, 'value', '—')：那会先求值 p.stage，
-        # provider 返回 None 时直接 AttributeError，而 refresh() 在 __init__
-        # 里就会被调用 → 「模型」页整个建不起来。
+        if p is None:
+            return
+        self._cells["n"].value_label.setText(
+            "%d 次" % getattr(p, 'n_events_fitted', 0))
+        self._cells["ell"].value_label.setText(
+            "%d" % round(getattr(p, 'ell_valence', 0)))
         stage = getattr(p, 'stage', None)
-        self._lbl_stage.value_label.setText(getattr(stage, 'value', '—'))
-        self._lbl_shrink.value_label.setText(
-            f"{int(getattr(p, 'shrinkage_alpha', 0)*100)}%")
+        self._cells["stage"].value_label.setText(getattr(stage, 'value', '—'))
+        self._cells["shrink"].value_label.setText(
+            "%d%%" % int(getattr(p, 'shrinkage_alpha', 0) * 100))
 
     def _learn(self):
         self._on_learn()
-        self.refresh()          # 学习一步后立刻重新拉取（learn() 返回新 params）
+        self.refresh()

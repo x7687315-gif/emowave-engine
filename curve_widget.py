@@ -74,6 +74,10 @@ class EmotionCurveWidget(QWidget):
         self.predicted_from = None      # 该时刻之后的点属于「预测段」（虚线）
         self._hover = None              # 悬停读数（自绘，不用 QToolTip）
         self._corner_radius = 0 if compact else METRICS['radius']
+        self.bg_token = 'paper'         # 主屏画在纸底上；挂件由外层给白底
+        self.waterline = None           # 当前效价（蓝色横线）；None = 不画
+        self.fit_range = False          # 紧凑窗：纵轴按当段自适应（只读形状）
+        self._lo, self._hi = 0.0, 1.0
 
         # 静态层缓存（网格/刻度/标签）—— 尺寸不变就不重画
         self._static_cache = None
@@ -103,6 +107,11 @@ class EmotionCurveWidget(QWidget):
         # 用户修正点：[{ts, channel, value}]，与真实观察点画法不同
         self.corrections = list(corrections or [])
         self._hover = None
+        self.update()
+
+    def set_waterline(self, value):
+        """设置"水位线"：当前效价在轴上的位置。这是新版的主视觉。"""
+        self.waterline = None if value is None else float(value)
         self.update()
 
     def clear(self):
@@ -162,9 +171,23 @@ class EmotionCurveWidget(QWidget):
             return x0 + pw / 2.0
         return x0 + (ts - t0) / span * pw
 
-    @staticmethod
-    def _y(value, y0, ph):
-        v = 0.0 if value is None else max(0.0, min(1.0, float(value)))
+    def _update_range(self):
+        if not self.fit_range or not self.model_v:
+            self._lo, self._hi = 0.0, 1.0
+            return
+        vals = list(self.model_v) + [self.baseline_v]
+        lo, hi = min(vals) - 0.06, max(vals) + 0.06
+        if hi - lo < 0.3:
+            mid = (hi + lo) / 2.0
+            lo, hi = mid - 0.15, mid + 0.15
+        self._lo, self._hi = max(0.0, lo), min(1.0, hi)
+
+    def _y(self, value, y0, ph):
+        if value is None:
+            v = 0.0
+        else:
+            v = (float(value) - self._lo) / max(1e-6, self._hi - self._lo)
+            v = max(0.0, min(1.0, v))
         return y0 + (1.0 - v) * ph
 
     # ================================================================
@@ -175,15 +198,8 @@ class EmotionCurveWidget(QWidget):
         p.setRenderHint(QPainter.Antialiasing, True)
         p.setRenderHint(QPainter.TextAntialiasing, True)
 
-        # 圆角纸面：QSS 不能裁剪自定义 paintEvent 的内容，这里自己画并裁剪
-        paper = QPainterPath()
-        outer = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        if self._corner_radius:
-            paper.addRoundedRect(outer, self._corner_radius, self._corner_radius)
-        else:
-            paper.addRect(outer)
-        p.setClipPath(paper)
-        p.fillPath(paper, QColor(COLORS['surface']))
+        # 新版没有卡片：曲线直接画在页面底上（挂件由外层给 surface）
+        p.fillRect(self.rect(), QColor(COLORS[self.bg_token]))
 
         if not self.has_data():
             p.setPen(QColor(COLORS['muted']))
@@ -196,6 +212,7 @@ class EmotionCurveWidget(QWidget):
 
         panels = self._panels()
         n = len(panels)
+        self._update_range()
 
         # 静态层（网格 / 刻度 / 轴标签）走 pixmap 缓存：尺寸、面板、时间范围不变就不重画
         p.drawPixmap(0, 0, self._ensure_static(panels))
@@ -382,7 +399,7 @@ class EmotionCurveWidget(QWidget):
         dpr = self.devicePixelRatioF() if hasattr(self, "devicePixelRatioF") else 1.0
         pm = QPixmap(max(1, int(self.width() * dpr)), max(1, int(self.height() * dpr)))
         pm.setDevicePixelRatio(dpr)
-        pm.fill(QColor(COLORS['surface']))
+        pm.fill(QColor(COLORS[self.bg_token]))
 
         pp = QPainter(pm)
         pp.setRenderHint(QPainter.Antialiasing, True)
@@ -467,7 +484,7 @@ class EmotionCurveWidget(QWidget):
                 upper.append(QPointF(x, self._y(model[i] + sd, y0, ph)))
                 lower.append(QPointF(x, self._y(model[i] - sd, y0, ph)))
             if len(upper) >= 2:
-                poly = QPolygonF(upper + list(reversed(lower)))
+                poly = QPolygonF(_densify(upper) + list(reversed(_densify(lower))))
                 p.setPen(Qt.NoPen)
                 # 注意：QColor 不接受单参数 4 元组，必须解包成 QColor(r,g,b,a)，
                 # 否则 PyQt5 会直接段错误（进程 exit 127，无 traceback）。
@@ -486,6 +503,17 @@ class EmotionCurveWidget(QWidget):
                           baseline['width'], Qt.DashLine))
             yb = self._y(self.baseline_v, y0, ph)
             p.drawLine(QPointF(x0, yb), QPointF(x0 + pw, yb))
+            if not self.compact:
+                p.setFont(app_font(8))
+                text = "常态 %d" % round(self.baseline_v * 100)
+                w = p.fontMetrics().horizontalAdvance(text)
+                # 纸色小块垫底：标签可能压在置信带/曲线上，不垫会糊
+                p.setPen(Qt.NoPen)
+                p.setBrush(QColor(COLORS[self.bg_token]))
+                p.drawRect(QRectF(x0 + pw - w - 8, yb - 13, w + 10, 13))
+                p.setBrush(Qt.NoBrush)
+                p.setPen(QColor(COLORS['muted']))
+                p.drawText(QPointF(x0 + pw - w - 4, yb - 3), text)
 
         # ③ 原始观察点（弱）
         if self.raw:
@@ -521,18 +549,14 @@ class EmotionCurveWidget(QWidget):
                 dashed = [solid[-1]] + dashed      # 预测段与实线接上，避免断口
 
             def _stroke(indices, line_style, color_token):
-                path = QPainterPath()
-                for n_i, i in enumerate(indices):
-                    x = self._x(self.timestamps[i], t0, span, x0, pw)
-                    y = self._y(model[i], y0, ph)
-                    if n_i == 0:
-                        path.moveTo(x, y)
-                    else:
-                        path.lineTo(x, y)
+                path = _smooth_path([
+                    QPointF(self._x(self.timestamps[i], t0, span, x0, pw),
+                            self._y(model[i], y0, ph)) for i in indices])
                 pen = QPen(QColor(COLORS[color_token]),
                            CURVE_STYLE['model']['width'], line_style)
-                pen.setCapStyle(Qt.SquareCap)      # 硬边，不用 RoundCap
-                pen.setJoinStyle(Qt.MiterJoin)     # 硬拐角
+                # 圆头圆角 = 柔和；折线被单调插值抹平后，圆角才不会露出接缝
+                pen.setCapStyle(Qt.RoundCap)
+                pen.setJoinStyle(Qt.RoundJoin)
                 p.setPen(pen)
                 p.setBrush(Qt.NoBrush)
                 p.drawPath(path)
@@ -549,11 +573,25 @@ class EmotionCurveWidget(QWidget):
             p.setBrush(QColor(COLORS[CURVE_STYLE['model']['color']]))
             p.drawEllipse(QPointF(cx, cy), 4.0, 4.0)
 
+        # ⑥ 水位线：当前效价的位置。全图唯一的高饱和元素（画在最上层）
+        if kind == 'valence' and self.waterline is not None:
+            yw = self._y(self.waterline, y0, ph)
+            pen = QPen(QColor(COLORS['accent']), 2.0)
+            pen.setCapStyle(Qt.RoundCap)
+            p.setPen(pen)
+            p.drawLine(QPointF(x0, yw), QPointF(x0 + pw, yw))
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(COLORS['accent']))
+            p.drawEllipse(QPointF(x0, yw), 3.2, 3.2)
+            p.setBrush(QColor(COLORS['surface']))
+            p.drawEllipse(QPointF(x0, yw), 1.3, 1.3)
+
     def y_to_value(self, y, panel_index=0, count=1):
         _, y0, _, ph = self._plot_rect(panel_index, count)
         if ph <= 0:
             return 0.0
-        return max(0.0, min(1.0, 1.0 - (y - y0) / ph))
+        frac = max(0.0, min(1.0, 1.0 - (y - y0) / ph))
+        return self._lo + frac * (self._hi - self._lo)
 
 
 # 置信带 / 原始点：从 theme 的 rgba 字符串解析一次，避免每帧构造 QColor 字符串
@@ -567,6 +605,78 @@ def _parse_rgba(s):
 _WASH_RGBA = _parse_rgba(COLORS['wash'])
 #: 四种曲线元素的画法统一来自 theme.CURVE_STYLE（语义不随页面变）
 _RAW_RGBA = CURVE_STYLE['observation']['color']
+
+
+def _monotone_slopes(xs, ys):
+    """Fritsch–Carlson：保证每段内不产生新极值（不造峰、不造谷）。"""
+    n = len(xs)
+    if n < 2:
+        return [0.0] * n
+    d = [(ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]) for i in range(n - 1)]
+    m = [0.0] * n
+    m[0], m[-1] = d[0], d[-1]
+    for i in range(1, n - 1):
+        m[i] = 0.0 if d[i - 1] * d[i] <= 0 else (d[i - 1] + d[i]) / 2.0
+    for i in range(n - 1):
+        if d[i] == 0:
+            m[i] = m[i + 1] = 0.0
+            continue
+        a, b = m[i] / d[i], m[i + 1] / d[i]
+        sq = a * a + b * b
+        if sq > 9.0:
+            t = 3.0 / math.sqrt(sq)
+            m[i], m[i + 1] = t * a * d[i], t * b * d[i]
+    return m
+
+
+def _dedupe(points):
+    out = []
+    for pt in points:
+        if out and abs(pt.x() - out[-1].x()) < 0.4:
+            out[-1] = pt
+        else:
+            out.append(pt)
+    return out
+
+
+def _smooth_path(points):
+    """把折线变成单调三次贝塞尔：穿过每一点，不改变数值。"""
+    pts = _dedupe(points)
+    path = QPainterPath()
+    if len(pts) < 2:
+        return path
+    xs = [p.x() for p in pts]
+    ys = [p.y() for p in pts]
+    ms = _monotone_slopes(xs, ys)
+    path.moveTo(pts[0])
+    for i in range(len(pts) - 1):
+        h = xs[i + 1] - xs[i]
+        path.cubicTo(QPointF(xs[i] + h / 3, ys[i] + ms[i] * h / 3),
+                     QPointF(xs[i + 1] - h / 3, ys[i + 1] - ms[i + 1] * h / 3),
+                     pts[i + 1])
+    return path
+
+
+def _densify(points, steps=6):
+    """按同一套插值采样成折线——面积填充用（反向拼接贝塞尔不划算）。"""
+    pts = _dedupe(points)
+    if len(pts) < 2:
+        return list(pts)
+    xs = [p.x() for p in pts]
+    ys = [p.y() for p in pts]
+    ms = _monotone_slopes(xs, ys)
+    out = [pts[0]]
+    for i in range(len(pts) - 1):
+        h = xs[i + 1] - xs[i]
+        for k in range(1, steps + 1):
+            t = k / float(steps)
+            t2, t3 = t * t, t * t * t
+            y = ((2 * t3 - 3 * t2 + 1) * ys[i]
+                 + (t3 - 2 * t2 + t) * h * ms[i]
+                 + (-2 * t3 + 3 * t2) * ys[i + 1]
+                 + (t3 - t2) * h * ms[i + 1])
+            out.append(QPointF(xs[i] + h * t, y))
+    return out
 
 
 def _decimate(n, cap=_MAX_POINTS):

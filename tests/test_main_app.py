@@ -411,7 +411,7 @@ def test_state_head_merges_status_and_readout(qapp, tmp_path):
     console = win.console
 
     # 四读数 + 状态名 + 纠正入口都还在（v3 契约）
-    for attr in ("state_label", "state_hint", "corr_btn",
+    for attr in ("state_label", "meta_label", "corr_btn",
                  "v_lbl", "a_lbl", "c_lbl", "ci_lbl"):
         assert hasattr(console.status, attr), f"状态头缺少 {attr}"
     # readout 是兼容别名，指向同一个状态头
@@ -750,9 +750,9 @@ def test_app_qss_is_injected_once(qapp, tmp_path):
     for sel in ["QWidget", "QLabel", "QPushButton", "QSlider"]:
         assert sel in qss, f"{sel} 未在全局 QSS 中声明"
 
-    # 暖色板 token 必须在（v3 不再是 Linear 蓝）
-    assert COLORS['accent'].upper() == "#BE5E38"
-    assert COLORS['paper'].upper() == "#F2ECE1"
+    # 新版语义蓝必须在（Exploration 03 定稿：低饱和深海蓝）
+    assert COLORS['accent'].upper() == "#3A6A88"
+    assert COLORS['paper'].upper() == "#F5F5F5"
     db = None
 
 
@@ -982,9 +982,9 @@ def test_state_head_meta_reports_age_and_baseline(qapp):
     head.update_meta(0.62, state_ts=now, last_obs_ts=now - 720, baseline_v=0.50)
 
     text = head.meta_label.text()
-    assert "距上次自评 12 分钟" in text
-    assert "模型估计" in text
-    assert "比基线 +12" in text
+    assert "自评 12 分钟前" in text
+    assert "比你的常态高 12" in text
+    assert head.stamp.text().startswith("估 ")
 
 
 def test_state_head_meta_says_just_now(qapp):
@@ -997,8 +997,7 @@ def test_state_head_meta_says_just_now(qapp):
 
     text = head.meta_label.text()
     assert "刚刚自评" in text
-    assert "模型估计" not in text
-    assert "与基线持平" in text
+    assert "与你的常态持平" in text
 
 
 def test_state_head_meta_empty_shows_onboarding_hint(qapp):
@@ -1254,18 +1253,21 @@ def test_secondary_pages_allow_horizontal_fallback(qapp, tmp_path):
     db.close()
 
 
-def test_state_head_compacts_at_narrow_width(qapp):
+def test_state_head_fits_360_without_clipping(qapp):
+    """360px 下状态句 × 当下值 × 纠正入口必须同时可见，不靠藏信息换空间。"""
     from windows.state_head import StateHead
 
     head = StateHead(on_correction_clicked=lambda: None)
     head.setFixedWidth(360)
     head.show()
     qapp.processEvents()
-    assert head.corr_btn.text() == "纠正"
-    assert head.state_hint.isHidden() is True
-
-    head.setFixedWidth(400)
+    head.update_state(0.62, 0.44)
+    head.update_values(0.62, 0.44, 0.91, "58 – 66")
+    head.update_meta(0.62, state_ts=1_700_000_000.0,
+                     last_obs_ts=1_700_000_000.0 - 300, baseline_v=0.55)
     qapp.processEvents()
-    assert head.corr_btn.text() == StateHead._CORR_FULL
-    assert head.state_hint.isHidden() is False
+    assert head.corr_btn.isVisible()
+    assert head.corr_btn.text() == "纠正"
+    # 状态句不得被右侧数值挤掉
+    assert head.state_label.width() >= head.state_label.sizeHint().width()
     head.close()

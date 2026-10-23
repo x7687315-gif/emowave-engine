@@ -64,23 +64,29 @@ class InputPanel(QWidget):
         self._on_note = on_note
 
         outer = QVBoxLayout(self)
-        # 阶段 2：边距 22→14、间距 14→8，把输入台压到 ~104px
-        outer.setContentsMargins(14, 12, 14, 12)
-        outer.setSpacing(8)
+        # 空闲态只留一行操作；滑杆在记录时向上展开（Exploration 03 的决定）
+        outer.setContentsMargins(24, 0, 24, 0)
+        outer.setSpacing(2)
 
-        # 行 1：效价滑块
+        self.sliders = QWidget()
+        sl = QVBoxLayout(self.sliders)
+        sl.setContentsMargins(0, 8, 0, 6)
+        sl.setSpacing(4)
         self.v_row = self._make_slider_row("效价", 50, "50/100")
-        outer.addLayout(self.v_row['layout'])
-        # 行 2：唤醒滑块
+        sl.addLayout(self.v_row['layout'])
         self.a_row = self._make_slider_row("唤醒", 40, "40/100")
-        outer.addLayout(self.a_row['layout'])
+        sl.addLayout(self.a_row['layout'])
+        self.sliders.setVisible(False)
+        outer.addWidget(self.sliders)
 
-        # 行 3：操作
+        # 操作行
         ctrl = QHBoxLayout()
-        ctrl.setSpacing(10)
+        ctrl.setSpacing(16)
+        ctrl.setContentsMargins(0, 16, 0, 16)
         self.btn_record = QPushButton("●  开始记录")
         self.btn_record.setCursor(Qt.PointingHandCursor)
-        self.btn_record.setProperty("primary", True)
+        self.btn_record.setFlat(True)
+        self.btn_record.setFocusPolicy(Qt.NoFocus)
         self.btn_record.setStyleSheet(self._BTN_PRIMARY)
         self.btn_record.clicked.connect(lambda: self._on_toggle())
         ctrl.addWidget(self.btn_record)
@@ -89,16 +95,14 @@ class InputPanel(QWidget):
         # 「记一笔」只在记录中可用，不占新行（与记录按钮同一行）。
         self.btn_note = QPushButton("记一笔")
         self.btn_note.setCursor(Qt.PointingHandCursor)
+        self.btn_note.setFlat(True)
+        self.btn_note.setFocusPolicy(Qt.NoFocus)
         self.btn_note.setEnabled(False)
         self.btn_note.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {COLORS['ink_2']};"
-            f" border: 1px solid {COLORS['rule']}; padding: 9px 10px;"
-            f" border-radius: {METRICS['radius_sm']}px;"
-            f" font-size: 10.5px; letter-spacing: 1px; }}"
-            f"QPushButton:hover {{ color: {COLORS['accent']};"
-            f" border-color: {COLORS['accent']}; }}"
-            f"QPushButton:disabled {{ color: {COLORS['rule']};"
-            f" border-color: {COLORS['rule']}; }}"
+            f" border: none; padding: 0; font-size: 10.5px; }}"
+            f"QPushButton:hover {{ color: {COLORS['accent_ink']}; }}"
+            f"QPushButton:disabled {{ color: {COLORS['faint']}; }}"
         )
         if self._on_note is not None:
             self.btn_note.clicked.connect(lambda: self._on_note())
@@ -110,8 +114,8 @@ class InputPanel(QWidget):
         self.count_label = QLabel("0 次自评")
         self.count_label.setFont(app_font(9))
         self.count_label.setStyleSheet(f"color: {COLORS['muted']};")
-        ctrl.addWidget(self.count_label)
         ctrl.addStretch(1)
+        ctrl.addWidget(self.count_label)
         outer.addLayout(ctrl)
 
         self.v_row['slider'].valueChanged.connect(
@@ -141,24 +145,19 @@ class InputPanel(QWidget):
         return {'layout': layout, 'slider': slider, 'num': num, 'key': key}
 
     _BTN_PRIMARY = (
-        f"QPushButton {{ background: {COLORS['accent']}; color: {COLORS['surface']};"
-        f" border: none; border-radius: {METRICS['radius_sm']}px;"
-        f" padding: 11px 22px; font-size: 11.5px;"
-        f" font-weight: 600; letter-spacing: 1.6px; }}"
-        f"QPushButton:hover {{ background: {COLORS['accent_ink']}; }}"
-        f"QPushButton:pressed {{ background: {COLORS['accent_deep']}; }}"
+        f"QPushButton {{ background: transparent; color: {COLORS['accent_ink']};"
+        f" border: none; padding: 0; font-size: 12px; font-weight: 600;"
+        f" letter-spacing: 0.6px; }}"
+        f"QPushButton:hover {{ color: {COLORS['accent']}; }}"
     )
     _BTN_STOP = (
-        f"QPushButton {{ background: {COLORS['accent_deep']};"
-        f" color: {COLORS['surface']}; border: none;"
-        f" border-radius: {METRICS['radius_sm']}px; padding: 11px 22px;"
-        f" font-size: 11.5px; font-weight: 600; letter-spacing: 1.6px; }}"
+        f"QPushButton {{ background: transparent; color: {COLORS['accent_deep']};"
+        f" border: none; padding: 0; font-size: 12px; font-weight: 600;"
+        f" letter-spacing: 0.6px; }}"
     )
     _BTN_DECAY = (
-        f"QPushButton {{ background: {COLORS['rule']};"
-        f" color: {COLORS['muted']}; border: none;"
-        f" border-radius: {METRICS['radius_sm']}px; padding: 11px 22px;"
-        f" font-size: 11.5px; font-weight: 600; letter-spacing: 1.6px; }}"
+        f"QPushButton {{ background: transparent; color: {COLORS['muted']};"
+        f" border: none; padding: 0; font-size: 12px; font-weight: 600; }}"
     )
 
     def set_mode(self, mode: str):
@@ -169,16 +168,19 @@ class InputPanel(QWidget):
             btn.setEnabled(True)
             btn.setStyleSheet(self._BTN_STOP)
             self.btn_note.setEnabled(True)
+            self.sliders.setVisible(True)
         elif mode == "decaying":
             btn.setText("◌  推演中…")
             btn.setEnabled(False)
             btn.setStyleSheet(self._BTN_DECAY)
             self.btn_note.setEnabled(False)
+            self.sliders.setVisible(False)
         else:  # idle
             btn.setText("●  开始记录")
             btn.setEnabled(True)
             btn.setStyleSheet(self._BTN_PRIMARY)
             self.btn_note.setEnabled(False)
+            self.sliders.setVisible(False)
 
     def get_values(self):
         return (self.v_row['slider'].value() / 100.0,
@@ -302,30 +304,17 @@ class MainConsole(QWidget):
         self.readout = self.status
         ml.addWidget(self.status)
 
-        # ② 曲线（视觉主角）
-        curve_frame = QFrame()
-        curve_frame.setObjectName("CurvePanel")
-        cf = QVBoxLayout(curve_frame)
-        # 左右留 8px：曲线自己的圆角纸面不贴面板边框，避免方块盖住圆角
-        cf.setContentsMargins(8, 14, 8, 8)
-        head = QHBoxLayout()
-        head.setContentsMargins(10, 0, 10, 0)
-        hk = QLabel("情绪曲线")
-        hk.setFont(app_font(10, QFont.DemiBold))
-        hk.setStyleSheet(f"color: {COLORS['ink_2']}; letter-spacing: 1.8px;")
-        head.addWidget(hk)
-        head.addStretch(1)
-        legend = QLabel("— 估计   ┄ 预测   · 观察   □ 修正")
-        legend.setFont(app_font(9))
-        legend.setStyleSheet(f"color: {COLORS['muted']};")
-        head.addWidget(legend)
-        cf.addLayout(head)
+        # ② 曲线（视觉主角）：没有卡片、没有标题、没有图例
         self.curve = EmotionCurveWidget(series='valence')
-        # 200 是 360×600 最小窗下的下限；状态头恢复字号后会占 ~129px，
-        # 曲线仍需给输入台留出空间。400×680 默认窗会由 stretch 撑到 ~320。
+        # 200 是 360×600 最小窗下的下限；空闲时输入台只有一行，
+        # 400×680 下曲线会被 stretch 撑到约 300px。
         self.curve.setMinimumHeight(200)
-        cf.addWidget(self.curve)
-        ml.addWidget(curve_frame, 1)
+        curve_wrap = QWidget()
+        cw = QVBoxLayout(curve_wrap)
+        cw.setContentsMargins(24, 4, 24, 0)
+        cw.setSpacing(0)
+        cw.addWidget(self.curve)
+        ml.addWidget(curve_wrap, 1)
 
         # ③ 输入台
         self.input_panel = InputPanel(on_toggle=self._toggle_recording,
@@ -477,6 +466,8 @@ class MainConsole(QWidget):
             valence, state_ts=state_ts, last_obs_ts=last_obs_ts,
             baseline_v=self.baseline_ctrl.current.valence,
         )
+        # 水位线跟着"现在"走：这是新版的主视觉
+        self.curve.set_waterline(valence)
         # 参数说明常驻「模型」Tab，同一份数据双处展示
         self.params_card.update_params(valence, arousal, params_text)
 
@@ -488,6 +479,11 @@ class MainConsole(QWidget):
             predicted_from=payload.get("predicted_from"),
             corrections=payload.get("corrections"),
         )
+        # 预测段有多少分钟——虚线在日尺度上只有几像素，用文字交代
+        cut, ts = payload.get("predicted_from"), payload.get("ts") or []
+        minutes = (int(round((ts[-1] - cut) / 60.0))
+                   if cut and ts and ts[-1] > cut else 0)
+        self.status.set_forecast(minutes)
 
     def _refresh_history(self):
         try:

@@ -67,6 +67,13 @@ class MiniCloseButton(QPushButton):
         p.end()
 
 
+class _Cell:
+    """只暴露 `.value_label` 的小容器（沿用 v3 的访问方式）。"""
+
+    def __init__(self, label):
+        self.value_label = label
+
+
 class MiniWindow(QWidget):
     """迷你置顶窗。外壳只负责创建与显隐，数据全部由 presenter 驱动。"""
 
@@ -111,51 +118,36 @@ class MiniWindow(QWidget):
     def _build(self):
         self.setObjectName("MiniWin")
         self.setStyleSheet(
-            "QWidget#MiniWin { background: transparent; border: none; }"
-        )
+            "QWidget#MiniWin { background: transparent; border: none; }")
 
         outer = QVBoxLayout(self)
-        # 留 1px 给顶层自绘边框；四个子块各自负责自己那一侧的圆角
         outer.setContentsMargins(1, 1, 1, 1)
         outer.setSpacing(0)
 
-        # ---- 标题行（也是拖动手柄）----
+        # ---- 标题行：字标 + 距上次自评 + 窗口按钮 ----
         head = QFrame()
-        head.setFixedHeight(28)
+        head.setFixedHeight(26)
         r_inner = self._corner_radius - 1
         head.setStyleSheet(
-            f"QFrame {{ background: {COLORS['paper_2']};"
+            f"QFrame {{ background: {COLORS['surface']};"
             f" border: none; border-bottom: 1px solid {COLORS['rule']};"
             f" border-top-left-radius: {r_inner}px;"
-            f" border-top-right-radius: {r_inner}px; }}"
-        )
+            f" border-top-right-radius: {r_inner}px; }}")
         self._head = head
         hl = QHBoxLayout(head)
-        hl.setContentsMargins(10, 0, 6, 0)
-        hl.setSpacing(6)
-
-        bar = QFrame()                     # 左侧 2px accent 硬边条（挂件身份标记）
-        bar.setFixedWidth(2)
-        bar.setStyleSheet(f"background: {COLORS['accent']}; border: none;")
-        hl.addWidget(bar)
+        hl.setContentsMargins(12, 0, 6, 0)
+        hl.setSpacing(8)
 
         title = QLabel("心潮")
         title.setFont(app_font(9, QFont.DemiBold))
-        title.setStyleSheet(f"color: {COLORS['ink_2']}; letter-spacing: 1.6px;")
+        title.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 2px;")
         hl.addWidget(title)
 
-        # 「距上次自评」——挂件最需要的一条：不然用户会把推演值当成刚说过
         self.age_label = QLabel("")
         self.age_label.setFont(app_font(8))
         self.age_label.setStyleSheet(f"color: {COLORS['muted']};")
         hl.addWidget(self.age_label)
         hl.addStretch(1)
-
-        self.state_label = QLabel("—")
-        self.state_label.setFont(app_font(10, QFont.Medium))
-        self.state_label.setStyleSheet(f"color: {COLORS['ink']};")
-        hl.addWidget(self.state_label, 1)
-        self.state_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         self.btn_main = self._head_button("↗", "打开主窗")
         self.btn_main.clicked.connect(self._open_main)
@@ -174,119 +166,126 @@ class MiniWindow(QWidget):
         hl.addWidget(self.btn_close)
         outer.addWidget(head)
 
-        # ---- 读数行 ----
-        readings = QHBoxLayout()
-        readings.setContentsMargins(10, 6, 10, 0)
-        readings.setSpacing(14)
+        # ---- 当下：状态句（左） + 效价（右） ----
+        main = QWidget()
+        main.setStyleSheet(f"background: {COLORS['surface']};")
+        ml = QHBoxLayout(main)
+        ml.setContentsMargins(12, 6, 12, 4)
+        ml.setSpacing(10)
 
-        def _cell(key):
-            c = QWidget()
-            v = QVBoxLayout(c)
-            v.setContentsMargins(0, 0, 0, 0)
-            v.setSpacing(0)
-            k = QLabel(key)
-            k.setFont(app_font(7, QFont.DemiBold))
-            k.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 1px;")
-            val = QLabel("—")
-            val.setFont(app_font_num(14, QFont.Light))
-            val.setStyleSheet(f"color: {COLORS['ink']};")
-            v.addWidget(k)
-            v.addWidget(val)
-            c.value_label = val
-            return c
+        self.state_label = QLabel("—")
+        self.state_label.setFont(app_font(14, QFont.Medium))
+        self.state_label.setStyleSheet(f"color: {COLORS['ink']};")
+        ml.addWidget(self.state_label)
+        ml.addStretch(1)
 
-        self.v_cell = _cell("效价")
-        self.a_cell = _cell("唤醒")
-        self.c_cell = _cell("置信")
-        for c in (self.v_cell, self.a_cell, self.c_cell):
-            readings.addWidget(c)
-        readings.addStretch(1)
+        v_lbl = QLabel("—")
+        v_lbl.setFont(app_font_num(20, QFont.Light))
+        v_lbl.setStyleSheet(f"color: {COLORS['accent_ink']};")
+        v_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        ml.addWidget(v_lbl)
+        self.v_cell = _Cell(v_lbl)
+        outer.addWidget(main)
 
-        # 记录中才出现的「记一笔」：挂件单独使用时，不拖滑条也能确认一次感受
-        self.btn_note = QPushButton("＋")
-        self.btn_note.setFixedSize(24, 24)
-        self.btn_note.setCursor(Qt.PointingHandCursor)
-        self.btn_note.setToolTip("记一笔（提交当前滑条值）")
-        self.btn_note.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {COLORS['ink_2']};"
-            f" border: 1px solid {COLORS['rule']}; padding: 0;"
-            f" border-radius: {METRICS['radius_sm']}px; font-size: 13px; }}"
-            f"QPushButton:hover {{ color: {COLORS['accent']};"
-            f" border-color: {COLORS['accent']}; }}"
-        )
-        self.btn_note.clicked.connect(self._commit_note)
-        self.btn_note.setVisible(False)
-        readings.addWidget(self.btn_note, 0, Qt.AlignVCenter)
-
-        self.btn_record = QPushButton("●  开始")
-        self.btn_record.setCursor(Qt.PointingHandCursor)
-        self.btn_record.setProperty("primary", True)
-        self.btn_record.setStyleSheet(
-            f"QPushButton {{ background: {COLORS['accent']};"
-            f" color: {COLORS['surface']}; border: none;"
-            f" padding: 5px 10px; font-size: 10px; font-weight: 600;"
-            f" letter-spacing: 1.2px;"
-            f" border-radius: {METRICS['radius_sm']}px; }}"
-            f"QPushButton:hover {{ background: {COLORS['accent_ink']}; }}"
-            f"QPushButton:pressed {{ background: {COLORS['accent_deep']}; }}"
-            f"QPushButton:disabled {{ background: {COLORS['rule']};"
-            f" color: {COLORS['muted']}; }}"
-        )
-        self.btn_record.clicked.connect(self._toggle)
-        readings.addWidget(self.btn_record, 0, Qt.AlignVCenter)
-        outer.addLayout(readings)
-
-        # ---- 迷你曲线（compact：去掉图例与时间轴，只留形状）----
+        # ---- 迷你曲线：去掉图例/时间轴，保留水位线与常态 ----
         self.curve = EmotionCurveWidget(series='valence', compact=True,
                                         min_width=WIN_W - CURVE_GUTTER)
-        self.curve.setMinimumHeight(58)
+        self.curve.bg_token = 'surface'
+        self.curve.fit_range = True     # 134px 里固定 0–100 会压成一条平线
+        self.curve.setMinimumHeight(44)
         self.curve.setMaximumHeight(74)
         self.curve.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         wrap = QFrame()
-        wrap.setStyleSheet(
-            f"QFrame {{ background: {COLORS['surface']};"
-            f" border: none; border-top: 1px solid {COLORS['rule']}; }}"
-        )
         self._curve_wrap = wrap
         wl = QVBoxLayout(wrap)
-        wl.setContentsMargins(10, 4, 10, 4)
+        wl.setContentsMargins(10, 2, 10, 2)
         wl.setSpacing(0)
         wl.addWidget(self.curve, 1)
         outer.addWidget(wrap, 1)
 
-        # ---- 底部：滑条（挂件上也能直接输入）----
+        # ---- 底部：离差 + 唤醒/置信 + 记一笔 + 记录 ----
+        foot = QWidget()
+        foot.setStyleSheet(f"background: {COLORS['surface']};")
+        fl = QHBoxLayout(foot)
+        fl.setContentsMargins(12, 4, 10, 6)
+        fl.setSpacing(10)
+
+        self.dev_label = QLabel("")
+        self.dev_label.setFont(app_font(9))
+        self.dev_label.setStyleSheet(f"color: {COLORS['muted']};")
+        fl.addWidget(self.dev_label)
+        fl.addStretch(1)
+
+        a_lbl = QLabel("—")
+        a_lbl.setFont(app_font_num(9, QFont.Light))
+        a_lbl.setStyleSheet(f"color: {COLORS['muted']};")
+        self.a_cell = _Cell(a_lbl)
+        c_lbl = QLabel("—")
+        c_lbl.setFont(app_font_num(9, QFont.Light))
+        c_lbl.setStyleSheet(f"color: {COLORS['muted']};")
+        self.c_cell = _Cell(c_lbl)
+        # 收起时只留"离差 + 记录"；展开才显示唤醒/置信，避免 360 宽挤爆
+        self._cells_box = QWidget()
+        cb = QHBoxLayout(self._cells_box)
+        cb.setContentsMargins(0, 0, 0, 0)
+        cb.setSpacing(5)
+        for text, widget in (("唤醒", a_lbl), ("置信", c_lbl)):
+            hint = QLabel(text)
+            hint.setFont(app_font(8))
+            hint.setStyleSheet(f"color: {COLORS['muted']};")
+            cb.addWidget(hint)
+            cb.addWidget(widget)
+        self._cells_box.setVisible(False)
+        fl.addWidget(self._cells_box)
+
+        self.btn_note = QPushButton("＋")
+        self.btn_note.setFixedSize(20, 20)
+        self.btn_note.setCursor(Qt.PointingHandCursor)
+        self.btn_note.setToolTip("记一笔（提交当前滑条值）")
+        self.btn_note.setFlat(True)
+        self.btn_note.setFocusPolicy(Qt.NoFocus)
+        self.btn_note.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {COLORS['ink_2']};"
+            f" border: none; padding: 0; font-size: 13px; }}"
+            f"QPushButton:hover {{ color: {COLORS['accent_ink']}; }}")
+        self.btn_note.clicked.connect(self._commit_note)
+        self.btn_note.setVisible(False)
+        fl.addWidget(self.btn_note)
+
+        self.btn_record = QPushButton("●  记录")
+        self.btn_record.setFixedWidth(56)
+        self.btn_record.setStyleSheet("text-align: right;")
+        self.btn_record.setCursor(Qt.PointingHandCursor)
+        self.btn_record.setFlat(True)
+        self.btn_record.setFocusPolicy(Qt.NoFocus)
+        self.btn_record.clicked.connect(self._toggle)
+        fl.addWidget(self.btn_record)
+        outer.addWidget(foot)
+
+        # ---- 展开态：两条滑条（挂件也能直接输入）----
         bottom = QFrame()
-        bottom.setStyleSheet(
-            f"QFrame {{ background: {COLORS['paper_2']};"
-            f" border: none; border-top: 1px solid {COLORS['rule']};"
-            f" border-bottom-left-radius: {r_inner}px;"
-            f" border-bottom-right-radius: {r_inner}px; }}"
-        )
         self._bottom = bottom
         bl = QHBoxLayout(bottom)
-        bl.setContentsMargins(10, 4, 10, 6)
+        bl.setContentsMargins(12, 2, 12, 8)
         bl.setSpacing(10)
         self.v_slider = self._make_slider("效价", 50)
         self.a_slider = self._make_slider("唤醒", 40)
         bl.addLayout(self.v_slider['layout'], 1)
         bl.addLayout(self.a_slider['layout'], 1)
-        self.detail = bottom            # 收起时隐藏这一条（滑条）
+        self.detail = bottom
         outer.addWidget(bottom)
         self._apply_corners()
+        self._refresh_record_style()
 
-        # 记录中/推演中的按钮三态与主窗一致（文案前缀也一致，便于肌肉记忆）
-        self._btn_qss = {
-            "idle": (f"QPushButton {{ background: {COLORS['accent']};"
-                     f" color: {COLORS['surface']}; border: none;"
-                     f" padding: 5px 10px; font-size: 10px; font-weight: 600;"
-                     f" letter-spacing: 1.2px;"
-                     f" border-radius: {METRICS['radius_sm']}px; }}"),
-            "recording": (f"QPushButton {{ background: {COLORS['accent_deep']};"
-                          f" color: {COLORS['surface']}; border: none;"
-                          f" padding: 5px 10px; font-size: 10px; font-weight: 600;"
-                          f" letter-spacing: 1.2px;"
-                          f" border-radius: {METRICS['radius_sm']}px; }}"),
-        }
+    def _refresh_record_style(self):
+        recording = bool(getattr(self.presenter, "recording", False))
+        color = COLORS['accent_deep'] if recording else COLORS['accent_ink']
+        self.btn_record.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {color};"
+            f" border: none; padding: 0; font-size: 10px; font-weight: 600;"
+            f" letter-spacing: 0.4px; }}"
+            f"QPushButton:hover {{ color: {COLORS['accent']}; }}"
+            f"QPushButton:disabled {{ color: {COLORS['muted']}; }}")
 
     def _head_button(self, glyph, tip):
         """头部 20×20 小按钮（与 × 同尺寸，视觉成组）。"""
@@ -340,6 +339,7 @@ class MiniWindow(QWidget):
         """
         self._expanded = bool(expanded)
         self.detail.setVisible(self._expanded)
+        self._cells_box.setVisible(self._expanded)
         self.setFixedHeight(WIN_H if self._expanded else COLLAPSED_H)
         self.btn_expand.setText("▾" if self._expanded else "▴")
         self._apply_corners()
@@ -434,10 +434,22 @@ class MiniWindow(QWidget):
         # v5：记下"这个数是几点的 / 离上次自评多久"，Phase 4 会显示出来
         self._state_ts = state_ts
         self._last_obs_ts = last_obs_ts
+        self._last_v = float(valence)
         self._update_age()
-        self.v_cell.value_label.setText(f"{int(valence * 100)}")
-        self.a_cell.value_label.setText(f"{int(arousal * 100)}")
-        self.c_cell.value_label.setText(f"{int(confidence * 100)}%")
+        # round 与主窗保持一致，否则两个窗口会显示差 1 的数
+        self.v_cell.value_label.setText("%d" % round(valence * 100))
+        self.a_cell.value_label.setText("%d" % round(arousal * 100))
+        self.c_cell.value_label.setText("%d%%" % round(confidence * 100))
+        self.curve.set_waterline(valence)
+        # 离差：与主屏同一句话，只是更短
+        try:
+            base = float(self.presenter.baseline_ctrl.current.valence)
+            diff = int(round((float(valence) - base) * 100))
+            self.dev_label.setText(
+                "与常态持平" if abs(diff) <= 2 else
+                ("比常态高 %d" % diff if diff > 0 else "比常态低 %d" % abs(diff)))
+        except Exception:
+            self.dev_label.setText("")
         from windows.state_head import derive_state_name
         self.state_label.setText(derive_state_name(valence, arousal))
 
@@ -456,6 +468,8 @@ class MiniWindow(QWidget):
         for c in (self.v_cell, self.a_cell, self.c_cell):
             c.value_label.setText("—")
         self.state_label.setText("—")
+        self.dev_label.setText("")
+        self.curve.set_waterline(None)
 
     def _on_curve(self, payload):
         self.curve.set_data(payload["ts"], payload["mv"], payload["ma"],
@@ -469,17 +483,16 @@ class MiniWindow(QWidget):
             self.set_expanded(True)         # 开始记录 → 滑条必须可见
             self.btn_record.setText("■  停止")
             self.btn_record.setEnabled(True)
-            self.btn_record.setStyleSheet(self._btn_qss["recording"])
             self.btn_note.setVisible(True)
         elif mode == "decaying":
-            self.btn_record.setText("◌  推演中")
+            self.btn_record.setText("◌  推演")
             self.btn_record.setEnabled(False)
             self.btn_note.setVisible(False)
         else:
-            self.btn_record.setText("●  开始")
+            self.btn_record.setText("●  记录")
             self.btn_record.setEnabled(True)
-            self.btn_record.setStyleSheet(self._btn_qss["idle"])
             self.btn_note.setVisible(False)
+        self._refresh_record_style()
 
     def _on_count(self, n):
         self.setToolTip(f"{n} 次自评")

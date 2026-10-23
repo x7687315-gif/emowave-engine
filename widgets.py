@@ -13,15 +13,14 @@ from theme import COLORS, METRICS, app_font      # noqa: F401  （兼容遗留�
 
 
 class CardFrame(QFrame):
-    """极细边分组容器：白面 + 1px 极细边 + 柔和圆角 + 极小大写标签。"""
+    """分组容器：新版没有卡片——只用一条上边线 + 极小标签。"""
 
     def __init__(self, title="", parent=None):
         super().__init__(parent)
         self.setFrameShape(QFrame.NoFrame)
         self.setStyleSheet(
-            f"CardFrame {{ background-color: {COLORS['surface']};"
-            f" border-radius: {METRICS['radius']}px;"
-            f" border: 1px solid {COLORS['rule']}; }}"
+            f"CardFrame {{ background: transparent; border: none;"
+            f" border-top: 1px solid {COLORS['rule']}; }}"
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 9, 12, 10)
@@ -29,8 +28,8 @@ class CardFrame(QFrame):
 
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet(
-            f"color: {COLORS['ink_soft']}; font-size: 10px;"
-            " letter-spacing: 2px; text-transform: uppercase;"
+            f"color: {COLORS['muted']}; font-size: 9px;"
+            " letter-spacing: 1.8px;"
         )
         layout.addWidget(self.title_label)
 

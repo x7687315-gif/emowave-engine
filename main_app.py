@@ -262,7 +262,7 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(14, 0, 10, 0)
         lay.setSpacing(8)
 
-        title = QLabel("情绪曲线")
+        title = QLabel("心潮")
         title.setFont(app_font(12, QFont.DemiBold))
         title.setStyleSheet(f"color: {COLORS['ink']}; background: transparent;")
         lay.addWidget(title)

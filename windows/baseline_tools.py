@@ -1,192 +1,166 @@
-"""windows/baseline_tools.py — 「模型」页首项：基线主权
+"""windows/baseline_tools.py — 模型页第一段：你的常态
 
-实现 ui-draft-v1.html §02 「基线主权」分区。
-三个控件：步进器（−/值/+）+ 分叉（新起点）+ 重置。
+新版不再用「卡片 + 输入框 + 按钮」那一套：
+  · 一个步进器 `− 55 +`（值本身是最大的东西）
+  · 一把横尺：浅蓝块标出常态带 ±2（与主屏那条点线同源）
+  · 分叉 / 重置降级成两个文字动作
 
-=== 阶段 6 起：本卡片是纯视图 ===
-v3 时代它直接改内核（`ctrl.nudge()` + `est.baseline = ...`）。MVP 解耦后这些
-副作用归 presenter，因此构造参数从「传 estimator / controller 对象」改为：
-
-  · `baseline_provider`：callable，返回**当前** BaselineController
-    —— 换精力人群后 presenter 会 replace 新 controller，卡片若持有旧对象
-    就会把 nudge 写进一个已退役的 controller（阶段 5 的 bug：estimator 被污染
-    成 0.60 而曲线基线仍画 0.50）。
-  · `on_nudge / on_fork / on_reset`：回调，由视图接到 presenter，
-    顺带拿回 provenance（reason="user_nudge"）与 baseline_changed 信号。
+`baseline_provider` 仍是 callable：换精力人群后 presenter 会 replace 新 controller，
+卡片每次 refresh 都必须从源头拉，不能持有旧引用（阶段 5 的教训）。
 """
+from PyQt5.QtCore import QPointF, QRectF, Qt
+from PyQt5.QtGui import QColor, QFont, QPainter, QPen
+from PyQt5.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton,
+                             QVBoxLayout, QWidget)
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
-from PyQt5.QtGui import QFont
+from theme import COLORS, app_font, app_font_num
 
-from theme import COLORS, METRICS, app_font, app_font_num
-from emowave.core.domain.baseline import Baseline
+#: 与 console_presenter 里的「持平」判定阈值保持一致
+_STEP = 0.02
+TOLERANCE = 0.02
 
 
-_STEP = 0.02   # 一次微调的步长
+class _Ruler(QWidget):
+    """横向常态尺：中线 = 常态，浅蓝块 = ±2 的"持平"区间。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.value = 0.55
+        self.setFixedHeight(38)
+
+    def set_value(self, v):
+        self.value = float(v)
+        self.update()
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        x0, x1 = 2, self.width() - 2
+        y, span = 16, self.width() - 4
+
+        def x(v):
+            return x0 + max(0.0, min(1.0, v)) * span
+
+        p.setPen(QPen(QColor(COLORS['rule']), 1))
+        p.drawLine(QPointF(x0, y), QPointF(x1, y))
+
+        band = QRectF(x(self.value - TOLERANCE), y - 7,
+                      max(5.0, x(self.value + TOLERANCE) - x(self.value - TOLERANCE)),
+                      14)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(COLORS['accent_soft']))
+        p.drawRect(band)
+        pen = QPen(QColor(COLORS['accent']), 2)
+        pen.setCapStyle(Qt.RoundCap)
+        p.setPen(pen)
+        p.drawLine(QPointF(band.left() - 1, y), QPointF(band.right() + 1, y))
+
+        p.setFont(app_font(8))
+        fm = p.fontMetrics()
+        for v_, text, align in ((0.0, '0', 0), (0.5, '50', 1), (1.0, '100', 2)):
+            xx = x(v_)
+            p.setPen(QPen(QColor(COLORS['rule']), 1))
+            p.drawLine(QPointF(xx, y + 4), QPointF(xx, y + 7))
+            p.setPen(QColor(COLORS['muted']))
+            dx = (0 if align == 0 else
+                  -fm.horizontalAdvance(text) / 2 if align == 1 else
+                  -fm.horizontalAdvance(text))
+            p.drawText(QPointF(xx + dx, y + 18), text)
 
 
 class BaselineToolsCard(QFrame):
-    """基线主权卡：步进器 + 分叉 + 重置（只显示、不直接改内核）。"""
-
     def __init__(self, baseline_provider, on_nudge, on_fork, on_reset,
                  parent=None):
         super().__init__(parent)
         self.setObjectName("Section")
         self._get_ctrl = baseline_provider
-        self._on_nudge = on_nudge
-        self._on_fork = on_fork
-        self._on_reset = on_reset
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(16, 14, 16, 16)
-        lay.setSpacing(10)
+        lay.setContentsMargins(0, 14, 0, 8)
+        lay.setSpacing(0)
 
-        title = QLabel("基线主权")
+        title = QLabel("你的常态")
         title.setFont(app_font(9, QFont.DemiBold))
         title.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 1.8px;")
         lay.addWidget(title)
+        lay.addSpacing(6)
 
-        desc = QLabel("基线是「你正常状态下的情绪位置」，所有曲线相对它偏离多少就是「今天不一样」的量。")
-        desc.setFont(app_font(11))
-        desc.setStyleSheet(f"color: {COLORS['ink_2']};")
-        desc.setWordWrap(True)
-        lay.addWidget(desc)
+        hint = QLabel("±2 之内算「与常态持平」，它决定主屏那条点线的位置。")
+        hint.setFont(app_font(10))
+        hint.setStyleSheet(f"color: {COLORS['muted']};")
+        hint.setWordWrap(True)
+        lay.addWidget(hint)
+        lay.addSpacing(8)
 
-        # 当前基线显示（步进器中央那个值）
-        self.current_label = QLabel(self._fmt_current())
-        self.current_label.setFont(app_font_num(13, QFont.Light))
-        self.current_label.setStyleSheet(f"color: {COLORS['ink']};")
-        # 不在这里加单独的 .row，步进器内已有当前值
+        step = QWidget()
+        sh = QHBoxLayout(step)
+        sh.setContentsMargins(0, 0, 0, 0)
+        sh.setSpacing(8)
+        sh.addStretch(1)
 
-        # 步进器：− 当前值 +
-        step_row = QHBoxLayout()
-        step_row.setSpacing(10)
-        k = QLabel("步进")
-        k.setFont(app_font(10, QFont.DemiBold))
-        k.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 1.6px;")
-        step_row.addWidget(k)
-        delta = QLabel(f"±{_STEP:.2f}")
-        delta.setFont(app_font_num(10, QFont.Light))
-        delta.setStyleSheet(f"color: {COLORS['accent_ink']};")
-        delta.setFixedWidth(52)
-        step_row.addWidget(delta)
+        self.btn_minus = self._glyph("−", lambda: on_nudge(-_STEP))
+        sh.addWidget(self.btn_minus)
 
-        # 步进器本体
-        stepper = QFrame()
-        stepper.setObjectName("Stepper")
-        rs = METRICS['radius_sm']
-        stepper.setStyleSheet(
-            f"QFrame#Stepper {{ background: {COLORS['surface']};"
-            f" border: 1px solid {COLORS['rule']};"
-            f" border-radius: {rs}px; }}"
-            f"QFrame#Stepper > QPushButton {{ background: transparent; border: none;"
-            f" color: {COLORS['ink_2']}; border-radius: 0px; }}"
-            f"QFrame#Stepper > QPushButton:hover {{ background: {COLORS['accent_soft']};"
-            f" color: {COLORS['accent']}; }}"
-            f"QFrame#Stepper > QPushButton:pressed {{ background: {COLORS['accent']};"
-            f" color: {COLORS['paper']}; }}"
-            f"QPushButton#StepLeft {{ border-top-left-radius: {rs}px;"
-            f" border-bottom-left-radius: {rs}px; }}"
-            f"QPushButton#StepRight {{ border-top-right-radius: {rs}px;"
-            f" border-bottom-right-radius: {rs}px; }}"
-        )
-        stepper_lay = QHBoxLayout(stepper)
-        stepper_lay.setContentsMargins(0, 0, 0, 0)
-        stepper_lay.setSpacing(0)
-        stepper.setFixedHeight(30)
-
-        self.btn_minus = QPushButton("−")
-        self.btn_minus.setObjectName("StepLeft")
-        self.btn_minus.setFixedWidth(32)
-        self.btn_minus.setCursor(Qt.PointingHandCursor)
-        self.btn_minus.setFont(app_font(13, QFont.Medium))
-        self.btn_minus.clicked.connect(lambda: self._on_nudge(-_STEP))
-
-        self.value_lbl = QLabel(self._fmt_current())
+        # value_lbl 沿用旧名字：主窗与测试都按它读当前基线
+        self.value_lbl = QLabel("55")
+        self.value_lbl.setFont(app_font_num(24, QFont.Light))
+        self.value_lbl.setStyleSheet(f"color: {COLORS['accent_ink']};")
         self.value_lbl.setAlignment(Qt.AlignCenter)
-        self.value_lbl.setFont(app_font_num(11, QFont.Light))
-        self.value_lbl.setStyleSheet(
-            f"color: {COLORS['ink']}; background: {COLORS['paper_2']};"
-            f" border-left: 1px solid {COLORS['rule']};"
-            f" border-right: 1px solid {COLORS['rule']};"
-        )
-        self.value_lbl.setMinimumWidth(48)
+        self.value_lbl.setFixedWidth(70)
+        sh.addWidget(self.value_lbl)
 
-        self.btn_plus = QPushButton("+")
-        self.btn_plus.setObjectName("StepRight")
-        self.btn_plus.setFixedWidth(32)
-        self.btn_plus.setCursor(Qt.PointingHandCursor)
-        self.btn_plus.setFont(app_font(13, QFont.Medium))
-        self.btn_plus.clicked.connect(lambda: self._on_nudge(+_STEP))
+        self.btn_plus = self._glyph("+", lambda: on_nudge(_STEP))
+        sh.addWidget(self.btn_plus)
+        sh.addStretch(1)
+        lay.addWidget(step)
 
-        stepper_lay.addWidget(self.btn_minus)
-        stepper_lay.addWidget(self.value_lbl, 1)
-        stepper_lay.addWidget(self.btn_plus)
-        step_row.addWidget(stepper)
-        lay.addLayout(step_row)
+        self._ruler = _Ruler()
+        lay.addWidget(self._ruler)
 
-        # 分叉按钮
-        self.btn_fork = QPushButton("◆  分叉（新起点）")
-        self.btn_fork.setCursor(Qt.PointingHandCursor)
-        self.btn_fork.setStyleSheet(self._neutral_btn_qss())
-        self.btn_fork.clicked.connect(self._on_fork)
-        lay.addWidget(self.btn_fork)
+        ops = QHBoxLayout()
+        ops.setContentsMargins(0, 10, 0, 0)
+        ops.setSpacing(18)
+        ops.addStretch(1)
+        self.btn_fork = self._text("分叉新起点", on_fork)
+        ops.addWidget(self.btn_fork)
+        self.btn_reset = self._text("重置为群体先验", on_reset)
+        ops.addWidget(self.btn_reset)
+        lay.addLayout(ops)
 
-        # 重置按钮（danger）
-        # 文案里的目标值取真实群体先验（Baseline() 默认 0.55/0.42），
-        # 不能硬编码 0.50——那是设计稿写错的值。
-        pop = Baseline()
-        self.btn_reset = QPushButton(
-            f"↺  重置  ·  回到群体先验 {pop.valence:.2f}")
-        self.btn_reset.setCursor(Qt.PointingHandCursor)
-        self.btn_reset.setProperty("danger", True)
-        self.btn_reset.setStyleSheet(self._danger_btn_qss())
-        self.btn_reset.clicked.connect(self._on_reset)
-        lay.addWidget(self.btn_reset)
+        self.refresh()
 
-        self._refresh()
+    # ------------------------------------------------------------
+    @staticmethod
+    def _glyph(text, slot):
+        b = QPushButton(text)
+        b.setCursor(Qt.PointingHandCursor)
+        b.setFlat(True)
+        b.setFocusPolicy(Qt.NoFocus)
+        b.setFont(app_font(15))
+        b.setStyleSheet(
+            f"QPushButton {{ border: none; background: transparent;"
+            f" color: {COLORS['accent_ink']}; padding: 0; }}"
+            f"QPushButton:hover {{ color: {COLORS['accent']}; }}")
+        b.clicked.connect(lambda: slot())
+        return b
 
-    # ================================================================
-    # 样式
-    # ================================================================
-    def _neutral_btn_qss(self):
-        return (
-            f"QPushButton {{ background: transparent; border: 1px solid {COLORS['rule']};"
-            f" color: {COLORS['ink_2']}; padding: 7px 14px; text-align: left;"
-            f" font-size: 11.5px; }}"
-            f"QPushButton:hover {{ border-color: {COLORS['accent']};"
-            f" color: {COLORS['accent']}; background: {COLORS['accent_soft']}; }}"
-            f"QPushButton:pressed {{ background: {COLORS['accent_deep']};"
-            f" color: {COLORS['paper']}; }}"
-        )
+    @staticmethod
+    def _text(text, slot):
+        b = QPushButton(text)
+        b.setCursor(Qt.PointingHandCursor)
+        b.setFlat(True)
+        b.setFocusPolicy(Qt.NoFocus)
+        b.setFont(app_font(9))
+        b.setStyleSheet(
+            f"QPushButton {{ border: none; background: transparent;"
+            f" color: {COLORS['muted']}; padding: 0; }}"
+            f"QPushButton:hover {{ color: {COLORS['accent_ink']}; }}")
+        b.clicked.connect(lambda: slot())
+        return b
 
-    def _danger_btn_qss(self):
-        return (
-            f"QPushButton {{ background: transparent; border: 1px solid {COLORS['danger']};"
-            f" color: {COLORS['danger']}; padding: 7px 14px; text-align: left;"
-            f" font-size: 11.5px; }}"
-            f"QPushButton:hover {{ background: {COLORS['danger']};"
-            f" color: {COLORS['paper']}; }}"
-            f"QPushButton:pressed {{ background: {COLORS['accent_deep']}; }}"
-        )
-
-    # ================================================================
-    # 对外接口
-    # ================================================================
     def refresh(self):
-        """从 provider 重新拉当前基线并刷新显示（换人群 / nudge 后由视图调）。
-
-        换精力人群后 presenter 会 **replace** 新的 BaselineController，
-        所以这里必须每次都从 provider 拿，不能缓存引用。
-        """
-        self._refresh()
-
-    # ================================================================
-    # 行为（纯显示：按钮一律走回调到 presenter，自身不改内核）
-    # ================================================================
-    def _refresh(self):
-        self.value_lbl.setText(f"{self._get_ctrl().current.valence:.2f}")
-
-    def _fmt_current(self):
-        return f"{self._get_ctrl().current.valence:.2f}"
+        """从 provider 重新拉：换人群后 controller 会被 replace，不能缓存。"""
+        ctrl = self._get_ctrl() if callable(self._get_ctrl) else self._get_ctrl
+        value = float(getattr(ctrl.current, 'valence', 0.5))
+        self.value_lbl.setText("%d" % round(value * 100))
+        self._ruler.set_value(value)

@@ -29,165 +29,175 @@ from PyQt5.QtGui import QFont, QFontMetrics
 from theme import COLORS, METRICS, app_font, app_font_num
 
 
+class _Value:
+    """一个读数格：极小标签 + 数值。保留 v3 的 `.value_label` 访问方式。"""
+
+    def __init__(self, caption, size=10, color=None):
+        self.caption = QLabel(caption)
+        self.caption.setFont(app_font(9))
+        self.caption.setStyleSheet(f"color: {COLORS['muted']};")
+        self.value_label = QLabel("—")
+        self.value_label.setFont(app_font_num(size, QFont.Light))
+        self.value_label.setStyleSheet(
+            f"color: {color or COLORS['ink_2']};")
+
+
 class StateHead(QWidget):
-    """一条状态头：状态名（含纠正入口）+ 四个读数。"""
+    """状态头：一句话 + 当下数值 + 离差 + 三个限定读数。
 
-    _CORR_FULL = "· 情绪有误，点这里纠正"
-    _CORR_SHORT = "纠正"
+        平静 · 偏积极                          效价
+                                               60
+        比你的常态高 5 · 预测 5 分钟              纠正
+        唤醒 47   置信 92%   ±1σ 46 – 73      估 17:05
 
-    def __init__(self, on_correction_clicked, parent=None):
+    设计依据（Exploration 03）：最大的字必须是"你现在怎么样"，
+    数字只做佐证；效价值提到标题层后，不再在读数行里重复。
+    """
+
+    def __init__(self, on_correction_clicked=None, parent=None):
         super().__init__(parent)
-        self._on_correction_clicked = on_correction_clicked
+        self._on_corr = on_correction_clicked
+        self._forecast_min = 0
 
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(14, 12, 12, 8)
-        outer.setSpacing(2)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 22, 24, 10)
+        root.setSpacing(0)
 
-        # ---- row1：状态名 + hint + 纠正入口 ----
+        # ---- 第一行：状态句 + 当下效价 ----
         row1 = QHBoxLayout()
-        row1.setContentsMargins(0, 0, 0, 0)
-        row1.setSpacing(8)
-
+        row1.setSpacing(12)
         self.state_label = QLabel("—")
-        self.state_label.setFont(app_font(17, QFont.Medium))
+        self.state_label.setFont(app_font(26, QFont.Medium))
         self.state_label.setStyleSheet(f"color: {COLORS['ink']};")
-        # 状态名是全窗口最重要的一个词，绝不能被旁边元素挤掉。
-        longest = max(("兴奋 · 活跃", "平静 · 偏积极",
-                       "紧张 · 焦虑", "低落 · 疲惫"), key=len)
-        self.state_label.setMinimumWidth(
-            QFontMetrics(self.state_label.font()).horizontalAdvance(longest) + 4)
         row1.addWidget(self.state_label)
+        row1.addStretch(1)
 
-        self.state_hint = QLabel("")
-        self.state_hint.setFont(app_font(10))
-        self.state_hint.setStyleSheet(f"color: {COLORS['muted']};")
-        # 让提示语在极端窄/高缩放下先让位（可被压缩）
-        self.state_hint.setMinimumWidth(0)
-        row1.addWidget(self.state_hint, 1, Qt.AlignBottom | Qt.AlignLeft)
+        now = QVBoxLayout()
+        now.setSpacing(0)
+        self.cap = QLabel("效价")
+        self.cap.setFont(app_font(9))
+        self.cap.setStyleSheet(f"color: {COLORS['muted']};")
+        self.cap.setAlignment(Qt.AlignRight)
+        now.addWidget(self.cap)
+        self.v_lbl = _Value("效价", size=26, color=COLORS['accent_ink'])
+        self.v_lbl.value_label.setAlignment(Qt.AlignRight)
+        now.addWidget(self.v_lbl.value_label)
+        row1.addLayout(now)
+        root.addLayout(row1)
 
-        self.corr_btn = QPushButton(self._CORR_FULL)
-        self.corr_btn.setToolTip("情绪有误，点这里纠正")
+        root.addSpacing(5)
+
+        # ---- 第二行：离差 + 纠正入口 ----
+        row2 = QHBoxLayout()
+        row2.setSpacing(10)
+        self.meta_label = QLabel("")
+        self.meta_label.setFont(app_font(11))
+        self.meta_label.setStyleSheet(f"color: {COLORS['ink_2']};")
+        row2.addWidget(self.meta_label)
+        row2.addStretch(1)
+        self.corr_btn = QPushButton("纠正")
         self.corr_btn.setCursor(Qt.PointingHandCursor)
         self.corr_btn.setFlat(True)
+        self.corr_btn.setFocusPolicy(Qt.NoFocus)
         self.corr_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent;"
-            f" border: 1px solid {COLORS['rule']};"
-            f" color: {COLORS['ink_2']}; padding: 3px 8px; font-size: 10px;"
-            f" border-radius: {METRICS['radius_sm']}px; }}"
-            f"QPushButton:hover {{ border-color: {COLORS['accent']};"
-            f" color: {COLORS['accent']}; background: {COLORS['accent_soft']}; }}"
-        )
-        self.corr_btn.clicked.connect(self._on_correction_clicked)
-        self.corr_btn.setVisible(False)     # 空态没有可纠正的曲线
-        row1.addWidget(self.corr_btn, 0, Qt.AlignRight | Qt.AlignBottom)
-        outer.addLayout(row1)
+            f"QPushButton {{ border: none; background: transparent;"
+            f" color: {COLORS['muted']}; font-size: 9px; padding: 0;"
+            f" text-decoration: underline; }}"
+            f"QPushButton:hover {{ color: {COLORS['accent_ink']}; }}")
+        if on_correction_clicked is not None:
+            self.corr_btn.clicked.connect(on_correction_clicked)
+        row2.addWidget(self.corr_btn)
+        root.addLayout(row2)
 
-        # ---- row1.5：一行说清「这个数是几点的」----
-        # v5：模型估计与真实自评必须可区分。没有这一行，用户会把
-        # 「两小时前自评、模型推演到现在」的数值当成「我刚说过」。
-        self.meta_label = QLabel(EMPTY_HINT)
-        self.meta_label.setFont(app_font(9))
-        self.meta_label.setStyleSheet(f"color: {COLORS['muted']};")
-        self.meta_label.setMinimumWidth(0)
-        outer.addWidget(self.meta_label)
+        root.addSpacing(9)
 
-        # ---- row2：四读数（效价/唤醒主，置信/区间次）----
-        row2 = QHBoxLayout()
-        row2.setContentsMargins(0, 0, 0, 0)
-        row2.setSpacing(16)
+        # ---- 第三行：三个限定读数 + 估计时刻 ----
+        row3 = QHBoxLayout()
+        row3.setSpacing(8)
+        self.a_lbl = _Value("唤醒")
+        self.c_lbl = _Value("置信")
+        self.ci_lbl = _Value("±1σ")
+        for val in (self.a_lbl, self.c_lbl, self.ci_lbl):
+            row3.addWidget(val.caption)
+            row3.addWidget(val.value_label)
+            row3.addSpacing(8)
+        row3.addStretch(1)
+        self.stamp = QLabel("")
+        self.stamp.setFont(app_font(9))
+        self.stamp.setStyleSheet(f"color: {COLORS['muted']};")
+        row3.addWidget(self.stamp)
+        root.addLayout(row3)
 
-        self.v_lbl = self._make_cell("效价 VAL", 18, primary=True)
-        self.a_lbl = self._make_cell("唤醒 ARO", 18, primary=True)
-        self.c_lbl = self._make_cell("置信 CONF", 13, primary=False)
-        self.ci_lbl = self._make_cell("区间 ±1σ", 13, primary=False)
-        for lbl in (self.v_lbl, self.a_lbl, self.c_lbl, self.ci_lbl):
-            row2.addWidget(lbl, 1)
-        outer.addLayout(row2)
-
-        self.setMinimumHeight(68)
-
-    def _make_cell(self, key, num_size, primary):
-        """一个读数单元。返回挂载了 .value_label 的容器。"""
-        w = QWidget()
-        v = QVBoxLayout(w)
-        v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(1)
-        k = QLabel(key)
-        k.setFont(app_font(8, QFont.DemiBold))
-        k.setStyleSheet(f"color: {COLORS['muted']}; letter-spacing: 1.2px;")
-        big = QLabel("—")
-        big.setFont(app_font_num(num_size,
-                                 QFont.DemiBold if primary else QFont.Light))
-        big.setStyleSheet(
-            f"color: {COLORS['accent_ink'] if primary else COLORS['ink_2']};")
-        big.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        v.addWidget(k)
-        v.addWidget(big)
-        w.value_label = big
-        return w
-
-    # ------------------------------------------------------------
-    # 两个 v3 入口，签名不变
-    # ------------------------------------------------------------
-    def update_state(self, valence, arousal, params_text=None):
-        """更新状态名。params_text 由「模型」Tab 的 ParamsExplainCard 消费。"""
-        self.state_hint.setText(" · 模型估计")
-        self.corr_btn.setVisible(True)
-        self.state_label.setText(_derive_state_name(valence, arousal))
-
-    def update_values(self, valence, arousal, confidence, ci_text):
-        self.v_lbl.value_label.setText(f"{int(valence * 100)}")
-        self.a_lbl.value_label.setText(f"{int(arousal * 100)}")
-        self.c_lbl.value_label.setText(f"{int(confidence * 100)}%")
-        self.ci_lbl.value_label.setText(ci_text)
-
-    def update_meta(self, valence, state_ts=0.0, last_obs_ts=0.0, baseline_v=None):
-        """一行说清「这个数是几点的、离上次自评多久、比基线高多少」。
-
-        没有这一行，用户会把「两小时前自评、模型推演到现在」的数值
-        当成「我刚说过」——这是三种数据（真实观察 / 模型估计 / 预测）
-        在界面上唯一的分界线。
-        """
-        if not state_ts:
-            self.meta_label.setText(EMPTY_HINT)
-            return
-
-        parts = []
-        age = max(0.0, float(state_ts) - float(last_obs_ts)) if last_obs_ts else None
-        if age is None:
-            parts.append("还没有自评")
-        elif age < 60:
-            parts.append("刚刚自评")
-        else:
-            parts.append("距上次自评 " + _fmt_age(age))
-            parts.append("模型估计 " + _fmt_clock(state_ts))
-
-        if baseline_v is not None:
-            parts.append(_fmt_delta(valence, baseline_v))
-
-        self.meta_label.setText(" · ".join(parts))
-
-    def reset_values(self):
-        """全部回到占位符，并告诉新用户下一步做什么。
-
-        空态不是"没数据"，是"第一次见面"——只显示四个破折号等于把用户
-        丢在原地。这里给一条可执行的下一步。
-        """
-        for lbl in (self.v_lbl, self.a_lbl, self.c_lbl, self.ci_lbl):
-            lbl.value_label.setText("—")
-        self.state_label.setText("—")
-        self.state_hint.setText("")
-        self.corr_btn.setVisible(False)
-        self.meta_label.setText(EMPTY_HINT)
+        self.reset_values()
 
     def resizeEvent(self, event):
-        """360px 最小窗：先让提示语让位，再把纠正按钮收成「纠正」。"""
-        super().resizeEvent(event)
+        """360px：状态句降一档、去掉"效价"小标题，绝不裁字或藏功能。"""
         narrow = event.size().width() < 380
-        text = self._CORR_SHORT if narrow else self._CORR_FULL
-        if self.corr_btn.text() != text:
-            self.corr_btn.setText(text)
-        self.state_hint.setVisible(not narrow)
+        self.state_label.setFont(app_font(21 if narrow else 26, QFont.Medium))
+        self.v_lbl.value_label.setFont(
+            app_font_num(22 if narrow else 26, QFont.Light))
+        self.cap.setVisible(not narrow)
+        pad = 18 if narrow else 24
+        self.layout().setContentsMargins(pad, 22, pad, 10)
+        super().resizeEvent(event)
+
+    # ------------------------------------------------------------
+    def set_forecast(self, minutes: int):
+        """预测时长放进右下角的时间戳旁，不挤离差行。"""
+        self._forecast_min = int(minutes or 0)
+        if getattr(self, "_last_state_ts", 0.0):
+            stamp = "估 %s" % _short_clock(self._last_state_ts)
+            if self._forecast_min:
+                stamp += "　·　预测 %d 分钟" % self._forecast_min
+            self.stamp.setText(stamp)
+
+    def update_state(self, valence, arousal, params_text=None):
+        self.state_label.setText(derive_state_name(valence, arousal))
+
+    def update_values(self, valence, arousal, confidence, ci_text):
+        self.v_lbl.value_label.setText("%d" % round(float(valence) * 100))
+        self.a_lbl.value_label.setText("%d" % round(float(arousal) * 100))
+        self.c_lbl.value_label.setText("%d%%" % round(float(confidence) * 100))
+        self.ci_lbl.value_label.setText(ci_text)
+
+    def update_meta(self, valence, state_ts=0.0, last_obs_ts=0.0,
+                    baseline_v=None):
+        if not state_ts:
+            # 没有估计时刻 = 还没有任何状态，别用"持平"假装有数据
+            self._last_meta = EMPTY_HINT
+            self.meta_label.setText(EMPTY_HINT)
+            self.stamp.setText("")
+            self.corr_btn.setVisible(False)
+            return
+        diff = int(round((float(valence) - float(baseline_v)) * 100))             if baseline_v is not None else 0
+        if abs(diff) <= 2:
+            parts = ["与你的常态持平"]
+        elif diff > 0:
+            parts = ["比你的常态高 %d" % diff]
+        else:
+            parts = ["比你的常态低 %d" % abs(diff)]
+        if last_obs_ts:
+            age = (float(state_ts) - float(last_obs_ts)) / 60.0
+            parts.append("刚刚自评" if age < 1 else "自评 %d 分钟前" % round(age))
+        text = "　·　".join(parts)
+        self._last_meta = text
+        self.meta_label.setText(text)
+        stamp = "估 %s" % _short_clock(state_ts)
+        if self._forecast_min:
+            stamp += "　·　预测 %d 分钟" % self._forecast_min
+        self.stamp.setText(stamp)
+        self.corr_btn.setVisible(True)
+
+    def reset_values(self):
+        self.state_label.setText("—")
+        self.v_lbl.value_label.setText("—")
+        self.a_lbl.value_label.setText("—")
+        self.c_lbl.value_label.setText("—")
+        self.ci_lbl.value_label.setText("—")
+        self.stamp.setText("")
+        self._last_meta = EMPTY_HINT
+        self.meta_label.setText(EMPTY_HINT)
+        self.corr_btn.setVisible(False)
 
 
 class ParamsExplainCard(QFrame):
@@ -273,7 +283,7 @@ class ParamsExplainCard(QFrame):
 # 状态名派生（按 V×A 象限；不作诊断/评判）
 # ================================================================
 #: 空态引导（新用户第一眼看到的唯一一句操作提示）
-EMPTY_HINT = "还没有自评 · 拖动下面滑条，或点「开始记录」"
+EMPTY_HINT = "还没有自评 · 点「开始记录」，或按 Ctrl+R"
 
 
 def _fmt_age(seconds: float) -> str:
@@ -284,6 +294,11 @@ def _fmt_age(seconds: float) -> str:
     if seconds < 86400:
         return "%d 小时" % int(round(seconds / 3600.0))
     return "%d 天" % int(round(seconds / 86400.0))
+
+
+def _short_clock(ts: float) -> str:
+    import datetime as _dt
+    return _dt.datetime.fromtimestamp(float(ts)).strftime("%H:%M")
 
 
 def _fmt_clock(ts: float) -> str:
