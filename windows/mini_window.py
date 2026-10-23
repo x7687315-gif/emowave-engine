@@ -253,7 +253,7 @@ class MiniWindow(QWidget):
         fl.addWidget(self.btn_note)
 
         self.btn_record = QPushButton("●  记录")
-        self.btn_record.setFixedWidth(56)
+        self.btn_record.setFixedWidth(64)
         self.btn_record.setStyleSheet("text-align: right;")
         self.btn_record.setCursor(Qt.PointingHandCursor)
         self.btn_record.setFlat(True)
