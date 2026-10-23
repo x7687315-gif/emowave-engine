@@ -1,0 +1,112 @@
+{
+  "key": "a",
+  "mode": "light",
+  "label": "A · 月光微金 · 亮色",
+  "dpr": 1.0,
+  "colors": {
+    "paper": "#F2F2F3",
+    "paper_2": "#E6E7E8",
+    "surface": "#FFFFFF",
+    "ink": "#1A1B1D",
+    "ink_2": "#45484C",
+    "muted": "#64676B",
+    "rule": "#DCDDDF",
+    "grid": "#E9EAEB",
+    "accent": "#8A6D2E",
+    "accent_ink": "#6B5524",
+    "accent_soft": "#F0EADB",
+    "accent_deep": "#4A3B15",
+    "danger": "#4A3B15",
+    "wash": "rgba(138, 109, 46, 0.10)",
+    "bg": "#F2F2F3",
+    "ink_soft": "#45484C",
+    "cyan": "#8E9398"
+  },
+  "geometry": {
+    "window": [
+      400,
+      680
+    ],
+    "topbar_h": 44,
+    "tabbar_h": 40,
+    "statehead_h": 133,
+    "curve_h": 270,
+    "input_h": 139,
+    "ui_font": "Bahnschrift 10.0pt w=50",
+    "n_states": 11,
+    "n_obs": 11,
+    "n_corrections": 4,
+    "curve_ts": 15,
+    "baseline_v": 0.55,
+    "readout_v": 0.6002,
+    "readout_a": 0.4665
+  },
+  "shots": [
+    {
+      "name": "recording",
+      "px": [
+        400,
+        680
+      ],
+      "content_px": [
+        400,
+        680
+      ]
+    },
+    {
+      "name": "correction",
+      "px": [
+        400,
+        480
+      ],
+      "content_px": [
+        400,
+        480
+      ]
+    },
+    {
+      "name": "main",
+      "px": [
+        400,
+        680
+      ],
+      "content_px": [
+        400,
+        680
+      ]
+    },
+    {
+      "name": "mini-expanded",
+      "px": [
+        396,
+        216
+      ],
+      "content_px": [
+        360,
+        180
+      ]
+    },
+    {
+      "name": "mini-collapsed",
+      "px": [
+        396,
+        170
+      ],
+      "content_px": [
+        360,
+        134
+      ]
+    },
+    {
+      "name": "min-360x600",
+      "px": [
+        360,
+        600
+      ],
+      "content_px": [
+        360,
+        600
+      ]
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "dpr": 1.0,
+  "shots": [
+    {
+      "name": "main",
+      "px": [
+        400,
+        680
+      ]
+    },
+    {
+      "name": "model",
+      "px": [
+        400,
+        680
+      ]
+    },
+    {
+      "name": "history",
+      "px": [
+        400,
+        680
+      ]
+    },
+    {
+      "name": "correction",
+      "px": [
+        400,
+        480
+      ]
+    },
+    {
+      "name": "mini-collapsed",
+      "px": [
+        388,
+        162
+      ]
+    },
+    {
+      "name": "mini-expanded",
+      "px": [
+        388,
+        208
+      ]
+    },
+    {
+      "name": "recording",
+      "px": [
+        400,
+        680
+      ]
+    },
+    {
+      "name": "mini-recording",
+      "px": [
+        388,
+        162
+      ]
+    },
+    {
+      "name": "min-360x600",
+      "px": [
+        360,
+        600
+      ]
+    }
+  ],
+  "data": {
+    "n_obs": 11,
+    "curve_ts": 311,
+    "baseline_v": 0.55,
+    "state": "平静 · 偏积极",
+    "count": 11
+  }
+}

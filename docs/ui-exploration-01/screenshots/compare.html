@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>EmoWave · UI Exploration 01 · A/B 对照</title>
+<style>
+:root { color-scheme: light dark; }
+body { margin: 0; padding: 32px 28px 56px; background: #232629; color: #E8EAED;
+       font: 14px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif; }
+h1 { font-size: 20px; font-weight: 600; letter-spacing: .04em; margin: 0 0 6px; }
+.sub { color: #9AA0A6; font-size: 12.5px; margin-bottom: 30px; }
+h2 { font-size: 13px; font-weight: 600; letter-spacing: .12em; color: #9AA0A6;
+     margin: 34px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #33373B; }
+table.cmp { border-collapse: separate; border-spacing: 18px 22px; }
+td { vertical-align: top; }
+figure { margin: 0; }
+img { display: block; width: 400px; image-rendering: auto;
+      border: 1px solid #3A3E42; border-radius: 6px; background: #fff; }
+figcaption { font-size: 12px; color: #BDC1C6; margin-top: 8px; letter-spacing: .04em; }
+</style></head><body>
+<h1>UI Exploration 01 · 月光微金 × 云白深海</h1>
+<div class="sub">同一套布局 / 字体层级 / 组件 / 演示数据 / 曲线形状，只有语义色板不同。
+<b>同一行 = 同一模式，左 A（月光微金）右 B（云白深海）</b>；第一行亮色，第二行暗色。
+图片为真实 PyQt5 组件抓取，非合成稿。</div>
+<h2>主窗口 · 正常态（400×680）</h2><table class="cmp"><tr><td><figure><img src="a_light-main.png" alt="主窗口 · 正常态（400×680） · A · 月光微金 · 亮色"><figcaption>A · 月光微金 · 亮色</figcaption></figure></td><td><figure><img src="b_light-main.png" alt="主窗口 · 正常态（400×680） · B · 云白深海 · 亮色"><figcaption>B · 云白深海 · 亮色</figcaption></figure></td></tr><tr><td><figure><img src="a_dark-main.png" alt="主窗口 · 正常态（400×680） · A · 月光微金 · 暗色"><figcaption>A · 月光微金 · 暗色</figcaption></figure></td><td><figure><img src="b_dark-main.png" alt="主窗口 · 正常态（400×680） · B · 云白深海 · 暗色"><figcaption>B · 云白深海 · 暗色</figcaption></figure></td></tr></table>
+<h2>记录操作反馈（■ 停止记录 / 记一笔可用）</h2><table class="cmp"><tr><td><figure><img src="a_light-recording.png" alt="记录操作反馈（■ 停止记录 / 记一笔可用） · A · 月光微金 · 亮色"><figcaption>A · 月光微金 · 亮色</figcaption></figure></td><td><figure><img src="b_light-recording.png" alt="记录操作反馈（■ 停止记录 / 记一笔可用） · B · 云白深海 · 亮色"><figcaption>B · 云白深海 · 亮色</figcaption></figure></td></tr><tr><td><figure><img src="a_dark-recording.png" alt="记录操作反馈（■ 停止记录 / 记一笔可用） · A · 月光微金 · 暗色"><figcaption>A · 月光微金 · 暗色</figcaption></figure></td><td><figure><img src="b_dark-recording.png" alt="记录操作反馈（■ 停止记录 / 记一笔可用） · B · 云白深海 · 暗色"><figcaption>B · 云白深海 · 暗色</figcaption></figure></td></tr></table>
+<h2>曲线纠正态（上滑框 + 拖点）</h2><table class="cmp"><tr><td><figure><img src="a_light-correction.png" alt="曲线纠正态（上滑框 + 拖点） · A · 月光微金 · 亮色"><figcaption>A · 月光微金 · 亮色</figcaption></figure></td><td><figure><img src="b_light-correction.png" alt="曲线纠正态（上滑框 + 拖点） · B · 云白深海 · 亮色"><figcaption>B · 云白深海 · 亮色</figcaption></figure></td></tr><tr><td><figure><img src="a_dark-correction.png" alt="曲线纠正态（上滑框 + 拖点） · A · 月光微金 · 暗色"><figcaption>A · 月光微金 · 暗色</figcaption></figure></td><td><figure><img src="b_dark-correction.png" alt="曲线纠正态（上滑框 + 拖点） · B · 云白深海 · 暗色"><figcaption>B · 云白深海 · 暗色</figcaption></figure></td></tr></table>
+<h2>悬浮窗 · 展开（360×180）</h2><table class="cmp"><tr><td><figure><img src="a_light-mini-expanded.png" alt="悬浮窗 · 展开（360×180） · A · 月光微金 · 亮色"><figcaption>A · 月光微金 · 亮色</figcaption></figure></td><td><figure><img src="b_light-mini-expanded.png" alt="悬浮窗 · 展开（360×180） · B · 云白深海 · 亮色"><figcaption>B · 云白深海 · 亮色</figcaption></figure></td></tr><tr><td><figure><img src="a_dark-mini-expanded.png" alt="悬浮窗 · 展开（360×180） · A · 月光微金 · 暗色"><figcaption>A · 月光微金 · 暗色</figcaption></figure></td><td><figure><img src="b_dark-mini-expanded.png" alt="悬浮窗 · 展开（360×180） · B · 云白深海 · 暗色"><figcaption>B · 云白深海 · 暗色</figcaption></figure></td></tr></table>
+<h2>悬浮窗 · 收起（360×134）</h2><table class="cmp"><tr><td><figure><img src="a_light-mini-collapsed.png" alt="悬浮窗 · 收起（360×134） · A · 月光微金 · 亮色"><figcaption>A · 月光微金 · 亮色</figcaption></figure></td><td><figure><img src="b_light-mini-collapsed.png" alt="悬浮窗 · 收起（360×134） · B · 云白深海 · 亮色"><figcaption>B · 云白深海 · 亮色</figcaption></figure></td></tr><tr><td><figure><img src="a_dark-mini-collapsed.png" alt="悬浮窗 · 收起（360×134） · A · 月光微金 · 暗色"><figcaption>A · 月光微金 · 暗色</figcaption></figure></td><td><figure><img src="b_dark-mini-collapsed.png" alt="悬浮窗 · 收起（360×134） · B · 云白深海 · 暗色"><figcaption>B · 云白深海 · 暗色</figcaption></figure></td></tr></table>
+<h2>最小尺寸检查（360×600）</h2><table class="cmp"><tr><td><figure><img src="a_light-min-360x600.png" alt="最小尺寸检查（360×600） · A · 月光微金 · 亮色"><figcaption>A · 月光微金 · 亮色</figcaption></figure></td><td><figure><img src="b_light-min-360x600.png" alt="最小尺寸检查（360×600） · B · 云白深海 · 亮色"><figcaption>B · 云白深海 · 亮色</figcaption></figure></td></tr><tr><td><figure><img src="a_dark-min-360x600.png" alt="最小尺寸检查（360×600） · A · 月光微金 · 暗色"><figcaption>A · 月光微金 · 暗色</figcaption></figure></td><td><figure><img src="b_dark-min-360x600.png" alt="最小尺寸检查（360×600） · B · 云白深海 · 暗色"><figcaption>B · 云白深海 · 暗色</figcaption></figure></td></tr></table>
+</body></html>

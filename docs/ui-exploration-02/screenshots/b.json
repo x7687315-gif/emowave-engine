@@ -1,0 +1,42 @@
+{
+  "plan": "b",
+  "label": "B · 水位",
+  "dpr": 1.0,
+  "shots": [
+    {
+      "name": "idle",
+      "px": [
+        400,
+        680
+      ]
+    },
+    {
+      "name": "min-360x600",
+      "px": [
+        360,
+        600
+      ]
+    },
+    {
+      "name": "correction",
+      "px": [
+        400,
+        480
+      ]
+    },
+    {
+      "name": "recording",
+      "px": [
+        400,
+        680
+      ]
+    }
+  ],
+  "data": {
+    "n_obs": 11,
+    "curve_ts": 311,
+    "baseline_v": 0.55,
+    "state": "平静 · 偏积极",
+    "count": 11
+  }
+}
