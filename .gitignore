@@ -24,3 +24,4 @@ build/
 
 # Agent 本地记忆（不属于项目源码）
 .workbuddy-ai/
+*.spec
