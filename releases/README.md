@@ -2,9 +2,15 @@
 
 ## v3.0.0 · 2026-10-23
 
-| 文件 | 说明 |
+**下载**：https://github.com/x7687315-gif/emowave-engine/releases/download/v3.0.0/EmoWave-3.0.0-win64.zip
+
+| 资产 | 说明 |
 |---|---|
 | `EmoWave-3.0.0-win64.zip` | Windows 64 位便携版（单文件 EXE + 使用说明），约 36 MB |
+| `emowave-3.0.0-py3-none-any.whl` | Python 包（内核，不含 GUI） |
+| `emowave-3.0.0.tar.gz` | Python 源码包 |
+
+> 二进制不再放进 git 仓库：它们挂在 GitHub Release `v3.0.0` 上。
 
 **SHA256**
 
