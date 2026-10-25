@@ -11,7 +11,7 @@
 **你现在在哪、你怎么走到这里、接下来可能会怎样。**
 
 - 版本：3.0.0 · Python 3.9+ · PyQt5 5.15 · SQLite
-- 769 条测试全绿 · 零云端依赖 · 数据只在本机
+- 788 条测试全绿 · 零云端依赖 · 数据只在本机
 - 界面：黑 / 白 / 石墨灰 + 少量低饱和深海蓝
 
 ---
@@ -196,7 +196,7 @@ main_app.py             桌面入口（400×680，三页）
 python main_app.py            # 或双击 run_emowave.bat
 
 # 测试
-python -m pytest -q           # 769 passed
+python -m pytest -q           # 788 passed
 
 # 内核 CLI（不需要 GUI）
 python -m emowave.cli --help
@@ -216,7 +216,7 @@ python -m tools.forecast_eval --help
 
 ## 质量
 
-- **769 条测试**：内核数学、presenter 契约、UI 交互、数据库、评估、架构护栏
+- **788 条测试**：内核数学、presenter 契约、UI 交互、数据库、评估、架构护栏
 - **6 条架构护栏**：零依赖内核、无孤儿模块、入口可导入、白名单有效、LOC 预算、无重复定义
 - **视觉验收靠截图**：offscreen 平台不渲染文字，所有界面截图都在 Windows 平台插件下拍摄
 - 颜色对比度有脚本实测（`docs/ui-exploration-01/contrast_report.py`），不靠肉眼

@@ -69,7 +69,9 @@ class CorrectionCanvas(EmotionCurveWidget):
                 self.update()
             return
         idx = self._drag_index
-        if idx >= len(self.timestamps) or idx >= len(self.model_v):
+        # 三个序列必须等长才允许按下标改值；缺一项就放弃这一帧（不抛异常）
+        if (idx >= len(self.timestamps) or idx >= len(self.model_v)
+                or idx >= len(self.model_a)):
             return
         # 改效价：只允许在效价子图里改 v
         # 改唤醒：只允许在唤醒子图里改 a
@@ -132,7 +134,10 @@ class CorrectionCanvas(EmotionCurveWidget):
             pen_dash = QPen(QColor(COLORS['accent']), 1.5)
             p.setPen(pen_dash)
             p.setBrush(Qt.NoBrush)
+            n = min(len(self.timestamps), len(self.model_v), len(self.model_a))
             for idx, (nv, na) in self._edits.items():
+                if not (0 <= idx < n):
+                    continue                       # 防御：脏索引不画，也不抛
                 x0v, y0v, pwv, phv = self._plot_rect(0, 2)
                 x0a, y0a, pwa, pha = self._plot_rect(1, 2)
                 ox = self._x(self.timestamps[idx], t0, span, x0v, pwv)
@@ -152,7 +157,10 @@ class CorrectionCanvas(EmotionCurveWidget):
                 p.drawEllipse(QPointF(ox, ny_a), 4.5, 4.5)
 
         # 选中点：高亮 + 气泡（v/a 数值）
-        if self._selected is not None and self._selected < len(self.timestamps):
+        if (self._selected is not None
+                and self._selected < min(len(self.timestamps),
+                                         len(self.model_v),
+                                         len(self.model_a))):
             x0, y0v, pw, phv = self._plot_rect(0, 2)
             x0, y0a, pw, pha = self._plot_rect(1, 2)
             ox = self._x(self.timestamps[self._selected], t0, span, x0, pw)

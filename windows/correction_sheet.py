@@ -232,6 +232,9 @@ class CorrectionSheet(QDialog):
     # 选中 / 拖动 / 手动输入 三路汇聚到同一处
     # ================================================================
     def _on_select(self, idx):
+        if not (0 <= int(idx) < len(self._timestamps)):
+            return                                   # 防御：越界索引直接忽略
+        idx = int(idx)
         self._selected_index = idx
         ts = self._timestamps[idx]
         self.tm_lbl.setText(time.strftime("%H:%M:%S", time.localtime(ts)))
@@ -252,17 +255,21 @@ class CorrectionSheet(QDialog):
         self.canvas.set_selected(idx)
 
     def _on_drag(self, idx, new_v, new_a):
-        """来自画布的拖动事件。"""
-        self._edits[idx] = (new_v, new_a)
+        """来自画布的拖动事件。拖动即选中：右侧输入框同步显示新值。"""
+        if not (0 <= int(idx) < len(self._timestamps)):
+            return
+        idx = int(idx)
+        self._edits[idx] = (max(0.0, min(1.0, float(new_v))),
+                            max(0.0, min(1.0, float(new_a))))
         self._selected_index = idx
-        # 同步右侧输入框（仅在选中同一 idx 时）
-        if idx == self._selected_index:
-            self.v_sb.blockSignals(True)
-            self.a_sb.blockSignals(True)
-            self.v_sb.setValue(new_v)
-            self.a_sb.setValue(new_a)
-            self.v_sb.blockSignals(False)
-            self.a_sb.blockSignals(False)
+        # 同步右侧输入框（断开信号，避免 valueChanged 回写 _edits）
+        self.v_sb.blockSignals(True)
+        self.a_sb.blockSignals(True)
+        self.v_sb.setValue(self._edits[idx][0])
+        self.a_sb.setValue(self._edits[idx][1])
+        self.v_sb.blockSignals(False)
+        self.a_sb.blockSignals(False)
+        self.canvas.set_selected(idx)
         self.canvas.set_edits(self._edits)
         self._refresh_count()
 
@@ -271,6 +278,8 @@ class CorrectionSheet(QDialog):
         if self._selected_index is None:
             return
         idx = self._selected_index
+        if not (0 <= idx < len(self._timestamps)):
+            return
         if idx in self._edits:
             v, a = self._edits[idx]
         else:

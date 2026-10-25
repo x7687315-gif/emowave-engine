@@ -322,6 +322,35 @@ class ConsolePresenter(QObject):
         self.refresh_timer.stop()
         self.recorder.set_enabled(False)
 
+    # ------------------------------------------------------------
+    # 节律暂停（纠正弹窗等模态对话框期间使用）
+    # ------------------------------------------------------------
+    def pause_wave_timers(self):
+        """暂停 1Hz 心跳与低频刷新，返回恢复上下文。
+
+        为什么需要：纠正上滑框是模态的，但 presenter 的定时器照跑——
+        弹窗开着期间波可能衰减结束（`_end_wave` 清空 states），用户提交的
+        纠正会因找不到对应状态被**静默丢弃**。暂停节律保证弹窗期间的
+        世界是静止的。记录中的 recorder 防抖不在此列：那是用户真实输入，
+        追加到 observations 尾部不影响弹窗内已取走的索引。
+        """
+        state = (self.timer.isActive(), self.refresh_timer.isActive())
+        self.timer.stop()
+        self.refresh_timer.stop()
+        return state
+
+    def resume_wave_timers(self, state):
+        """恢复 pause_wave_timers 暂停的节律（原来没开的不许凭空打开）。"""
+        was_running, was_refreshing = state
+        if was_running:
+            self.timer.start(1000)
+        if was_refreshing:
+            self.refresh_timer.start()
+
+    def notify(self, message, severity="warn"):
+        """视图可用的用户可见提示入口（视图不必也不应摸 `_notice`）。"""
+        self._notice(message, severity)
+
     def _on_tick(self):
         """1Hz 心跳：记录中只推进"现在"；衰减中按墙钟外推。
 

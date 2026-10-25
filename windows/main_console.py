@@ -18,6 +18,7 @@
 """
 import logging
 
+import crashguard
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QWidget,
@@ -496,19 +497,47 @@ class MainConsole(QWidget):
     # 视图 → presenter 的动作转发（方法名与 v3 完全一致）
     # ================================================================
     def _open_correction_sheet(self):
-        ctx = self.presenter.correction_context()
-        if not ctx["has_data"]:
-            return
-        sheet = CorrectionSheet(
-            timestamps=ctx["timestamps"],
-            model_v=ctx["model_v"],
-            model_a=ctx["model_a"],
-            baseline_v=ctx["baseline_v"],
-            current_state=ctx["current_state"],
-            parent=self,
-        )
-        sheet.exec_()
-        self.ingest_corrections(sheet.applied)
+        """打开纠正上滑框（拖点 / 手动输入 → 提交）。
+
+        v3.1.1 加固——此前这条链路有一个结构性风险和两处体验窟窿：
+          1. 按钮槽里任何未捕获异常的默认结局是 PyQt5 qFatal abort，
+             用户看到的就是"点纠正 → 闪退"，且没有任何现场可查
+             （弹窗本身此前 0 条测试覆盖）。现在异常一律捕获、落日志、
+             走通知条，进程绝不因此崩掉（配合 main_app 的 crashguard）。
+          2. 无可纠正数据时按钮是"死的"：点了没反应也没解释。
+          3. 模态期间 presenter 心跳照跑，波若在弹窗开着时衰减结束，
+             `states` 被清空，提交的纠正会被静默丢弃——现在弹窗期间
+             暂停节律，世界保持静止。
+        """
+        try:
+            ctx = self.presenter.correction_context()
+            if not ctx["has_data"]:
+                self.presenter.notify(
+                    "还没有可纠正的曲线：先「开始记录」，记下至少两次自评后再纠正。")
+                return
+            timers = self.presenter.pause_wave_timers()
+            try:
+                sheet = CorrectionSheet(
+                    timestamps=ctx["timestamps"],
+                    model_v=ctx["model_v"],
+                    model_a=ctx["model_a"],
+                    baseline_v=ctx["baseline_v"],
+                    current_state=ctx["current_state"],
+                    parent=self,
+                )
+                sheet.exec_()
+                self.ingest_corrections(sheet.applied)
+            finally:
+                self.presenter.resume_wave_timers(timers)
+        except Exception:
+            logger.exception("纠正弹窗打开/提交失败")
+            crashguard.log_failure("纠正弹窗打开/提交失败")
+            try:
+                self.presenter.notify(
+                    "纠正功能出了问题，本次操作已取消；"
+                    "详细原因已记录在 ~/.emowave/logs/。")
+            except Exception:
+                pass
 
     def ingest_corrections(self, applied, source=None):
         return self.presenter.ingest_corrections(applied, source)

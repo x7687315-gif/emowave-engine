@@ -34,6 +34,7 @@ from windows.main_console import MainConsole
 from windows.notice_bar import NoticeBar
 from windows.archetype_dialog import ArchetypeDialog
 from emowave import ARCHETYPES, DEFAULT_ARCHETYPE_KEY, get_archetype
+import crashguard
 
 try:
     from db import DatabaseManager
@@ -194,6 +195,8 @@ class MainWindow(QMainWindow):
 
         # 运行期提示（快照损坏 / 保存失败）与启动期提示统一走这里
         self.console.presenter.notice_changed.connect(self._show_notice)
+        # 崩溃捕获的用户提示也走通知条（槽内异常不再闪退，见 crashguard）
+        crashguard.set_notifier(lambda text: self._show_notice("warn", text))
         startup = []
         if self._startup_error:
             startup.append(self._startup_error)
@@ -419,6 +422,9 @@ class MainWindow(QMainWindow):
 
 
 def main():
+    # 崩溃捕获必须最先装：槽内未捕获异常的默认结局是 qFatal abort（闪退），
+    # 替换 sys.excepthook 后 PyQt5 改走本 hook（落日志 + 提示 + 继续运行）。
+    crashguard.install()
     # HighDPI：必须在 QApplication 构造**之前**用静态 setAttribute。
     # v3 曾写成 `Qt.AA_EnableHighDpiScaling = True` —— 那只是给枚举对象
     # 加了个同名属性，Qt 从不读取，属于空操作（125% 缩放下字体放大而
